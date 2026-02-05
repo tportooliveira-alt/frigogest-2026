@@ -1,0 +1,732 @@
+import React, { useState } from 'react';
+import {
+    Instagram,
+    Facebook,
+    MessageCircle,
+    ArrowRight,
+    ShieldCheck,
+    Zap,
+    Target,
+    Activity,
+    Award,
+    TrendingUp,
+    CheckCircle,
+    User,
+    Mail,
+    Phone,
+    Send,
+    ArrowLeft,
+    CalendarCheck,
+    Bot,
+    Sparkles,
+    Package,
+    X,
+    Play
+} from 'lucide-react';
+import VirtualAssistant from './VirtualAssistant';
+import { db } from '../firebaseClient';
+import { collection, addDoc } from 'firebase/firestore';
+import { Batch, StockItem } from '../types';
+
+interface LandingPageProps {
+    onBack?: () => void;
+    onShowVideo?: () => void;
+    batches: Batch[];
+    stock: StockItem[];
+    clients: any[];
+}
+
+const LandingPage: React.FC<LandingPageProps> = ({ onBack, onShowVideo, batches, stock, clients }) => {
+    const [formData, setFormData] = useState({
+        nome: '',
+        whatsapp: '',
+        tipo: 'venda', // 'venda', 'fornecedor' ou 'cliente'
+        localizacao: '',
+        tipo_gado: '',
+        reserva_item: '',
+        reserva_quantidade: '',
+        mensagem: ''
+    });
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isSubmitted, setIsSubmitted] = useState(false);
+    const [clientSearch, setClientSearch] = useState('');
+    const [clientPassword, setClientPassword] = useState('');
+    const [isRegistering, setIsRegistering] = useState(false);
+    const [authenticatedClient, setAuthenticatedClient] = useState<any | null>(null);
+    const [loginError, setLoginError] = useState(false);
+    const [showAssistant, setShowAssistant] = useState(false);
+
+    const handleClientLogin = () => {
+        if (clientSearch.length < 4) return alert('Por favor, informe seu CPF/CNPJ ou ID.');
+
+        const docClean = clientSearch.replace(/\D/g, '');
+        const client = clients.find(c =>
+            (c.cpf_cnpj && c.cpf_cnpj.replace(/\D/g, '') === docClean) ||
+            (c.id_ferro === clientSearch)
+        );
+
+        if (!client) {
+            return alert('Cadastro não localizado. Se você já é cliente mas não tem senha, use a opção "Solicitar Acesso".');
+        }
+
+        // Se o cliente ainda não tem senha definida (ou usa a padrão de transição)
+        const passwordToCheck = client.senha || "704";
+        if (clientPassword !== passwordToCheck) {
+            setLoginError(true);
+            return alert('Senha incorreta. Caso tenha esquecido, fale com um de nossos administradores nos links abaixo.');
+        }
+
+        setAuthenticatedClient(client);
+        setFormData({ ...formData, tipo: 'cliente', nome: client.nome_social, whatsapp: client.whatsapp || '' });
+        setLoginError(false);
+    };
+
+    const handleRegisterRequest = async () => {
+        if (!formData.nome || !formData.whatsapp || !clientSearch || !clientPassword) {
+            return alert('Por favor, preencha Nome, WhatsApp, ID/CPF e escolha uma Senha.');
+        }
+
+        setIsSubmitting(true);
+        try {
+            await addDoc(collection(db, 'leads'), {
+                ...formData,
+                tipo: 'cliente',
+                id_solicitado: clientSearch,
+                senha_solicitada: clientPassword,
+                mensagem: `SOLICITAÇÃO DE CADASTRO DE SENHA PARA ACESSO WEB. ID: ${clientSearch}`,
+                timestamp: new Date().toISOString(),
+                status: 'novo'
+            });
+            alert('Sua solicitação foi enviada! O Thiago ou a equipe de suporte irá confirmar seus dados e liberar seu acesso em breve.');
+            setIsRegistering(false);
+            setClientPassword('');
+        } catch (error) {
+            console.error(error);
+            alert('Erro ao enviar solicitação. Tente novamente ou fale conosco via WhatsApp.');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!formData.nome || !formData.whatsapp) return alert('Por favor, preencha nome e whatsapp.');
+
+        setIsSubmitting(true);
+        try {
+            // Se for cliente autenticado, cria um pedido agendado direto no sistema
+            if (authenticatedClient && formData.tipo === 'cliente') {
+                const orderId = `WEB-${Date.now()}`;
+                await addDoc(collection(db, 'scheduled_orders'), {
+                    id: orderId,
+                    id_cliente: authenticatedClient.id_ferro,
+                    nome_cliente: authenticatedClient.nome_social,
+                    produtos: [{ item: formData.reserva_item, quantidade: formData.reserva_quantidade }],
+                    data_pedido: new Date().toISOString().split('T')[0],
+                    data_entrega_prevista: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                    status: 'PENDENTE',
+                    origem: 'WEB_PORTAL',
+                    observacoes: formData.mensagem
+                });
+            } else {
+                // Caso contrário salva como Lead normal
+                await addDoc(collection(db, 'leads'), {
+                    ...formData,
+                    timestamp: new Date().toISOString(),
+                    status: 'novo'
+                });
+            }
+
+            setIsSubmitted(true);
+            setFormData({
+                nome: '',
+                whatsapp: '',
+                tipo: 'venda',
+                localizacao: '',
+                tipo_gado: '',
+                reserva_item: '',
+                reserva_quantidade: '',
+                mensagem: ''
+            });
+            setAuthenticatedClient(null);
+            setClientSearch('');
+        } catch (error) {
+            console.error('Erro ao enviar lead/pedido:', error);
+            alert('Houve um erro ao enviar. Tente novamente.');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    return (
+        <div className="min-h-screen bg-[#0f172a] text-white font-sans selection:bg-emerald-500 selection:text-white">
+
+            {/* NAVIGATION / HEADER */}
+            <nav className="fixed top-0 w-full z-50 bg-[#0f172a]/80 backdrop-blur-xl border-b border-white/5 px-6 py-4">
+                <div className="max-w-7xl mx-auto flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-900/40">
+                            <Target size={22} className="text-white" />
+                        </div>
+                        <span className="text-xl font-black tracking-tighter uppercase italic">Thiago <span className="text-emerald-500">704</span></span>
+                    </div>
+
+                    <div className="hidden md:flex items-center gap-8 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+                        <a href="#about" className="hover:text-white transition-colors">Sobre</a>
+                        <a href="#services" className="hover:text-white transition-colors">Serviços</a>
+                        <a href="#contact" className="hover:text-white transition-colors">Contato</a>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                        {onBack && (
+                            <button onClick={onBack} className="flex items-center gap-2 px-6 py-3 bg-rose-600 rounded-full text-xs font-black text-white uppercase hover:bg-rose-700 transition-all shadow-lg border-2 border-rose-500 animate-pulse">
+                                <ArrowLeft size={18} /> 🔐 ÁREA DO GESTOR (LOGIN)
+                            </button>
+                        )}
+                        <a href="#contact" className="bg-emerald-600 px-6 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-emerald-500 transition-all shadow-xl shadow-emerald-900/20">
+                            Solicitar Orçamento
+                        </a>
+                    </div>
+                </div>
+            </nav>
+
+            {/* HERO SECTION */}
+            <div className="relative pt-32 pb-20 md:pt-48 md:pb-32 overflow-hidden">
+                <div className="absolute top-0 right-0 w-full md:w-[85%] h-full opacity-100 transition-all duration-1000">
+                    <img src="/serra_70_30.png" alt="Serra do Marçal" className="w-full h-full object-cover brightness-110 contrast-105 shadow-2xl" />
+                    <div className="absolute inset-0 bg-gradient-to-r from-[#0f172a] via-[#0f172a]/10 to-transparent shadow-[inset_150px_0_150px_-75px_rgba(15,23,42,1)]" />
+                </div>
+
+                <div className="max-w-7xl mx-auto px-6 relative z-10">
+                    <div className="max-w-3xl">
+                        <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-emerald-500 text-[10px] font-black uppercase tracking-[0.3em] mb-8 animate-fade-in">
+                            <Zap size={14} /> Itapetinga • Sul e Sudoeste Baiano
+                        </div>
+                        <h1 className="text-5xl md:text-8xl font-black tracking-tighter leading-tight mb-8 animate-reveal">
+                            ESPECIALISTA EM <br />
+                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-blue-500">NOVILHAS PRECOCES.</span>
+                        </h1>
+                        <p className="text-lg md:text-xl text-slate-400 font-medium leading-relaxed mb-12 max-w-xl">
+                            O padrão Thiago 704 Select valoriza o acabamento premium. Focamos em Novilhas Precoces e Novilhos de Elite com o melhor rendimento do Sudoeste Baiano.
+                        </p>
+
+                        <div className="flex flex-col sm:flex-row items-center gap-6">
+                            <a href="#contact" className="w-full sm:w-auto flex items-center justify-center gap-3 bg-emerald-600 px-10 py-5 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-emerald-500 hover:scale-105 transition-all shadow-2xl shadow-emerald-900/40 border border-emerald-400/20">
+                                Quero Vender Gado <ArrowRight size={18} />
+                            </a>
+
+                            {onShowVideo && (
+                                <button
+                                    onClick={onShowVideo}
+                                    className="w-full sm:w-auto flex items-center justify-center gap-3 bg-white/10 backdrop-blur-md border border-white/10 px-10 py-5 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-white/20 transition-all group"
+                                >
+                                    <div className="w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform">
+                                        <Play size={14} fill="currentColor" />
+                                    </div>
+                                    Ver Como Funciona
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* VIRTUAL SHOWCASE (VITRINE) */}
+            {(batches.some(b => b.vitrine) || stock.some(s => s.vitrine)) && (
+                <div className="mt-24 max-w-7xl mx-auto px-6">
+                    <div className="flex items-end justify-between mb-12">
+                        <div>
+                            <h4 className="text-emerald-500 text-[10px] font-black uppercase tracking-[0.4em] mb-4">Vitrine Virtual</h4>
+                            <h2 className="text-4xl md:text-6xl font-black uppercase tracking-tighter">Lotes <span className="text-slate-500 text-transparent bg-clip-text bg-gradient-to-r from-slate-400 to-slate-600">Disponíveis.</span></h2>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                        {batches.filter(b => b.vitrine).map(batch => {
+                            const headsCount = stock.filter(s => s.id_lote === batch.id_lote).length;
+                            return (
+                                <div key={batch.id_lote} className="group relative bg-white/5 border border-white/10 rounded-[32px] p-8 hover:bg-white/10 transition-all">
+                                    <div className="flex justify-between items-start mb-6">
+                                        <div className="w-12 h-12 bg-emerald-600/20 rounded-2xl flex items-center justify-center text-emerald-500">
+                                            <Package size={24} />
+                                        </div>
+                                        <span className="bg-emerald-600 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest">Lote Ativo</span>
+                                    </div>
+                                    <h3 className="text-2xl font-black mb-2 uppercase tracking-tight">{batch.id_lote}</h3>
+                                    <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-6">Fornec: {batch.fornecedor} • {batch.status || 'ABERTO'}</p>
+
+                                    <div className="grid grid-cols-2 gap-4 mb-8 pt-6 border-t border-white/5">
+                                        <div>
+                                            <p className="text-xs font-bold text-slate-500 uppercase">Cabeças</p>
+                                            <p className="text-xl font-black">{headsCount || '-'}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-bold text-slate-500 uppercase">Peso Total</p>
+                                            <p className="text-xl font-black text-emerald-500">{batch.peso_total_romaneio}kg</p>
+                                        </div>
+                                    </div>
+
+                                    <a
+                                        href={`https://wa.me/55?text=Olá, tenho interesse no lote ${batch.id_lote} que vi na vitrine.`}
+                                        target="_blank"
+                                        className="flex items-center justify-center gap-3 w-full bg-white text-slate-900 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-500 hover:text-white transition-all"
+                                    >
+                                        Negociar Agora <MessageCircle size={16} />
+                                    </a>
+                                </div>
+                            );
+                        })}
+
+                        {stock.filter(s => s.vitrine).map(item => (
+                            <div key={item.id_completo} className="group relative bg-white/5 border border-white/10 rounded-[32px] p-8 hover:bg-white/10 transition-all">
+                                <div className="flex justify-between items-start mb-6">
+                                    <div className="w-12 h-12 bg-blue-600/20 rounded-2xl flex items-center justify-center text-blue-500">
+                                        <Award size={24} />
+                                    </div>
+                                    <span className="bg-blue-600 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest">Individual</span>
+                                </div>
+                                <h3 className="text-2xl font-black mb-2 uppercase tracking-tight">{item.id_completo}</h3>
+                                <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-6">Tipo: {item.tipo} • Padrão Elite</p>
+
+                                <div className="grid grid-cols-2 gap-4 mb-8 pt-6 border-t border-white/5">
+                                    <div>
+                                        <p className="text-xs font-bold text-slate-500 uppercase">Peso Ent.</p>
+                                        <p className="text-xl font-black">{item.peso_entrada}kg</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs font-bold text-slate-500 uppercase">Status</p>
+                                        <p className="text-xl font-black text-blue-500">{item.status}</p>
+                                    </div>
+                                </div>
+
+                                <a
+                                    href={`https://wa.me/55?text=Olá, tenho interesse no animal ${item.id_completo} da vitrine.`}
+                                    target="_blank"
+                                    className="flex items-center justify-center gap-3 w-full bg-white text-slate-900 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-500 hover:text-white transition-all"
+                                >
+                                    Solicitar Preço <MessageCircle size={16} />
+                                </a>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* FEATURES / TRUST */}
+            <div id="about" className="py-24 bg-slate-900/50">
+                <div className="max-w-7xl mx-auto px-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-20 items-center mb-24">
+                        <div className="relative">
+                            <div className="absolute -inset-4 bg-emerald-500/10 blur-3xl rounded-[48px]" />
+                            <div className="relative rounded-[48px] overflow-hidden border border-white/20 shadow-2xl">
+                                <img src="/abate_real.jpg" alt="Abate Real Thiago 704" className="w-full h-full object-cover brightness-110 contrast-105 hover:scale-105 transition-transform duration-700" />
+                                <div className="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-transparent to-transparent" />
+                                <div className="absolute bottom-8 left-8 right-8">
+                                    <div className="bg-emerald-600/90 backdrop-blur-md px-6 py-3 rounded-2xl inline-flex items-center gap-3">
+                                        <ShieldCheck size={20} className="text-white" />
+                                        <span className="text-white text-[10px] font-black uppercase tracking-widest">Padrão Sanitário de Elite</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="space-y-8">
+                            <h4 className="text-emerald-500 text-[10px] font-black uppercase tracking-[0.4em]">Compromisso Thiago 704</h4>
+                            <h2 className="text-4xl md:text-6xl font-black uppercase tracking-tighter leading-tight">MÁXIMA HIGIENE, <br /> <span className="text-slate-500">QUALIDADE ABSOLUTA.</span></h2>
+                            <p className="text-slate-400 text-lg leading-relaxed">
+                                No padrão Thiago 704 Select, a limpeza não é um detalhe, é a nossa base. Nossas instalações seguem os mais rigorosos protocolos de esterilização e controle sanitário do Sudoeste Baiano.
+                            </p>
+                            <div className="grid grid-cols-2 gap-6 pt-4">
+                                <div className="p-6 bg-white/5 border border-white/10 rounded-3xl">
+                                    <p className="text-2xl font-black text-emerald-500 mb-1">100%</p>
+                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Esterilizado</p>
+                                </div>
+                                <div className="p-6 bg-white/5 border border-white/10 rounded-3xl">
+                                    <p className="text-2xl font-black text-blue-500 mb-1">SELECT</p>
+                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Qualidade Exportação</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-12 border-t border-white/5 pt-24">
+                        <div className="space-y-4">
+                            <div className="w-12 h-12 bg-emerald-600/20 rounded-2xl flex items-center justify-center text-emerald-500 mb-6">
+                                <ShieldCheck size={28} />
+                            </div>
+                            <h3 className="text-xl font-black uppercase tracking-tight">Qualidade Total</h3>
+                            <p className="text-slate-400 text-sm leading-relaxed">Seleção rigorosa em Itapetinga, garantindo animais com alto rendimento de carcaça e procedência no Sudoeste Baiano.</p>
+                        </div>
+                        <div className="space-y-4">
+                            <div className="w-12 h-12 bg-emerald-600/20 rounded-2xl flex items-center justify-center text-emerald-500 mb-6">
+                                <Activity size={28} />
+                            </div>
+                            <h3 className="text-xl font-black uppercase tracking-tight">Pecuária de Precisão</h3>
+                            <p className="text-slate-400 text-sm leading-relaxed">Dados reais de balança e romaneio transparente. Nossa gestão foca no lucro do produtor e na satisfação do cliente.</p>
+                        </div>
+                        <div className="space-y-4">
+                            <div className="w-12 h-12 bg-emerald-600/20 rounded-2xl flex items-center justify-center text-emerald-500 mb-6">
+                                <Award size={28} />
+                            </div>
+                            <h3 className="text-xl font-black uppercase tracking-tight">Referência Regional</h3>
+                            <p className="text-slate-400 text-sm leading-relaxed">O padrão Thiago 704 Select é sinônimo de excelência em acabamento de gordura e precocidade no Sul da Bahia.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* CONTACT / CENTRAL DE RESERVAS & CADASTRO */}
+            <div id="contact" className="py-32 relative overflow-hidden">
+                <div className="max-w-7xl mx-auto px-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-20 items-center">
+                        <div className="space-y-12">
+                            <div>
+                                <h4 className="text-emerald-500 text-[10px] font-black uppercase tracking-[0.4em] mb-6">Central de Atendimento</h4>
+                                <h2 className="text-6xl md:text-8xl font-black uppercase tracking-tighter leading-none mb-8">RESERVAS & <br /> <span className="text-slate-500">CADASTRO.</span></h2>
+                                <p className="text-slate-400 text-xl leading-relaxed max-w-md">Realize seu pedido de reserva ou faça seu pré-cadastro para entrar no ecossistema Thiago 704.</p>
+                            </div>
+
+                            <div className="space-y-8">
+                                <div className="space-y-4">
+                                    <div className="flex items-center gap-6 group">
+                                        <div className="w-16 h-16 rounded-[24px] bg-white/5 border border-white/10 flex items-center justify-center group-hover:bg-emerald-600 transition-all text-white">
+                                            <Phone size={24} />
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Atendimento e Reservas</p>
+                                            <div className="flex flex-col gap-1 mt-1">
+                                                <a href="https://wa.me/5511986545155?text=Olá Nadjane, gostaria de fazer uma reserva." target="_blank" className="text-xl font-bold hover:text-emerald-500 transition-colors">Nadjane</a>
+                                                <a href="https://wa.me/5577999823787?text=Olá Priscila, gostaria de fazer uma reserva." target="_blank" className="text-xl font-bold hover:text-emerald-500 transition-colors">Priscila</a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-6 group">
+                                    <div className="w-16 h-16 rounded-[24px] bg-white/5 border border-white/10 flex items-center justify-center group-hover:bg-emerald-600 transition-all">
+                                        <Mail size={24} />
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">E-mail Oficial</p>
+                                        <p className="text-xl font-bold">thiago704@select.com</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="relative">
+                            <div className="absolute -inset-4 bg-emerald-600/20 blur-[100px] rounded-full" />
+                            <div className="relative bg-[#1e293b] border border-white/10 rounded-[48px] p-8 md:p-12 shadow-3xl">
+                                {isSubmitted ? (
+                                    <div className="py-20 text-center space-y-6">
+                                        <div className="w-20 h-20 bg-emerald-600 rounded-full flex items-center justify-center mx-auto mb-8 shadow-2xl shadow-emerald-900/40">
+                                            <CheckCircle size={40} />
+                                        </div>
+                                        <h3 className="text-3xl font-black uppercase tracking-tighter">Solicitação Enviada!</h3>
+                                        <p className="text-slate-400">Em breve nossa equipe entrará em contato via WhatsApp.</p>
+                                        <button onClick={() => setIsSubmitted(false)} className="text-emerald-500 text-[10px] font-black uppercase tracking-widest hover:underline">Enviar outra mensagem</button>
+                                    </div>
+                                ) : (
+                                    <form onSubmit={handleSubmit} className="space-y-8">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                            <div className="space-y-3">
+                                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Seu Nome</label>
+                                                <div className="relative">
+                                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"><User size={18} /></div>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Nome Completo"
+                                                        value={formData.nome}
+                                                        onChange={e => setFormData({ ...formData, nome: e.target.value })}
+                                                        className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl pl-12 text-sm focus:border-emerald-500 outline-none transition-all focus:bg-white/10"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="space-y-3">
+                                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">WhatsApp</label>
+                                                <div className="relative">
+                                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"><Phone size={18} /></div>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="(00) 00000-0000"
+                                                        value={formData.whatsapp}
+                                                        onChange={e => setFormData({ ...formData, whatsapp: e.target.value })}
+                                                        className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl pl-12 text-sm focus:border-emerald-500 outline-none transition-all focus:bg-white/10"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Seu Perfil / Interesse</label>
+                                            <div className="flex flex-col sm:flex-row p-1 bg-white/5 rounded-2xl border border-white/10 gap-1">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFormData({ ...formData, tipo: 'venda' })}
+                                                    className={`flex-1 py-4 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${formData.tipo === 'venda' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
+                                                >
+                                                    Quero Comprar
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFormData({ ...formData, tipo: 'fornecedor' })}
+                                                    className={`flex-1 py-4 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${formData.tipo === 'fornecedor' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
+                                                >
+                                                    Quero Vender
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFormData({ ...formData, tipo: 'cliente' })}
+                                                    className={`flex-1 py-4 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${formData.tipo === 'cliente' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
+                                                >
+                                                    Já sou Cliente
+                                                </button>
+                                            </div>
+
+                                            {formData.tipo === 'cliente' && !authenticatedClient && (
+                                                <div className="p-6 bg-white/5 border border-white/10 rounded-2xl space-y-4 animate-reveal">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <div className="flex items-center gap-3">
+                                                            <ShieldCheck size={18} className="text-emerald-500" />
+                                                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-300">
+                                                                {isRegistering ? 'Solicitar Acesso / Senha' : 'Portal Identificado'}
+                                                            </p>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setIsRegistering(!isRegistering)}
+                                                            className="text-[9px] font-black text-emerald-500 uppercase hover:underline"
+                                                        >
+                                                            {isRegistering ? 'Voltar ao Login' : 'Cadastrar Minha Senha'}
+                                                        </button>
+                                                    </div>
+
+                                                    <div className="flex flex-col gap-3">
+                                                        {isRegistering && (
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Seu Nome Completo"
+                                                                value={formData.nome}
+                                                                onChange={e => setFormData({ ...formData, nome: e.target.value })}
+                                                                className="w-full h-12 bg-white/5 border border-white/10 rounded-xl px-4 text-xs outline-none focus:border-emerald-500 transition-all font-bold"
+                                                            />
+                                                        )}
+                                                        <input
+                                                            type="text"
+                                                            placeholder="CNPJ/CPF ou ID Social..."
+                                                            value={clientSearch}
+                                                            onChange={e => setClientSearch(e.target.value)}
+                                                            className="w-full h-12 bg-white/5 border border-white/10 rounded-xl px-4 text-xs outline-none focus:border-emerald-500 transition-all font-mono"
+                                                        />
+                                                        <input
+                                                            type="password"
+                                                            placeholder={isRegistering ? "Escolha uma Senha Segura..." : "Sua Senha de Acesso..."}
+                                                            value={clientPassword}
+                                                            onChange={e => setClientPassword(e.target.value)}
+                                                            className="w-full h-12 bg-white/5 border border-white/10 rounded-xl px-4 text-xs outline-none focus:border-emerald-500 transition-all font-mono"
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={isRegistering ? handleRegisterRequest : handleClientLogin}
+                                                            className="w-full h-14 bg-white text-slate-900 rounded-xl text-[10px] font-black uppercase hover:bg-emerald-500 hover:text-white transition-all shadow-lg"
+                                                            disabled={isSubmitting}
+                                                        >
+                                                            {isSubmitting ? 'Processando...' : isRegistering ? 'Enviar Solicitação de Cadastro' : 'Acessar Meu Painel'}
+                                                        </button>
+                                                    </div>
+
+                                                    {!isRegistering && (
+                                                        <div className="pt-4 border-t border-white/5 space-y-3">
+                                                            <p className="text-[9px] font-black text-slate-500 uppercase text-center tracking-widest">Suporte & Recuperação</p>
+                                                            <div className="grid grid-cols-1 gap-2">
+                                                                <a href="https://wa.me/5577999226268?text=Thiago, estou no portal e preciso de ajuda." target="_blank" className="flex items-center justify-center gap-2 py-3 bg-emerald-600/10 border border-emerald-500/20 rounded-xl text-emerald-500 text-[9px] font-black uppercase hover:bg-emerald-600 hover:text-white transition-all">
+                                                                    <MessageCircle size={14} /> Falar com Thiago
+                                                                </a>
+                                                                <div className="grid grid-cols-2 gap-2">
+                                                                    <a href="https://wa.me/5511986545155?text=Olá Nadjane, preciso de ajuda com o portal." target="_blank" className="flex items-center justify-center gap-2 py-3 bg-blue-600/10 border border-blue-500/20 rounded-xl text-blue-500 text-[9px] font-black uppercase hover:bg-blue-600 hover:text-white transition-all">
+                                                                        <MessageCircle size={14} /> Atendimento Nadjane
+                                                                    </a>
+                                                                    <a href="https://wa.me/5577999823787?text=Olá Priscila, preciso de ajuda com o portal." target="_blank" className="flex items-center justify-center gap-2 py-3 bg-blue-600/10 border border-blue-500/20 rounded-xl text-blue-500 text-[9px] font-black uppercase hover:bg-blue-600 hover:text-white transition-all">
+                                                                        <MessageCircle size={14} /> Atendimento Priscila
+                                                                    </a>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {authenticatedClient && formData.tipo === 'cliente' && (
+                                                <div className="p-4 bg-emerald-600/20 border border-emerald-500/30 rounded-2xl flex items-center justify-between animate-reveal">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center">
+                                                            <User size={20} />
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Portal do Cliente Liberado</p>
+                                                            <p className="text-sm font-bold uppercase">{authenticatedClient.nome_social}</p>
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { setAuthenticatedClient(null); setClientSearch(''); setClientPassword(''); }}
+                                                        className="text-[9px] font-black text-rose-500 uppercase hover:underline"
+                                                    >
+                                                        Sair / Trocar ID
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {formData.tipo === 'fornecedor' && (
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-fade-in">
+                                                <div className="space-y-3">
+                                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Localização da Fazenda (Opcional)</label>
+                                                    <div className="relative">
+                                                        <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"><Target size={18} /></div>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Link do Google Maps ou Cidade"
+                                                            value={formData.localizacao}
+                                                            onChange={e => setFormData({ ...formData, localizacao: e.target.value })}
+                                                            className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl pl-12 text-sm focus:border-emerald-500 outline-none transition-all focus:bg-white/10"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-3">
+                                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Tipo de Gado de Corte</label>
+                                                    <div className="relative">
+                                                        <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"><Activity size={18} /></div>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Ex: Nelore, Cruzamento, Reposição..."
+                                                            value={formData.tipo_gado}
+                                                            onChange={e => setFormData({ ...formData, tipo_gado: e.target.value })}
+                                                            className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl pl-12 text-sm focus:border-emerald-500 outline-none transition-all focus:bg-white/10"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {formData.tipo === 'cliente' && (
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-fade-in">
+                                                <div className="space-y-3">
+                                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">O que deseja reservar?</label>
+                                                    <div className="relative">
+                                                        <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"><CalendarCheck size={18} /></div>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Ex: Lote de Novilhas, Banda A..."
+                                                            value={formData.reserva_item}
+                                                            onChange={e => setFormData({ ...formData, reserva_item: e.target.value })}
+                                                            className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl pl-12 text-sm focus:border-emerald-500 outline-none transition-all focus:bg-white/10"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-3">
+                                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Quantidade ou Observação</label>
+                                                    <div className="relative">
+                                                        <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"><TrendingUp size={18} /></div>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Ex: 20 cabeças, Abate de Terça..."
+                                                            value={formData.reserva_quantidade}
+                                                            onChange={e => setFormData({ ...formData, reserva_quantidade: e.target.value })}
+                                                            className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl pl-12 text-sm focus:border-emerald-500 outline-none transition-all focus:bg-white/10"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Mensagem (Opcional)</label>
+                                            <textarea
+                                                placeholder="Conte brevemente o que você precisa..."
+                                                value={formData.mensagem}
+                                                onChange={e => setFormData({ ...formData, mensagem: e.target.value })}
+                                                className="w-full h-32 bg-white/5 border border-white/10 rounded-2xl p-6 text-sm focus:border-emerald-500 outline-none transition-all focus:bg-white/10"
+                                            />
+                                        </div>
+
+                                        <button
+                                            disabled={isSubmitting}
+                                            className="w-full bg-emerald-600 py-6 rounded-2xl font-black text-[11px] uppercase tracking-[0.3em] hover:bg-emerald-500 transition-all shadow-2xl shadow-emerald-900/40 flex items-center justify-center gap-3 disabled:opacity-50"
+                                        >
+                                            {isSubmitting ? <Activity size={18} className="animate-spin" /> : <Send size={18} />}
+                                            {formData.tipo === 'cliente' ? 'Finalizar Reserva de Pedido' : 'Enviar Pré-Cadastro Agora'}
+                                        </button>
+                                    </form>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* FOOTER */}
+            <footer className="py-20 border-t border-white/5 bg-[#0f172a]">
+                <div className="max-w-7xl mx-auto px-6">
+                    <div className="flex flex-col md:flex-row justify-between items-center gap-12">
+                        <div>
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center">
+                                    <Target size={18} />
+                                </div>
+                                <span className="text-xl font-black tracking-tighter uppercase italic">Thiago <span className="text-emerald-500">704</span></span>
+                            </div>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Pecuária Inteligente & Gestão de Precisão</p>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-center md:justify-end gap-4">
+                            <a href="https://wa.me/5577999226268?text=Thiago, gostaria de conversar sobre gado." target="_blank" className="flex items-center gap-3 px-6 py-3 bg-emerald-600/10 border border-emerald-500/20 rounded-2xl text-emerald-500 text-[10px] font-black uppercase hover:bg-emerald-600 hover:text-white transition-all">
+                                <MessageCircle size={18} /> Thiago 704
+                            </a>
+                            <a href="https://wa.me/5511986545155?text=Olá Nadjane, gostaria de informações comerciais." target="_blank" className="flex items-center gap-3 px-6 py-3 bg-blue-600/10 border border-blue-500/20 rounded-2xl text-blue-500 text-[10px] font-black uppercase hover:bg-blue-600 hover:text-white transition-all">
+                                <MessageCircle size={18} /> Nadjane
+                            </a>
+                            <a href="https://wa.me/5577999823787?text=Olá Priscila, gostaria de informações comerciais." target="_blank" className="flex items-center gap-3 px-6 py-3 bg-blue-600/10 border border-blue-500/20 rounded-2xl text-blue-500 text-[10px] font-black uppercase hover:bg-blue-600 hover:text-white transition-all">
+                                <MessageCircle size={18} /> Priscila
+                            </a>
+                        </div>
+                    </div>
+
+                    <div className="mt-20 pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 text-[9px] font-black uppercase tracking-[0.2em] text-slate-600">
+                        <p>© 2026 - Thiago 704. Todos os direitos reservados.</p>
+                        <div className="flex gap-8">
+                            <a href="#" className="hover:text-emerald-500 transition-colors">Privacidade</a>
+                            <a href="#" className="hover:text-emerald-500 transition-colors">Termos</a>
+                        </div>
+                    </div>
+                </div>
+            </footer>
+
+            {/* VIRTUAL ASSISTANT FLOATING TRIGGER */}
+            <div className="fixed bottom-8 right-8 z-[400] flex flex-col items-end gap-4">
+                {!showAssistant && (
+                    <div className="bg-white px-5 py-3 rounded-2xl shadow-2xl border border-slate-100 animate-bounce mb-2">
+                        <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                            <Sparkles size={14} className="text-blue-600" /> Posso te ajudar?
+                        </p>
+                    </div>
+                )}
+                <button
+                    onClick={() => setShowAssistant(!showAssistant)}
+                    className="w-16 h-16 bg-slate-900 text-white rounded-[24px] flex items-center justify-center hover:bg-blue-600 hover:scale-110 transition-all shadow-2xl shadow-blue-900/40 group"
+                >
+                    {showAssistant ? <X size={28} /> : (
+                        <>
+                            <Bot size={28} className="group-hover:rotate-12 transition-transform" />
+                            <div className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border-4 border-slate-900" />
+                        </>
+                    )}
+                </button>
+            </div>
+
+            {showAssistant && (
+                <VirtualAssistant onClose={() => setShowAssistant(false)} />
+            )}
+        </div>
+    );
+};
+
+export default LandingPage;

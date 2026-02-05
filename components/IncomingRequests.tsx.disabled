@@ -1,0 +1,390 @@
+import React, { useState, useMemo } from 'react';
+import { Lead } from '../types';
+import {
+    Globe,
+    ArrowLeft,
+    Search,
+    Filter,
+    CheckCircle,
+    Clock,
+    MessageCircle,
+    Truck,
+    ShoppingCart,
+    UserPlus,
+    Trash2,
+    MoreHorizontal,
+    ChevronRight,
+    Calendar,
+    MapPin,
+    Activity,
+    X
+} from 'lucide-react';
+
+interface IncomingRequestsProps {
+    leads: Lead[];
+    onUpdateLead: (id: string, updates: Partial<Lead>) => Promise<void>;
+    onDeleteLead: (id: string) => Promise<void>;
+    onBack: () => void;
+    session: any;
+}
+
+const IncomingRequests: React.FC<IncomingRequestsProps> = ({
+    leads,
+    onUpdateLead,
+    onDeleteLead,
+    onBack,
+    session
+}) => {
+    const [searchTerm, setSearchTerm] = useState('');
+    const [activeTab, setActiveTab] = useState<'TODOS' | 'venda' | 'fornecedor' | 'cliente'>('TODOS');
+    const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+
+    const filteredLeads = useMemo(() => {
+        let list = [...leads];
+
+        if (activeTab !== 'TODOS') {
+            list = list.filter(l => l.tipo === activeTab);
+        }
+
+        if (searchTerm) {
+            const term = searchTerm.toLowerCase();
+            list = list.filter(l =>
+                l.nome.toLowerCase().includes(term) ||
+                l.whatsapp.includes(term) ||
+                (l.mensagem?.toLowerCase() || '').includes(term)
+            );
+        }
+
+        return list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    }, [leads, activeTab, searchTerm]);
+
+    const handleStatusChange = async (id: string, status: Lead['status']) => {
+        const userName = session?.user?.email?.split('@')[0]?.toUpperCase() || 'COLABORADOR';
+        const updates: Partial<Lead> = { status };
+
+        if (status === 'em_atendimento') {
+            updates.atendido_por = userName;
+        }
+
+        await onUpdateLead(id, updates);
+    };
+
+    const getTipoIcon = (tipo: Lead['tipo']) => {
+        switch (tipo) {
+            case 'venda': return <ShoppingCart size={18} className="text-blue-500" />;
+            case 'fornecedor': return <Truck size={18} className="text-indigo-500" />;
+            case 'cliente': return <UserPlus size={18} className="text-emerald-500" />;
+            default: return <Globe size={18} className="text-slate-500" />;
+        }
+    };
+
+    const getTipoLabel = (tipo: Lead['tipo']) => {
+        switch (tipo) {
+            case 'venda': return 'Interesse em Compra';
+            case 'fornecedor': return 'Oferta de Gado';
+            case 'cliente': return 'Pré-Cadastro / Reserva';
+            default: return 'Geral';
+        }
+    };
+
+    const formatDate = (isoStr: string) => {
+        const date = new Date(isoStr);
+        return date.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    };
+
+    return (
+        <div className="p-4 md:p-10 min-h-screen bg-[#f8fafc] technical-grid animate-reveal pb-20">
+            {/* PREMIUM HEADER */}
+            <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
+                <div className="flex flex-col gap-4">
+                    <button onClick={onBack} className="group self-start flex items-center gap-2 px-4 py-1.5 bg-white border border-gray-200 rounded-full text-xs font-bold text-gray-500 hover:text-emerald-700 hover:border-emerald-100 transition-all shadow-sm">
+                        <ArrowLeft size={14} /> Voltar ao Início
+                    </button>
+                    <div className="flex items-center gap-5">
+                        <div className="bg-emerald-600 p-3 rounded-2xl text-white shadow-xl shadow-emerald-100">
+                            <Globe size={28} />
+                        </div>
+                        <div>
+                            <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">
+                                Central de <span className="text-emerald-600">Leads Web</span>
+                            </h1>
+                            <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mt-1">
+                                Sincronização em Tempo Real com o Site
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex flex-wrap gap-4 items-center">
+                    <div className="relative">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <input
+                            type="text"
+                            placeholder="Buscar leads..."
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            className="w-full md:w-64 pl-12 pr-4 py-3.5 bg-white border border-slate-100 rounded-2xl text-xs font-bold text-slate-900 outline-none focus:border-emerald-500 shadow-sm transition-all"
+                        />
+                    </div>
+                    <div className="flex p-1 bg-white rounded-2xl border border-slate-100 shadow-sm">
+                        {(['TODOS', 'venda', 'fornecedor', 'cliente'] as const).map(t => (
+                            <button
+                                key={t}
+                                onClick={() => setActiveTab(t)}
+                                className={`px-6 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${activeTab === t ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'}`}
+                            >
+                                {t === 'TODOS' ? 'Geral' : t === 'venda' ? 'Compradores' : t === 'fornecedor' ? 'Vendedores' : 'Clientes'}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            {/* COLLABORATOR INSTRUCTIONS */}
+            <div className="max-w-7xl mx-auto mb-10 overflow-hidden">
+                <div className="bg-white border border-slate-100 rounded-[32px] p-8 shadow-sm relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-50 rounded-full blur-3xl -mr-16 -mt-16 opacity-50" />
+                    <div className="relative flex flex-col md:flex-row gap-8 items-start md:items-center">
+                        <div className="bg-slate-900 w-16 h-16 rounded-2xl flex items-center justify-center text-white shrink-0 shadow-xl shadow-slate-200">
+                            <Activity size={24} className="text-emerald-400" />
+                        </div>
+                        <div className="flex-1">
+                            <h4 className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.3em] mb-2">Protocolo de Atendimento para Equipe</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center text-[10px] text-white font-bold">1</div>
+                                        <span className="text-sm font-black text-slate-800 uppercase tracking-tighter">Assuma o Lead</span>
+                                    </div>
+                                    <p className="text-xs text-slate-500 leading-relaxed font-medium">Ao clicar no WhatsApp, o lead ficará <b>Amarelo</b> com seu nome. Isso trava para ninguém mais chamar.</p>
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-5 h-5 bg-emerald-600 rounded-full flex items-center justify-center text-[10px] text-white font-bold">2</div>
+                                        <span className="text-sm font-black text-slate-800 uppercase tracking-tighter">Qualifique o Cliente</span>
+                                    </div>
+                                    <p className="text-xs text-slate-500 leading-relaxed font-medium">Use as informações do Robô. Pergunte sobre o lote, localização e peça os vídeos.</p>
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-5 h-5 bg-slate-900 rounded-full flex items-center justify-center text-[10px] text-white font-bold">3</div>
+                                        <span className="text-sm font-black text-slate-800 uppercase tracking-tighter">Limpe a Lista</span>
+                                    </div>
+                                    <p className="text-xs text-slate-500 leading-relaxed font-medium">Após o contato, clique em <b>"Marcar como Lido"</b> para tirar o lead da lista de pendências.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* LEADS LIST */}
+            <div className="max-w-7xl mx-auto space-y-4">
+                {filteredLeads.length === 0 ? (
+                    <div className="py-32 flex flex-col items-center justify-center bg-white rounded-[40px] border border-dashed border-slate-200">
+                        <Globe size={80} className="mb-6 opacity-10" />
+                        <p className="text-xs font-black text-slate-300 uppercase tracking-[0.4em]">Nenhuma solicitação pendente</p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 gap-4">
+                        {filteredLeads.map(lead => (
+                            <div
+                                key={lead.id}
+                                onClick={() => setSelectedLead(lead)}
+                                className={`premium-card p-0 overflow-hidden group cursor-pointer transition-all hover:-translate-y-1 hover:shadow-xl ${lead.status === 'arquivado' ? 'opacity-50' : lead.status === 'convertido' ? 'border-emerald-500/30' : ''}`}
+                            >
+                                <div className="flex items-center">
+                                    <div className={`w-28 h-28 flex flex-col items-center justify-center shrink-0 ${lead.status === 'novo' ? 'bg-blue-600 text-white animate-pulse-slow' : lead.status === 'em_atendimento' ? 'bg-amber-500 text-white' : 'bg-slate-50 text-slate-400'}`}>
+                                        <div className="mb-1">{getTipoIcon(lead.tipo)}</div>
+                                        <span className="text-[8px] font-black uppercase tracking-widest text-center px-2">{getTipoLabel(lead.tipo)}</span>
+                                    </div>
+                                    <div className="flex-1 p-8 flex flex-col md:flex-row items-center justify-between gap-6">
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-3 mb-1">
+                                                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight truncate">
+                                                    {lead.nome}
+                                                </h3>
+                                                {lead.status === 'novo' && <span className="bg-blue-100 text-blue-600 text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-widest">Novo</span>}
+                                                {lead.status === 'em_atendimento' && (
+                                                    <span className="bg-amber-100 text-amber-700 text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-widest flex items-center gap-1">
+                                                        <Activity size={10} /> Em Atendimento por {lead.atendido_por}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="flex flex-wrap items-center gap-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                                <div className="flex items-center gap-2">
+                                                    <Clock size={12} />
+                                                    {formatDate(lead.timestamp)}
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <MessageCircle size={12} />
+                                                    {lead.whatsapp}
+                                                </div>
+                                                {lead.localizacao && (
+                                                    <div className="flex items-center gap-2">
+                                                        <MapPin size={12} />
+                                                        {lead.localizacao}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {lead.mensagem && (
+                                                <p className="mt-3 text-xs text-slate-500 font-medium italic truncate max-w-2xl border-l-2 border-slate-100 pl-4">
+                                                    "{lead.mensagem}"
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        <div className="flex items-center gap-4">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    window.open(`https://wa.me/55${lead.whatsapp.replace(/\D/g, '')}?text=Olá ${lead.nome}, aqui é o Thiago 704. Recebi sua mensagem no site...`, '_blank');
+                                                    if (lead.status === 'novo') handleStatusChange(lead.id, 'em_atendimento');
+                                                }}
+                                                className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center hover:bg-emerald-600 hover:text-white transition-all shadow-sm"
+                                            >
+                                                <MessageCircle size={22} />
+                                            </button>
+                                            <div className="h-10 w-px bg-slate-100 mx-2" />
+                                            <div className="flex flex-col gap-1">
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handleStatusChange(lead.id, 'convertido'); }}
+                                                    className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${lead.status === 'convertido' ? 'bg-emerald-600 text-white shadow-lg' : 'bg-slate-50 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600'}`}
+                                                >
+                                                    {lead.status === 'convertido' ? 'Convertido' : 'Marcar como Lido'}
+                                                </button>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); if (confirm('Excluir este lead permanentemente?')) onDeleteLead(lead.id); }}
+                                                    className="px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-300 hover:text-rose-500 transition-all text-center"
+                                                >
+                                                    Descartar
+                                                </button>
+                                            </div>
+                                            <ChevronRight size={20} className="text-slate-200 group-hover:text-emerald-600 group-hover:translate-x-1 transition-all" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* DETAILS MODAL */}
+            {selectedLead && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-reveal">
+                    <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col border border-white">
+                        <div className="bg-emerald-600 p-8 flex justify-between items-center text-white">
+                            <div>
+                                <h3 className="text-xl font-black uppercase tracking-tight">Detalhes da Solicitação</h3>
+                                <p className="text-[9px] font-black text-emerald-200 uppercase tracking-widest mt-1">Ref ID: {selectedLead.id}</p>
+                            </div>
+                            <button onClick={() => setSelectedLead(null)} className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-all">
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <div className="p-10 grid grid-cols-1 md:grid-cols-2 gap-10">
+                            <div className="space-y-8">
+                                <div>
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Dados do Interessado</label>
+                                    <p className="text-3xl font-black text-slate-900 truncate uppercase tracking-tighter">{selectedLead.nome}</p>
+                                    <p className="text-lg font-bold text-emerald-600 flex items-center gap-2 mt-1">
+                                        <MessageCircle size={18} /> {selectedLead.whatsapp}
+                                    </p>
+                                </div>
+
+                                <div className="grid grid-cols-1 gap-4">
+                                    <div className="bg-slate-50 p-4 rounded-2xl">
+                                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Origem / Tipo</label>
+                                        <div className="flex items-center gap-3">
+                                            {getTipoIcon(selectedLead.tipo)}
+                                            <p className="text-xs font-black text-slate-900 uppercase">{getTipoLabel(selectedLead.tipo)}</p>
+                                        </div>
+                                    </div>
+                                    <div className="bg-slate-50 p-4 rounded-2xl">
+                                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Data do Contato</label>
+                                        <div className="flex items-center gap-3">
+                                            <Calendar size={18} className="text-slate-400" />
+                                            <p className="text-xs font-black text-slate-900 uppercase">{formatDate(selectedLead.timestamp)}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-8 border-l border-slate-100 pl-10">
+                                {selectedLead.localizacao && (
+                                    <div>
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Localização Fazenda</label>
+                                        <p className="text-sm font-bold text-slate-700">{selectedLead.localizacao}</p>
+                                    </div>
+                                )}
+                                {selectedLead.tipo_gado && (
+                                    <div>
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Tipo de Gado</label>
+                                        <p className="text-sm font-bold text-slate-700">{selectedLead.tipo_gado}</p>
+                                    </div>
+                                )}
+                                {selectedLead.reserva_item && (
+                                    <div>
+                                        <label className="text-[10px] font-black text-emerald-400 uppercase tracking-widest block mb-1">Item Reservado</label>
+                                        <p className="text-sm font-black text-emerald-600">{selectedLead.reserva_item} ({selectedLead.reserva_quantidade})</p>
+                                    </div>
+                                )}
+                                {(selectedLead as any).senha_solicitada && (
+                                    <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100">
+                                        <label className="text-[10px] font-black text-amber-600 uppercase tracking-widest block mb-1">Senha Solicitada para Cadastro</label>
+                                        <p className="text-sm font-black text-amber-900 font-mono">{(selectedLead as any).senha_solicitada}</p>
+                                        <p className="text-[9px] text-amber-600 mt-1 font-bold">VALIDE A IDENTIDADE NO WHATSAPP ANTES DE CADASTRAR NO SISTEMA.</p>
+                                    </div>
+                                )}
+                                {selectedLead.mensagem && (
+                                    <div>
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Mensagem do Cliente</label>
+                                        <p className="text-sm font-medium text-slate-600 leading-relaxed italic border-l-2 border-emerald-500 pl-4">
+                                            "{selectedLead.mensagem}"
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="p-8 bg-slate-50 border-t border-slate-100 flex gap-4">
+                            <button
+                                onClick={() => {
+                                    let confirmText = `*CONTATO FRIGOGEST - THIAGO 704*%0A%0AOlá *${selectedLead.nome.toUpperCase()}*, tudo bem?%0A%0A`;
+
+                                    if (selectedLead.tipo === 'fornecedor') {
+                                        // Mensagem estratégica para quem quer vender gado
+                                        confirmText += `Vi que você tem interesse em vender gado conforme sua mensagem no site:%0A*Gado:* ${selectedLead.tipo_gado || 'Não especificado'}%0A*Local:* ${selectedLead.localizacao || 'Não especificado'}%0A%0APodemos agendar seu pedido de compra? Quantas cabeças você tem prontas hoje?%0A%0A*Tenho algumas dúvidas:*%0A1. Qual a arrobação média do seu gado?%0A2. Você tem vídeo do lote para me enviar?%0A3. O gado está em qual região?`;
+                                    } else if (selectedLead.tipo === 'venda') {
+                                        // Mensagem para quem quer comprar carne/produtos
+                                        confirmText += `Recebi sua solicitação de compra pelo site:%0A*Item:* ${selectedLead.reserva_item || 'Não especificado'}%0A*Quantidade:* ${selectedLead.reserva_quantidade || 'Não especificado'}%0A%0APodemos confirmar seu pedido de compra? Estamos pagando o valor de mercado conforme nossa tabela.%0A%0AAguardamos sua confirmação para entrega!`;
+                                    } else {
+                                        // Mensagem padrão para clientes antigos ou outros
+                                        confirmText += `Recebi sua solicitação pelo site:%0A*Tipo:* ${getTipoLabel(selectedLead.tipo)}%0A${selectedLead.reserva_item ? `*Item:* ${selectedLead.reserva_item}%0A` : ''}${selectedLead.reserva_quantidade ? `*Quantidade:* ${selectedLead.reserva_quantidade}%0A` : ''}%0APodemos confirmar este pedido?`;
+                                    }
+
+                                    window.open(`https://wa.me/55${selectedLead.whatsapp.replace(/\D/g, '')}?text=${confirmText}`, '_blank');
+                                    handleStatusChange(selectedLead.id, 'em_atendimento');
+                                    setSelectedLead(null);
+                                }}
+                                className="flex-1 bg-emerald-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-500 shadow-xl shadow-emerald-900/10 transition-all flex items-center justify-center gap-3"
+                            >
+                                <MessageCircle size={18} /> Confirmar via WhatsApp
+                            </button>
+                            <button
+                                onClick={() => { handleStatusChange(selectedLead.id, 'convertido'); setSelectedLead(null); }}
+                                className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all"
+                            >
+                                Marcar como Lindo/Arquivar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default IncomingRequests;
