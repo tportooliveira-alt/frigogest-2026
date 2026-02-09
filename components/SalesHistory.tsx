@@ -55,7 +55,7 @@ const SalesHistory: React.FC<SalesHistoryProps> = ({ stock, batches, sales, clie
             const client = clients.find(c => c.id_ferro === sale.id_cliente);
             const revenue = sale.peso_real_saida * sale.preco_venda_kg;
             const costKg = batch ? (Number(batch.custo_real_kg) || 0) : 0;
-            const cost = ((item?.peso_entrada || sale.peso_real_saida) * costKg) + (sale.custo_extras_total || 0);
+            const cost = (sale.peso_real_saida * costKg) + (sale.custo_extras_total || 0);
             return { sale, item, batch, client, revenue, cost, profit: revenue - cost };
         }).filter(data => {
             if (!searchTerm) return true;

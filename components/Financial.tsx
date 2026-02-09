@@ -130,7 +130,7 @@ const Financial: React.FC<FinancialProps> = ({
     const revenue = (sale.peso_real_saida || 0) * (sale.preco_venda_kg || 0);
     const costKg = batch ? (Number(batch.custo_real_kg) || 0) : 0;
     const itemWeight = (item?.peso_entrada || sale.peso_real_saida || 0);
-    const totalCost = itemWeight * costKg;
+    const totalCost = (sale.peso_real_saida || 0) * costKg;
     const operationalCost = (sale.custo_extras_total || 0);
     return { revenue, cgs: totalCost, operationalCost, netProfit: revenue - totalCost - operationalCost };
   };
