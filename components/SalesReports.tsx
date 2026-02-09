@@ -32,7 +32,10 @@ const SalesReports: React.FC<SalesReportsProps> = ({ sales, batches, stock, clie
 
   const getSaleDetails = (sale: Sale) => {
     const item = stock.find(s => s.id_completo === sale.id_completo);
-    const batch = item ? batches.find(b => b.id_lote === item.id_lote) : null;
+    // CORREÇÃO AUDITORIA #3: Para carcaças inteiras (id_completo = "LOTE-SEQ-INTEIRO"),
+    // não existe stock item com esse ID. Extrair id_lote do id_completo como fallback.
+    const loteId = item?.id_lote || sale.id_completo.split('-').slice(0, 3).join('-');
+    const batch = item ? batches.find(b => b.id_lote === item.id_lote) : batches.find(b => b.id_lote === loteId);
     const client = clients.find(c => c.id_ferro === sale.id_cliente);
     const revenue = sale.peso_real_saida * sale.preco_venda_kg;
     const costKg = batch ? batch.custo_real_kg : 0;

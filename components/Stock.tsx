@@ -381,8 +381,10 @@ const Stock: React.FC<StockProps> = ({ stock, batches, sales, clients, updateBat
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              setEditingBatch(batch);
-                              handleDeleteBatch();
+                              // CORREÇÃO AUDITORIA #9: Abrir modal de edição ao invés de deletar diretamente.
+                              // O setState é assíncrono, então handleDeleteBatch() era chamado antes
+                              // de editingBatch ser atualizado, causando falha silenciosa.
+                              handleEditBatch(batch);
                             }}
                             className="w-10 h-10 rounded-xl bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center transition-all shadow-lg hover:scale-110"
                             title="Excluir lote"

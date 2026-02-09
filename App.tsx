@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import Clients from './components/Clients';
@@ -349,6 +349,12 @@ const App: React.FC = () => {
   };
 
   const sanitize = (val: any) => JSON.parse(JSON.stringify(val));
+
+  // REGRA DE NEGÓCIO: Lotes só existem no sistema depois de FECHADOS.
+  // Componentes consumidores recebem apenas lotes/estoque de lotes fechados.
+  const closedBatches = useMemo(() => data.batches.filter(b => b.status === 'FECHADO'), [data.batches]);
+  const closedBatchIds = useMemo(() => new Set(closedBatches.map(b => b.id_lote)), [closedBatches]);
+  const closedStock = useMemo(() => data.stock.filter(s => closedBatchIds.has(s.id_lote)), [data.stock, closedBatchIds]);
 
   const addBatch = async (batch: any): Promise<{ success: boolean; error?: string }> => {
     const cleanBatch = { ...batch };
@@ -812,19 +818,9 @@ const App: React.FC = () => {
         forma_pagamento: method
       });
 
-      const transaction = {
-        id: `TR-PARC-${saleId}-${Date.now()}`,
-        data: date,
-        descricao: `Pagamento ${novoValorPago >= valorTotal ? 'Final' : 'Parcial'} - ${sale.nome_cliente || 'Cliente'} - ${sale.id_completo}`,
-        tipo: 'ENTRADA',
-        categoria: 'VENDA',
-        valor: valorPagamento,
-        referencia_id: saleId,
-        metodo_pagamento: method
-      };
-
-      await addTransaction(transaction);
-      // addTransaction already logs, but specialized log might be nice? Handled by addTransaction for now.
+      // CORREÇÃO AUDITORIA #1: NÃO criar transação aqui.
+      // A transação de ENTRADA já é criada por Financial.confirmPartialPayment().
+      // Criar aqui também causava DUPLICAÇÃO no fluxo de caixa.
       fetchData();
     } catch (error) {
       console.error('Error adding partial payment:', error);
@@ -905,7 +901,7 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-gray-50 text-gray-900 font-sans overflow-x-hidden selection:bg-blue-200" >
       {currentView === 'menu' && <Sidebar setView={setCurrentView} onLogout={handleLogout} />}
       {currentView === 'system_reset' && <SystemReset onBack={() => setCurrentView('menu')} refreshData={fetchData} />}
-      {currentView === 'dashboard' && <Dashboard sales={data.sales} stock={data.stock} transactions={data.transactions} batches={data.batches} clients={data.clients} onBack={() => setCurrentView('menu')} />}
+      {currentView === 'dashboard' && <Dashboard sales={data.sales} stock={closedStock} transactions={data.transactions} batches={closedBatches} clients={data.clients} onBack={() => setCurrentView('menu')} />}
       {
         currentView === 'clients' && <Clients
           clients={data.clients}
@@ -966,8 +962,8 @@ const App: React.FC = () => {
         />
       }
       {currentView === 'stock' && <Stock
-        stock={data.stock}
-        batches={data.batches}
+        stock={closedStock}
+        batches={closedBatches}
         sales={data.sales}
         clients={data.clients}
         updateBatch={async (id, updates) => {
@@ -980,7 +976,7 @@ const App: React.FC = () => {
         onBack={() => setCurrentView('menu')}
       />}
       {
-        currentView === 'expedition' && <Expedition clients={data.clients} stock={data.stock} batches={data.batches} salesHistory={data.sales} onConfirmSale={(saleData) => {
+        currentView === 'expedition' && <Expedition clients={data.clients} stock={closedStock} batches={closedBatches} salesHistory={data.sales} onConfirmSale={(saleData) => {
           const { client, items, pricePerKg, extrasCost } = saleData;
 
           // AGRUPAR: Banda A + Banda B do mesmo animal = CARCAÇA INTEIRA
@@ -993,6 +989,10 @@ const App: React.FC = () => {
 
           const newSales: Sale[] = [];
           let groupIndex = 0;
+
+          // CORREÇÃO AUDITORIA #4: Calcular peso total para distribuir extras proporcionalmente
+          const totalSaleWeight = [...groupedItems.values()].reduce((acc, groupItems) =>
+            acc + groupItems.reduce((sum: number, i: any) => sum + (i.peso_saida || i.peso_entrada), 0), 0);
 
           groupedItems.forEach((groupItems, key) => {
             const isCarcacaInteira = groupItems.length > 1; // Banda A + Banda B = 2 itens
@@ -1007,7 +1007,8 @@ const App: React.FC = () => {
             // Calcular lucro consolidado
             const revenue = pesoSaidaTotal * pricePerKg;
             const cost = pesoSaidaTotal * custoKg;
-            const groupExtraCost = (extrasCost / groupedItems.size);
+            // CORREÇÃO AUDITORIA #4: Distribuir extras proporcionalmente ao peso
+            const groupExtraCost = totalSaleWeight > 0 ? (extrasCost * (pesoSaidaTotal / totalSaleWeight)) : 0;
             const profit = revenue - cost - groupExtraCost;
 
             // ID: se for carcaça inteira, usa ID especial
@@ -1040,8 +1041,8 @@ const App: React.FC = () => {
           setCurrentView('sales_history');
         }} onBack={() => setCurrentView('menu')} />
       }
-      {currentView === 'sales_history' && <SalesHistory stock={data.stock} batches={data.batches} sales={data.sales} clients={data.clients} initialSearchTerm={viewParams?.searchTerm} onBack={() => setCurrentView('menu')} />}
-      {currentView === 'financial' && <Financial sales={data.sales} batches={data.batches} stock={data.stock} clients={data.clients} transactions={data.transactions} updateSaleCost={updateSaleCost} addTransaction={addTransaction} deleteTransaction={deleteTransaction} addPartialPayment={addPartialPayment} onBack={() => setCurrentView('menu')} payables={data.payables} addPayable={handleAddPayable} updatePayable={handleUpdatePayable} deletePayable={handleDeletePayable} />}
+      {currentView === 'sales_history' && <SalesHistory stock={closedStock} batches={closedBatches} sales={data.sales} clients={data.clients} initialSearchTerm={viewParams?.searchTerm} onBack={() => setCurrentView('menu')} />}
+      {currentView === 'financial' && <Financial sales={data.sales} batches={closedBatches} stock={closedStock} clients={data.clients} transactions={data.transactions} updateSaleCost={updateSaleCost} addTransaction={addTransaction} deleteTransaction={deleteTransaction} addPartialPayment={addPartialPayment} onBack={() => setCurrentView('menu')} payables={data.payables} addPayable={handleAddPayable} updatePayable={handleUpdatePayable} deletePayable={handleDeletePayable} />}
       {currentView === 'scheduled_orders' && <ScheduledOrders scheduledOrders={data.scheduledOrders} clients={data.clients} addScheduledOrder={addScheduledOrder} updateScheduledOrder={updateScheduledOrder} deleteScheduledOrder={deleteScheduledOrder} onViewClientHistory={(clientName) => { setViewParams({ searchTerm: clientName }); setCurrentView('sales_history'); }} onBack={() => setCurrentView('menu')} />}
       {
         currentView === 'report' && <CollaboratorReport

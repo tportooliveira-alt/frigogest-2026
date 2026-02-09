@@ -126,10 +126,12 @@ const Financial: React.FC<FinancialProps> = ({
 
   const getSaleDetails = (sale: Sale) => {
     const item = stock.find(s => s.id_completo === sale.id_completo);
-    const batch = item ? batches.find(b => b.id_lote === item.id_lote) : null;
+    // CORREÇÃO AUDITORIA #3: Para carcaças inteiras (id_completo = "LOTE-SEQ-INTEIRO"),
+    // não existe stock item com esse ID. Extrair id_lote do id_completo como fallback.
+    const loteId = item?.id_lote || sale.id_completo.split('-').slice(0, 3).join('-');
+    const batch = item ? batches.find(b => b.id_lote === item.id_lote) : batches.find(b => b.id_lote === loteId);
     const revenue = (sale.peso_real_saida || 0) * (sale.preco_venda_kg || 0);
     const costKg = batch ? (Number(batch.custo_real_kg) || 0) : 0;
-    const itemWeight = (item?.peso_entrada || sale.peso_real_saida || 0);
     const totalCost = (sale.peso_real_saida || 0) * costKg;
     const operationalCost = (sale.custo_extras_total || 0);
     return { revenue, cgs: totalCost, operationalCost, netProfit: revenue - totalCost - operationalCost };
@@ -214,21 +216,23 @@ const Financial: React.FC<FinancialProps> = ({
   const validLoteIds = useMemo(() => new Set(closedBatches.map(b => b.id_lote)), [closedBatches]);
   const hasValidBatches = closedBatches.length > 0;
   const validTransactions = useMemo(() =>
-    hasValidBatches
-      ? transactions.filter(t => {
-        // Transações sem referência = sempre válidas (manuais)
-        if (!t.referencia_id) return true;
-        // Transações de lote = verificar se lote existe
-        if (validLoteIds.has(t.referencia_id)) return true;
-        // Transações de RECEBIMENTO de vendas (ex: TR-REC-V-xxx) = sempre válidas
-        if (t.id?.startsWith('TR-REC-') || t.id?.startsWith('TR-PAY-') || t.categoria === 'VENDA') return true;
-        // Transações de DESCONTO = sempre válidas
-        if (t.id?.startsWith('TR-DESC-') || t.categoria === 'DESCONTO') return true;
-        // Outros casos: se não tem hífen no referencia_id = válido
-        if (!t.referencia_id.includes('-')) return true;
-        return false;
-      })
-      : [], // SE NÃO HÁ LOTES, RETORNA VAZIO
+    transactions.filter(t => {
+      // CORREÇÃO AUDITORIA #8: Transações sem referência a lote SEMPRE exibidas,
+      // mesmo quando não existem lotes fechados.
+      if (!t.referencia_id) return true;
+      // Transações de lote = verificar se lote existe
+      if (validLoteIds.has(t.referencia_id)) return true;
+      // Transações de RECEBIMENTO de vendas (ex: TR-REC-V-xxx) = sempre válidas
+      if (t.id?.startsWith('TR-REC-') || t.id?.startsWith('TR-PAY-') || t.categoria === 'VENDA') return true;
+      // Transações de DESCONTO = sempre válidas
+      if (t.id?.startsWith('TR-DESC-') || t.categoria === 'DESCONTO') return true;
+      // Outros casos: se não tem hífen no referencia_id = válido
+      if (!t.referencia_id.includes('-')) return true;
+      // Se tem lotes válidos, filtrar transações de lotes inexistentes
+      if (hasValidBatches) return false;
+      // Se NÃO há lotes, manter tudo (não esconder transações)
+      return true;
+    }),
     [transactions, validLoteIds, hasValidBatches]
   );
 
