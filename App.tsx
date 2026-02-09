@@ -715,260 +715,241 @@ const App: React.FC = () => {
         const docRef = doc(db, 'payables', `PAY-LOTE-${batch.id_lote}`);
         await setDoc(docRef, payableData);
       }
-    };
+    }
+  };
 
-    const addSales = async (newSales: Sale[]): Promise<{ success: boolean; error?: string }> => {
-      const cleanSales = sanitize(newSales);
-      if (OFFLINE_MODE) {
-        // Coletar todos os IDs de estoque (originais e diretos)
-        const allStockIds = new Set<string>();
-        cleanSales.forEach((sale: any) => {
-          if (sale.stock_ids_originais && Array.isArray(sale.stock_ids_originais)) {
-            sale.stock_ids_originais.forEach((id: string) => allStockIds.add(id));
-          } else {
-            allStockIds.add(sale.id_completo);
-          }
-        });
-
-        setData(prev => ({
-          ...prev,
-          sales: [...prev.sales, ...cleanSales],
-          stock: prev.stock.map(item =>
-            allStockIds.has(item.id_completo)
-              ? { ...item, status: 'VENDIDO' as const }
-              : item
-          )
-        }));
-        return { success: true };
-      }
-
-      if (!db) return { success: false, error: 'Firebase não configurado' };
-
-      try {
-        const batch = writeBatch(db);
-
-        // Add sales
-        cleanSales.forEach((sale: Sale) => {
-          const saleRef = doc(db, 'sales', sale.id_venda);
-          batch.set(saleRef, sale);
-        });
-
-        // Update stock items status - usa stock_ids_originais quando disponível
-        cleanSales.forEach((sale: any) => {
-          const idsToUpdate = sale.stock_ids_originais && Array.isArray(sale.stock_ids_originais)
-            ? sale.stock_ids_originais
-            : [sale.id_completo];
-
-          idsToUpdate.forEach((stockId: string) => {
-            const stockRef = doc(db, 'stock_items', stockId);
-            batch.update(stockRef, { status: 'VENDIDO' });
-          });
-        });
-
-        await batch.commit();
-        if (session?.user) {
-          logAction(session.user, 'CREATE', 'SALE', `Venda realizada: ${cleanSales.length} itens para ${cleanSales[0].nome_cliente || 'Cliente'}`);
+  const addSales = async (newSales: Sale[]): Promise<{ success: boolean; error?: string }> => {
+    const cleanSales = sanitize(newSales);
+    if (OFFLINE_MODE) {
+      // Coletar todos os IDs de estoque (originais e diretos)
+      const allStockIds = new Set<string>();
+      cleanSales.forEach((sale: any) => {
+        if (sale.stock_ids_originais && Array.isArray(sale.stock_ids_originais)) {
+          sale.stock_ids_originais.forEach((id: string) => allStockIds.add(id));
+        } else {
+          allStockIds.add(sale.id_completo);
         }
-        fetchData();
-        return { success: true };
-      } catch (e: any) {
-        return { success: false, error: e.message };
-      }
-    };
+      });
 
-    const removeStockItem = async (id_completo: string) => {
-      if (!db) return;
-      await deleteDoc(doc(db, 'stock_items', id_completo));
-      if (session?.user) logAction(session.user, 'DELETE', 'STOCK', `Item removido do estoque: ${id_completo}`);
-      fetchData();
-    };
-
-    const updateSaleCost = async (id_venda: string, newCost: number) => {
-      if (!db) return;
-      await updateDoc(doc(db, 'sales', id_venda), { custo_extras_total: newCost });
-      fetchData();
-    };
-
-    const deleteTransaction = async (id: string) => {
-      if (!db) return;
-      await deleteDoc(doc(db, 'transactions', id));
-      fetchData();
-    };
-
-    const addPartialPayment = async (saleId: string, valorPagamento: number, method: PaymentMethod, date: string) => {
-      const sale = data.sales.find(s => s.id_venda === saleId);
-      if (!sale || !db) return;
-
-      const valorTotal = sale.peso_real_saida * sale.preco_venda_kg;
-      const valorPagoAtual = (sale as any).valor_pago || 0;
-      const novoValorPago = valorPagoAtual + valorPagamento;
-      const status = novoValorPago >= valorTotal ? 'PAGO' : 'PENDENTE';
-
-      try {
-        await updateDoc(doc(db, 'sales', saleId), {
-          valor_pago: novoValorPago,
-          status_pagamento: status,
-          forma_pagamento: method
-        });
-
-        const transaction = {
-          id: `TR-PARC-${saleId}-${Date.now()}`,
-          data: date,
-          descricao: `Pagamento ${novoValorPago >= valorTotal ? 'Final' : 'Parcial'} - ${sale.nome_cliente || 'Cliente'} - ${sale.id_completo}`,
-          tipo: 'ENTRADA',
-          categoria: 'VENDA',
-          valor: valorPagamento,
-          referencia_id: saleId,
-          metodo_pagamento: method
-        };
-
-        await addTransaction(transaction);
-        // addTransaction already logs, but specialized log might be nice? Handled by addTransaction for now.
-        fetchData();
-      } catch (error) {
-        console.error('Error adding partial payment:', error);
-      }
-    };
-
-    const receiveClientPayment = async (clientId: string, amount: number, method: PaymentMethod, date: string) => {
-      const pendingSales = data.sales
-        .filter(s => s.id_cliente === clientId && s.status_pagamento === 'PENDENTE')
-        .sort((a, b) => new Date(a.data_venda).getTime() - new Date(b.data_venda).getTime());
-
-      let remaining = amount;
-      let count = 0;
-
-      for (const sale of pendingSales) {
-        if (remaining <= 0.01) break;
-        const total = sale.peso_real_saida * sale.preco_venda_kg;
-        const pago = (sale as any).valor_pago || 0;
-        const devendo = total - pago;
-        const pagarNesta = Math.min(devendo, remaining);
-
-        if (pagarNesta > 0) {
-          await addPartialPayment(sale.id_venda, pagarNesta, method, date);
-          remaining -= pagarNesta;
-          count++;
-        }
-      }
-
-      if (count > 0) {
-        if (session?.user) logAction(session.user, 'CREATE', 'TRANSACTION', `Pagamento recebido de cliente: ${amount} (${method})`);
-        fetchData();
-      }
-    };
-
-    const addScheduledOrder = async (order: any) => {
-      if (!db) return;
-      const cleanOrder = sanitize(order);
-      await setDoc(doc(db, 'scheduled_orders', cleanOrder.id), cleanOrder);
-      if (session?.user) logAction(session.user, 'CREATE', 'ORDER', `Pedido agendado criado para ${cleanOrder.nome_cliente}`);
-      fetchData();
-    };
-
-    const updateScheduledOrder = async (id: string, updates: any) => {
-      if (!db) return;
-      await updateDoc(doc(db, 'scheduled_orders', id), sanitize(updates));
-      fetchData();
-    };
-
-    const deleteScheduledOrder = async (id: string) => {
-      if (!db) return;
-      await deleteDoc(doc(db, 'scheduled_orders', id));
-      if (session?.user) logAction(session.user, 'DELETE', 'ORDER', `Pedido excluído: ${id}`);
-      fetchData();
-    };
-
-    const handleLogout = async () => {
-      if (auth) {
-        await signOut(auth);
-        if (session?.user) logAction(session.user, 'LOGOUT', 'SYSTEM', `Usuário saiu do sistema`);
-      }
-      setSession(null);
-      setCurrentView('menu');
-    };
-
-    if (loading) {
-      return (
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-          <Loader2 className="text-blue-600 animate-spin" size={48} />
-        </div>
-      );
+      setData(prev => ({
+        ...prev,
+        sales: [...prev.sales, ...cleanSales],
+        stock: prev.stock.map(item =>
+          allStockIds.has(item.id_completo)
+            ? { ...item, status: 'VENDIDO' as const }
+            : item
+        )
+      }));
+      return { success: true };
     }
 
-    if (!session) {
-      return <Login onLoginSuccess={() => { }} />;
+    if (!db) return { success: false, error: 'Firebase não configurado' };
+
+    try {
+      const batch = writeBatch(db);
+
+      // Add sales
+      cleanSales.forEach((sale: Sale) => {
+        const saleRef = doc(db, 'sales', sale.id_venda);
+        batch.set(saleRef, sale);
+      });
+
+      // Update stock items status - usa stock_ids_originais quando disponível
+      cleanSales.forEach((sale: any) => {
+        const idsToUpdate = sale.stock_ids_originais && Array.isArray(sale.stock_ids_originais)
+          ? sale.stock_ids_originais
+          : [sale.id_completo];
+
+        idsToUpdate.forEach((stockId: string) => {
+          const stockRef = doc(db, 'stock_items', stockId);
+          batch.update(stockRef, { status: 'VENDIDO' });
+        });
+      });
+
+      await batch.commit();
+      if (session?.user) {
+        logAction(session.user, 'CREATE', 'SALE', `Venda realizada: ${cleanSales.length} itens para ${cleanSales[0].nome_cliente || 'Cliente'}`);
+      }
+      fetchData();
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  };
+
+  const removeStockItem = async (id_completo: string) => {
+    if (!db) return;
+    await deleteDoc(doc(db, 'stock_items', id_completo));
+    if (session?.user) logAction(session.user, 'DELETE', 'STOCK', `Item removido do estoque: ${id_completo}`);
+    fetchData();
+  };
+
+  const updateSaleCost = async (id_venda: string, newCost: number) => {
+    if (!db) return;
+    await updateDoc(doc(db, 'sales', id_venda), { custo_extras_total: newCost });
+    fetchData();
+  };
+
+  const deleteTransaction = async (id: string) => {
+    if (!db) return;
+    await deleteDoc(doc(db, 'transactions', id));
+    fetchData();
+  };
+
+  const addPartialPayment = async (saleId: string, valorPagamento: number, method: PaymentMethod, date: string) => {
+    const sale = data.sales.find(s => s.id_venda === saleId);
+    if (!sale || !db) return;
+
+    const valorTotal = sale.peso_real_saida * sale.preco_venda_kg;
+    const valorPagoAtual = (sale as any).valor_pago || 0;
+    const novoValorPago = valorPagoAtual + valorPagamento;
+    const status = novoValorPago >= valorTotal ? 'PAGO' : 'PENDENTE';
+
+    try {
+      await updateDoc(doc(db, 'sales', saleId), {
+        valor_pago: novoValorPago,
+        status_pagamento: status,
+        forma_pagamento: method
+      });
+
+      const transaction = {
+        id: `TR-PARC-${saleId}-${Date.now()}`,
+        data: date,
+        descricao: `Pagamento ${novoValorPago >= valorTotal ? 'Final' : 'Parcial'} - ${sale.nome_cliente || 'Cliente'} - ${sale.id_completo}`,
+        tipo: 'ENTRADA',
+        categoria: 'VENDA',
+        valor: valorPagamento,
+        referencia_id: saleId,
+        metodo_pagamento: method
+      };
+
+      await addTransaction(transaction);
+      // addTransaction already logs, but specialized log might be nice? Handled by addTransaction for now.
+      fetchData();
+    } catch (error) {
+      console.error('Error adding partial payment:', error);
+    }
+  };
+
+  const receiveClientPayment = async (clientId: string, amount: number, method: PaymentMethod, date: string) => {
+    const pendingSales = data.sales
+      .filter(s => s.id_cliente === clientId && s.status_pagamento === 'PENDENTE')
+      .sort((a, b) => new Date(a.data_venda).getTime() - new Date(b.data_venda).getTime());
+
+    let remaining = amount;
+    let count = 0;
+
+    for (const sale of pendingSales) {
+      if (remaining <= 0.01) break;
+      const total = sale.peso_real_saida * sale.preco_venda_kg;
+      const pago = (sale as any).valor_pago || 0;
+      const devendo = total - pago;
+      const pagarNesta = Math.min(devendo, remaining);
+
+      if (pagarNesta > 0) {
+        await addPartialPayment(sale.id_venda, pagarNesta, method, date);
+        remaining -= pagarNesta;
+        count++;
+      }
     }
 
+    if (count > 0) {
+      if (session?.user) logAction(session.user, 'CREATE', 'TRANSACTION', `Pagamento recebido de cliente: ${amount} (${method})`);
+      fetchData();
+    }
+  };
+
+  const addScheduledOrder = async (order: any) => {
+    if (!db) return;
+    const cleanOrder = sanitize(order);
+    await setDoc(doc(db, 'scheduled_orders', cleanOrder.id), cleanOrder);
+    if (session?.user) logAction(session.user, 'CREATE', 'ORDER', `Pedido agendado criado para ${cleanOrder.nome_cliente}`);
+    fetchData();
+  };
+
+  const updateScheduledOrder = async (id: string, updates: any) => {
+    if (!db) return;
+    await updateDoc(doc(db, 'scheduled_orders', id), sanitize(updates));
+    fetchData();
+  };
+
+  const deleteScheduledOrder = async (id: string) => {
+    if (!db) return;
+    await deleteDoc(doc(db, 'scheduled_orders', id));
+    if (session?.user) logAction(session.user, 'DELETE', 'ORDER', `Pedido excluído: ${id}`);
+    fetchData();
+  };
+
+  const handleLogout = async () => {
+    if (auth) {
+      await signOut(auth);
+      if (session?.user) logAction(session.user, 'LOGOUT', 'SYSTEM', `Usuário saiu do sistema`);
+    }
+    setSession(null);
+    setCurrentView('menu');
+  };
+
+  if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 text-gray-900 font-sans overflow-x-hidden selection:bg-blue-200" >
-        {currentView === 'menu' && <Sidebar setView={setCurrentView} onLogout={handleLogout} />}
-        {currentView === 'system_reset' && <SystemReset onBack={() => setCurrentView('menu')} refreshData={fetchData} />}
-        {currentView === 'dashboard' && <Dashboard sales={data.sales} stock={data.stock} transactions={data.transactions} batches={data.batches} clients={data.clients} onBack={() => setCurrentView('menu')} />}
-        {
-          currentView === 'clients' && <Clients
-            clients={data.clients}
-            sales={data.sales}
-            addClient={async (c) => {
-              if (db) {
-                await setDoc(doc(db, 'clients', c.id_ferro), sanitize(c));
-                if (session?.user) logAction(session.user, 'CREATE', 'CLIENT', `Novo cliente: ${c.nome_social}`);
-                fetchData();
-              }
-            }}
-            updateClient={async (c) => {
-              if (db) {
-                await setDoc(doc(db, 'clients', c.id_ferro), sanitize(c), { merge: true });
-                if (session?.user) logAction(session.user, 'UPDATE', 'CLIENT', `Cliente atualizado: ${c.nome_social}`);
-                fetchData();
-              }
-            }}
-            deleteClient={async (id) => {
-              if (db) {
-                await deleteDoc(doc(db, 'clients', id));
-                if (session?.user) logAction(session.user, 'DELETE', 'CLIENT', `Cliente excluído: ${id}`);
-                fetchData();
-              }
-            }}
-            receiveClientPayment={receiveClientPayment}
-            onBack={() => setCurrentView('menu')}
-          />
-        }
-        {
-          currentView === 'suppliers' && <Suppliers
-            suppliers={data.suppliers}
-            addSupplier={handleAddSupplier}
-            updateSupplier={handleUpdateSupplier}
-            deleteSupplier={handleDeleteSupplier}
-            onBack={() => setCurrentView('menu')}
-          />
-        }
-        {
-          currentView === 'batches' && <Batches
-            batches={data.batches}
-            suppliers={data.suppliers}
-            stock={data.stock}
-            addBatch={addBatch}
-            updateBatch={async (id, updates) => {
-              if (!db) return;
-              await updateDoc(doc(db, 'batches', id), sanitize(updates));
-              if (session?.user) logAction(session.user, 'UPDATE', 'BATCH', `Lote atualizado: ${id}`);
-              fetchData();
-            }}
-            deleteBatch={deleteBatch}
-            addStockItem={addStockItem}
-            updateStockItem={updateStockItem}
-            removeStockItem={removeStockItem}
-            registerBatchFinancial={registerBatchFinancial}
-            onGoToStock={() => setCurrentView('stock')}
-            onBack={() => setCurrentView('menu')}
-          />
-        }
-        {currentView === 'stock' && <Stock
-          stock={data.stock}
-          batches={data.batches}
-          sales={data.sales}
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Loader2 className="text-blue-600 animate-spin" size={48} />
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <Login onLoginSuccess={() => { }} />;
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 text-gray-900 font-sans overflow-x-hidden selection:bg-blue-200" >
+      {currentView === 'menu' && <Sidebar setView={setCurrentView} onLogout={handleLogout} />}
+      {currentView === 'system_reset' && <SystemReset onBack={() => setCurrentView('menu')} refreshData={fetchData} />}
+      {currentView === 'dashboard' && <Dashboard sales={data.sales} stock={data.stock} transactions={data.transactions} batches={data.batches} clients={data.clients} onBack={() => setCurrentView('menu')} />}
+      {
+        currentView === 'clients' && <Clients
           clients={data.clients}
+          sales={data.sales}
+          addClient={async (c) => {
+            if (db) {
+              await setDoc(doc(db, 'clients', c.id_ferro), sanitize(c));
+              if (session?.user) logAction(session.user, 'CREATE', 'CLIENT', `Novo cliente: ${c.nome_social}`);
+              fetchData();
+            }
+          }}
+          updateClient={async (c) => {
+            if (db) {
+              await setDoc(doc(db, 'clients', c.id_ferro), sanitize(c), { merge: true });
+              if (session?.user) logAction(session.user, 'UPDATE', 'CLIENT', `Cliente atualizado: ${c.nome_social}`);
+              fetchData();
+            }
+          }}
+          deleteClient={async (id) => {
+            if (db) {
+              await deleteDoc(doc(db, 'clients', id));
+              if (session?.user) logAction(session.user, 'DELETE', 'CLIENT', `Cliente excluído: ${id}`);
+              fetchData();
+            }
+          }}
+          receiveClientPayment={receiveClientPayment}
+          onBack={() => setCurrentView('menu')}
+        />
+      }
+      {
+        currentView === 'suppliers' && <Suppliers
+          suppliers={data.suppliers}
+          addSupplier={handleAddSupplier}
+          updateSupplier={handleUpdateSupplier}
+          deleteSupplier={handleDeleteSupplier}
+          onBack={() => setCurrentView('menu')}
+        />
+      }
+      {
+        currentView === 'batches' && <Batches
+          batches={data.batches}
+          suppliers={data.suppliers}
+          stock={data.stock}
+          addBatch={addBatch}
           updateBatch={async (id, updates) => {
             if (!db) return;
             await updateDoc(doc(db, 'batches', id), sanitize(updates));
@@ -976,148 +957,168 @@ const App: React.FC = () => {
             fetchData();
           }}
           deleteBatch={deleteBatch}
+          addStockItem={addStockItem}
+          updateStockItem={updateStockItem}
+          removeStockItem={removeStockItem}
+          registerBatchFinancial={registerBatchFinancial}
+          onGoToStock={() => setCurrentView('stock')}
           onBack={() => setCurrentView('menu')}
-        />}
-        {
-          currentView === 'expedition' && <Expedition clients={data.clients} stock={data.stock} batches={data.batches} salesHistory={data.sales} onConfirmSale={(saleData) => {
-            const { client, items, pricePerKg, extrasCost } = saleData;
+        />
+      }
+      {currentView === 'stock' && <Stock
+        stock={data.stock}
+        batches={data.batches}
+        sales={data.sales}
+        clients={data.clients}
+        updateBatch={async (id, updates) => {
+          if (!db) return;
+          await updateDoc(doc(db, 'batches', id), sanitize(updates));
+          if (session?.user) logAction(session.user, 'UPDATE', 'BATCH', `Lote atualizado: ${id}`);
+          fetchData();
+        }}
+        deleteBatch={deleteBatch}
+        onBack={() => setCurrentView('menu')}
+      />}
+      {
+        currentView === 'expedition' && <Expedition clients={data.clients} stock={data.stock} batches={data.batches} salesHistory={data.sales} onConfirmSale={(saleData) => {
+          const { client, items, pricePerKg, extrasCost } = saleData;
 
-            // AGRUPAR: Banda A + Banda B do mesmo animal = CARCAÇA INTEIRA
-            const groupedItems = new Map<string, any[]>();
-            items.forEach((item: any) => {
-              const key = `${item.id_lote}-${item.sequencia}`;
-              if (!groupedItems.has(key)) groupedItems.set(key, []);
-              groupedItems.get(key)!.push(item);
-            });
+          // AGRUPAR: Banda A + Banda B do mesmo animal = CARCAÇA INTEIRA
+          const groupedItems = new Map<string, any[]>();
+          items.forEach((item: any) => {
+            const key = `${item.id_lote}-${item.sequencia}`;
+            if (!groupedItems.has(key)) groupedItems.set(key, []);
+            groupedItems.get(key)!.push(item);
+          });
 
-            const newSales: Sale[] = [];
-            let groupIndex = 0;
+          const newSales: Sale[] = [];
+          let groupIndex = 0;
 
-            groupedItems.forEach((groupItems, key) => {
-              const isCarcacaInteira = groupItems.length > 1; // Banda A + Banda B = 2 itens
-              const batch = data.batches.find(b => b.id_lote === groupItems[0].id_lote);
-              const custoKg = batch ? batch.custo_real_kg : 0;
+          groupedItems.forEach((groupItems, key) => {
+            const isCarcacaInteira = groupItems.length > 1; // Banda A + Banda B = 2 itens
+            const batch = data.batches.find(b => b.id_lote === groupItems[0].id_lote);
+            const custoKg = batch ? batch.custo_real_kg : 0;
 
-              // Somar pesos de todos os itens do grupo
-              const pesoEntradaTotal = groupItems.reduce((acc: number, i: any) => acc + i.peso_entrada, 0);
-              const pesoSaidaTotal = groupItems.reduce((acc: number, i: any) => acc + (i.peso_saida || i.peso_entrada), 0);
-              const quebraTotal = pesoEntradaTotal - pesoSaidaTotal;
+            // Somar pesos de todos os itens do grupo
+            const pesoEntradaTotal = groupItems.reduce((acc: number, i: any) => acc + i.peso_entrada, 0);
+            const pesoSaidaTotal = groupItems.reduce((acc: number, i: any) => acc + (i.peso_saida || i.peso_entrada), 0);
+            const quebraTotal = pesoEntradaTotal - pesoSaidaTotal;
 
-              // Calcular lucro consolidado
-              const revenue = pesoSaidaTotal * pricePerKg;
-              const cost = pesoSaidaTotal * custoKg;
-              const groupExtraCost = (extrasCost / groupedItems.size);
-              const profit = revenue - cost - groupExtraCost;
+            // Calcular lucro consolidado
+            const revenue = pesoSaidaTotal * pricePerKg;
+            const cost = pesoSaidaTotal * custoKg;
+            const groupExtraCost = (extrasCost / groupedItems.size);
+            const profit = revenue - cost - groupExtraCost;
 
-              // ID: se for carcaça inteira, usa ID especial
-              const idCompleto = isCarcacaInteira
-                ? `${groupItems[0].id_lote}-${groupItems[0].sequencia}-INTEIRO`
-                : groupItems[0].id_completo;
+            // ID: se for carcaça inteira, usa ID especial
+            const idCompleto = isCarcacaInteira
+              ? `${groupItems[0].id_lote}-${groupItems[0].sequencia}-INTEIRO`
+              : groupItems[0].id_completo;
 
-              newSales.push({
-                id_venda: `V-${Date.now()}-${groupIndex++}`,
-                id_cliente: client.id_ferro,
-                nome_cliente: client.nome_social,
-                id_completo: idCompleto,
-                peso_real_saida: pesoSaidaTotal,
-                preco_venda_kg: pricePerKg,
-                data_venda: new Date().toISOString().split('T')[0],
-                quebra_kg: quebraTotal,
-                lucro_liquido_unitario: profit,
-                custo_extras_total: groupExtraCost,
-                prazo_dias: 30,
-                data_vencimento: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                forma_pagamento: 'OUTROS',
-                status_pagamento: 'PENDENTE',
-                tipo_venda: isCarcacaInteira ? 'CARCACA_INTEIRA' : 'BANDA_AVULSA',
-                // IDs originais dos itens no estoque (para marcar como vendido)
-                stock_ids_originais: groupItems.map((i: any) => i.id_completo)
-              } as any);
-            });
+            newSales.push({
+              id_venda: `V-${Date.now()}-${groupIndex++}`,
+              id_cliente: client.id_ferro,
+              nome_cliente: client.nome_social,
+              id_completo: idCompleto,
+              peso_real_saida: pesoSaidaTotal,
+              preco_venda_kg: pricePerKg,
+              data_venda: new Date().toISOString().split('T')[0],
+              quebra_kg: quebraTotal,
+              lucro_liquido_unitario: profit,
+              custo_extras_total: groupExtraCost,
+              prazo_dias: 30,
+              data_vencimento: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+              forma_pagamento: 'OUTROS',
+              status_pagamento: 'PENDENTE',
+              tipo_venda: isCarcacaInteira ? 'CARCACA_INTEIRA' : 'BANDA_AVULSA',
+              // IDs originais dos itens no estoque (para marcar como vendido)
+              stock_ids_originais: groupItems.map((i: any) => i.id_completo)
+            } as any);
+          });
 
-            addSales(newSales);
-            setCurrentView('sales_history');
-          }} onBack={() => setCurrentView('menu')} />
-        }
-        {currentView === 'sales_history' && <SalesHistory stock={data.stock} batches={data.batches} sales={data.sales} clients={data.clients} initialSearchTerm={viewParams?.searchTerm} onBack={() => setCurrentView('menu')} />}
-        {currentView === 'financial' && <Financial sales={data.sales} batches={data.batches} stock={data.stock} clients={data.clients} transactions={data.transactions} updateSaleCost={updateSaleCost} addTransaction={addTransaction} deleteTransaction={deleteTransaction} addPartialPayment={addPartialPayment} onBack={() => setCurrentView('menu')} payables={data.payables} addPayable={handleAddPayable} updatePayable={handleUpdatePayable} deletePayable={handleDeletePayable} />}
-        {currentView === 'scheduled_orders' && <ScheduledOrders scheduledOrders={data.scheduledOrders} clients={data.clients} addScheduledOrder={addScheduledOrder} updateScheduledOrder={updateScheduledOrder} deleteScheduledOrder={deleteScheduledOrder} onViewClientHistory={(clientName) => { setViewParams({ searchTerm: clientName }); setCurrentView('sales_history'); }} onBack={() => setCurrentView('menu')} />}
-        {
-          currentView === 'report' && <CollaboratorReport
-            reports={data.reports}
-            onBack={() => setCurrentView('menu')}
-            onSubmit={async (reportData) => {
-              if (!db) return;
-              const newReport: any = {
-                id: `REPORT-${Date.now()}`,
-                timestamp: new Date().toISOString(),
-                date: new Date().toISOString().split('T')[0],
-                userId: session?.user?.uid || 'anonymous',
-                userName: session?.user?.email?.split('@')[0] || 'Colaborador',
-                ...reportData
-              };
-              await setDoc(doc(db, 'daily_reports', newReport.id), newReport);
-              logAction(session?.user, 'CREATE', 'OTHER', `Relatório enviado: ${reportData.type}`);
-              fetchData(); // Force refresh to see new report immediately
-            }}
-          />
-        }
-        {
-          currentView === 'heifers' && <HeiferManager
-            onBack={() => setCurrentView('menu')}
-            existingOrders={data.scheduledOrders}
-            onAddOrder={addScheduledOrder}
-          />
-        }
-        {
-          currentView === 'sales_agent' && <SalesAgent
-            onBack={() => setCurrentView('menu')}
-            clients={data.clients}
-          />
-        }
-        {currentView === 'aistudio' && <AIEditor onBack={() => setCurrentView('menu')} />}
-        {currentView === 'audit' && <AuditLogView onBack={() => setCurrentView('menu')} />}
-        {currentView === 'system_reset' && <SystemReset onBack={() => setCurrentView('menu')} refreshData={fetchData} />}
+          addSales(newSales);
+          setCurrentView('sales_history');
+        }} onBack={() => setCurrentView('menu')} />
+      }
+      {currentView === 'sales_history' && <SalesHistory stock={data.stock} batches={data.batches} sales={data.sales} clients={data.clients} initialSearchTerm={viewParams?.searchTerm} onBack={() => setCurrentView('menu')} />}
+      {currentView === 'financial' && <Financial sales={data.sales} batches={data.batches} stock={data.stock} clients={data.clients} transactions={data.transactions} updateSaleCost={updateSaleCost} addTransaction={addTransaction} deleteTransaction={deleteTransaction} addPartialPayment={addPartialPayment} onBack={() => setCurrentView('menu')} payables={data.payables} addPayable={handleAddPayable} updatePayable={handleUpdatePayable} deletePayable={handleDeletePayable} />}
+      {currentView === 'scheduled_orders' && <ScheduledOrders scheduledOrders={data.scheduledOrders} clients={data.clients} addScheduledOrder={addScheduledOrder} updateScheduledOrder={updateScheduledOrder} deleteScheduledOrder={deleteScheduledOrder} onViewClientHistory={(clientName) => { setViewParams({ searchTerm: clientName }); setCurrentView('sales_history'); }} onBack={() => setCurrentView('menu')} />}
+      {
+        currentView === 'report' && <CollaboratorReport
+          reports={data.reports}
+          onBack={() => setCurrentView('menu')}
+          onSubmit={async (reportData) => {
+            if (!db) return;
+            const newReport: any = {
+              id: `REPORT-${Date.now()}`,
+              timestamp: new Date().toISOString(),
+              date: new Date().toISOString().split('T')[0],
+              userId: session?.user?.uid || 'anonymous',
+              userName: session?.user?.email?.split('@')[0] || 'Colaborador',
+              ...reportData
+            };
+            await setDoc(doc(db, 'daily_reports', newReport.id), newReport);
+            logAction(session?.user, 'CREATE', 'OTHER', `Relatório enviado: ${reportData.type}`);
+            fetchData(); // Force refresh to see new report immediately
+          }}
+        />
+      }
+      {
+        currentView === 'heifers' && <HeiferManager
+          onBack={() => setCurrentView('menu')}
+          existingOrders={data.scheduledOrders}
+          onAddOrder={addScheduledOrder}
+        />
+      }
+      {
+        currentView === 'sales_agent' && <SalesAgent
+          onBack={() => setCurrentView('menu')}
+          clients={data.clients}
+        />
+      }
+      {currentView === 'aistudio' && <AIEditor onBack={() => setCurrentView('menu')} />}
+      {currentView === 'audit' && <AuditLogView onBack={() => setCurrentView('menu')} />}
+      {currentView === 'system_reset' && <SystemReset onBack={() => setCurrentView('menu')} refreshData={fetchData} />}
 
-        {/* SYSTEM STATUS BAR */}
-        <div className="fixed bottom-3 left-3 right-3 md:bottom-8 md:left-8 md:right-auto z-[200] flex flex-col md:flex-row gap-2 md:gap-3 pointer-events-none items-stretch md:items-center">
-          {dbStatus === 'online' && (
-            <div className="bg-white/80 backdrop-blur-xl border border-emerald-50 text-emerald-600 px-4 py-2 rounded-xl md:rounded-2xl font-black text-[8px] md:text-[9px] uppercase tracking-[0.15em] md:tracking-[0.2em] flex items-center justify-center gap-2 shadow-xl shadow-emerald-900/5 animate-reveal">
-              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-              <span className="hidden md:inline">CORE: SINAL_CRIPTOGRAFADO</span>
-              <span className="md:hidden">ONLINE</span>
-            </div>
-          )}
-          {dbStatus === 'offline' && (
-            <div className="bg-white/80 backdrop-blur-xl border border-rose-50 text-rose-600 px-4 py-2 rounded-xl md:rounded-2xl font-black text-[8px] md:text-[9px] uppercase tracking-[0.15em] md:tracking-[0.2em] flex items-center justify-center gap-2 shadow-xl shadow-rose-900/5 animate-reveal">
-              <div className="w-2 h-2 bg-rose-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.5)]" />
-              <span className="hidden md:inline">CORE: LINK_AUSENTE</span>
-              <span className="md:hidden">OFFLINE</span>
-            </div>
-          )}
-
-          {/* Botão Atualizar App - SEMPRE VISÍVEL */}
-          <button
-            onClick={() => {
-              if (window.confirm('🔄 Atualizar aplicativo?\n\nIsso irá buscar a versão mais recente do app.\n\n⚠️ IMPORTANTE: Seus dados (lotes, financeiro, estoque) NÃO serão afetados!\n\nDeseja continuar?')) {
-                window.location.reload();
-              }
-            }}
-            className="pointer-events-auto bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white px-4 py-2.5 rounded-xl md:rounded-2xl font-black text-[9px] md:text-[10px] uppercase tracking-[0.15em] md:tracking-[0.2em] flex items-center justify-center gap-2 shadow-xl transition-all hover:scale-105 active:scale-95 animate-reveal cursor-pointer"
-            title="Clique para atualizar o app e carregar a versão mais recente"
-          >
-            <RefreshCw size={14} className="animate-spin-slow" />
-            <span>Atualizar App</span>
-          </button>
-
-          <div className="bg-slate-900 text-white px-4 py-2 rounded-xl md:rounded-2xl font-black text-[8px] md:text-[9px] uppercase tracking-[0.15em] md:tracking-[0.2em] flex items-center justify-center gap-2 shadow-[0_20px_40px_rgba(15,23,42,0.3)] animate-reveal">
-            <Activity size={12} className="text-blue-400" />
-            <span className="hidden md:inline">FG-PRO_v2.5.5</span>
-            <span className="md:hidden">v2.5.5</span>
+      {/* SYSTEM STATUS BAR */}
+      <div className="fixed bottom-3 left-3 right-3 md:bottom-8 md:left-8 md:right-auto z-[200] flex flex-col md:flex-row gap-2 md:gap-3 pointer-events-none items-stretch md:items-center">
+        {dbStatus === 'online' && (
+          <div className="bg-white/80 backdrop-blur-xl border border-emerald-50 text-emerald-600 px-4 py-2 rounded-xl md:rounded-2xl font-black text-[8px] md:text-[9px] uppercase tracking-[0.15em] md:tracking-[0.2em] flex items-center justify-center gap-2 shadow-xl shadow-emerald-900/5 animate-reveal">
+            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+            <span className="hidden md:inline">CORE: SINAL_CRIPTOGRAFADO</span>
+            <span className="md:hidden">ONLINE</span>
           </div>
-        </div>
-      </div >
-    );
-  };
+        )}
+        {dbStatus === 'offline' && (
+          <div className="bg-white/80 backdrop-blur-xl border border-rose-50 text-rose-600 px-4 py-2 rounded-xl md:rounded-2xl font-black text-[8px] md:text-[9px] uppercase tracking-[0.15em] md:tracking-[0.2em] flex items-center justify-center gap-2 shadow-xl shadow-rose-900/5 animate-reveal">
+            <div className="w-2 h-2 bg-rose-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.5)]" />
+            <span className="hidden md:inline">CORE: LINK_AUSENTE</span>
+            <span className="md:hidden">OFFLINE</span>
+          </div>
+        )}
 
-  export default App;
+        {/* Botão Atualizar App - SEMPRE VISÍVEL */}
+        <button
+          onClick={() => {
+            if (window.confirm('🔄 Atualizar aplicativo?\n\nIsso irá buscar a versão mais recente do app.\n\n⚠️ IMPORTANTE: Seus dados (lotes, financeiro, estoque) NÃO serão afetados!\n\nDeseja continuar?')) {
+              window.location.reload();
+            }
+          }}
+          className="pointer-events-auto bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white px-4 py-2.5 rounded-xl md:rounded-2xl font-black text-[9px] md:text-[10px] uppercase tracking-[0.15em] md:tracking-[0.2em] flex items-center justify-center gap-2 shadow-xl transition-all hover:scale-105 active:scale-95 animate-reveal cursor-pointer"
+          title="Clique para atualizar o app e carregar a versão mais recente"
+        >
+          <RefreshCw size={14} className="animate-spin-slow" />
+          <span>Atualizar App</span>
+        </button>
+
+        <div className="bg-slate-900 text-white px-4 py-2 rounded-xl md:rounded-2xl font-black text-[8px] md:text-[9px] uppercase tracking-[0.15em] md:tracking-[0.2em] flex items-center justify-center gap-2 shadow-[0_20px_40px_rgba(15,23,42,0.3)] animate-reveal">
+          <Activity size={12} className="text-blue-400" />
+          <span className="hidden md:inline">FG-PRO_v2.5.5</span>
+          <span className="md:hidden">v2.5.5</span>
+        </div>
+      </div>
+    </div >
+  );
+};
+
+export default App;
