@@ -186,14 +186,28 @@ export async function syncAllToSheets(data: AppState): Promise<{ success: boolea
 
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain' }, // Apps Script requer text/plain para CORS
+      headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify(payload),
-      mode: 'no-cors' // Apps Script não suporta preflight CORS
+      redirect: 'follow' // Apps Script retorna 302 redirect
     });
 
-    // No modo no-cors, não temos acesso à resposta, mas o envio foi feito
-    console.log('📊 Sheets sync: enviado com sucesso');
-    return { success: true, message: 'Dados enviados para a planilha' };
+    // Tenta ler a resposta (Apps Script retorna JSON)
+    let result: any = {};
+    try {
+      const text = await response.text();
+      result = JSON.parse(text);
+      console.log('📊 Sheets sync resposta:', result);
+    } catch {
+      console.log('📊 Sheets sync: enviado (status:', response.status, ')');
+    }
+
+    if (response.ok || response.status === 0) {
+      console.log('📊 Sheets sync: ✅ sucesso!');
+      return { success: true, message: `Dados sincronizados! ${result.timestamp || ''}` };
+    } else {
+      console.warn('📊 Sheets sync: ⚠️ status', response.status);
+      return { success: false, message: `HTTP ${response.status}: ${result.message || 'erro desconhecido'}` };
+    }
 
   } catch (error: any) {
     console.warn('📊 Sheets sync erro:', error.message);
