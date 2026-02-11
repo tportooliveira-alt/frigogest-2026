@@ -33,6 +33,7 @@ import {
 import { Client } from '../types';
 import { storage } from '../firebaseClient';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { sendWhatsAppMessage, sendWhatsAppMedia, checkWhatsAppAPIStatus } from '../utils/whatsappAPI';
 
 interface SalesAgentProps {
     onBack?: () => void;
@@ -82,19 +83,52 @@ const SalesAgent: React.FC<SalesAgentProps> = ({ onBack, clients }) => {
     const gerarMensagemIA = (nomeCliente: string) => {
         if (activeAgentId === 'vendas') {
             const templates = [
-                "Fala {nome}, O mercado tá subindo, mas eu segurei um lote a {price}. É margem pura. Vamos aproveitar?",
-                "{nome}, tenho um gado extra que vai dar um rendimento absurdo. Se eu soltar no grupo acaba em 5 minutos. Posso reservar?",
-                "Selecionei um lote hoje padrão exportação. Acabamento perfeito. Tô fazendo preço especial pra parceiros VIPS como você."
+                `Olá *${nomeCliente}*! 👋\n\n🥩 *OFERTA ESPECIAL DO DIA*\n\nEstoque fresco, gado premium:\n💰 Preço: *${knowledgeBase.price}*\n📦 Disponível: ${knowledgeBase.stock}\n🚚 Entrega: ${knowledgeBase.delivery}\n\nGaranta já! Estoque limitado. 🔥`,
+
+                `Boa tarde, *${nomeCliente}*! 🐂\n\n*Acabou de chegar:*\nLote premium com acabamento perfeito\n\n✅ Qualidade garantida\n💵 Condições especiais: ${knowledgeBase.payment}\n📍 Entrega em ${knowledgeBase.delivery}\n\nInteresse? Responda aqui! 📱`,
+
+                `*${nomeCliente}*, oportunidade! 🎯\n\n🥩 Carne de primeira\n💰 *${knowledgeBase.price}* /kg\n📦 Lote de ${knowledgeBase.stock}\n\nPreço para CLIENTE VIP!\nReservo para você? 🤝`
             ];
             const template = templates[Math.floor(Math.random() * templates.length)];
-            return template.replace('{nome}', nomeCliente.toUpperCase()).replace('{price}', knowledgeBase.price) + "\n\n🔥 _OPERACAO_PRIORITARIA_";
+            return template;
+        } else if (activeAgentId === 'cobranca') {
+            return `Olá *${nomeCliente}*! 👋\n\n📋 *Lembrete Amigável*\n\nIdentificamos um pagamento pendente em nossa base.\n\n💡 *Formas de pagamento:*\n• PIX (instantâneo)\n• Transferência bancária\n• Boleto\n\nPrecisa de ajuda? Estamos à disposição! 🤝\n\nAtenciosamente,\nEquipe FrigoGest`;
+        } else {
+            return `Olá *${nomeCliente}*! 👋\n\nComo podemos ajudar hoje?\n\n📞 Suporte FrigoGest\n⏰ Atendimento: Seg-Sex, 8h-18h`;
         }
-        return `CONTATO_AUTOMATICO: ${nomeCliente.toUpperCase()} - AGUARDANDO_RETORNO`;
     };
 
-    const handleManualSend = (phone: string, message: string) => {
-        window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
-        return true;
+    const handleManualSend = async (phone: string, message: string) => {
+        // Se tiver mídia (foto/vídeo), envia com mídia
+        if (mediaUrl) {
+            const mediaType = mediaUrl.includes('.mp4') || mediaUrl.includes('video') ? 'video' : 'image';
+            const result = await sendWhatsAppMedia({
+                phone,
+                message,
+                mediaUrl,
+                mediaType
+            });
+
+            if (result.success) {
+                alert('✅ Mensagem com mídia enviada!');
+                return true;
+            } else {
+                alert('⚠️ Erro ao enviar: ' + result.error);
+                return false;
+            }
+        }
+
+        // Senão, envia só texto
+        const result = await sendWhatsAppMessage(phone, message);
+
+        if (result.success) {
+            return true;
+        } else {
+            // Se a API falhar, abre WhatsApp Web como backup
+            console.warn('Usando fallback: WhatsApp Web');
+            window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
+            return true;
+        }
     };
 
     const startRecording = async (type: string) => {

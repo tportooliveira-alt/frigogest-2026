@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 export default defineConfig({
-  base: '/frigogest-2026/',
+  base: process.env.BUILD_TARGET === 'github' ? '/frigogest-2026/' : '/',
   build: {
     chunkSizeWarningLimit: 2000,
   },

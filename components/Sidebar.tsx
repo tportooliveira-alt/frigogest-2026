@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Users, Package, Truck, Scale, Beef, DollarSign, Wand2, LogOut, FileText, ChevronRight, Zap, Calendar, Bot, Database, ShieldCheck, Sheet } from 'lucide-react';
+import { LayoutDashboard, Users, Package, Truck, Scale, Beef, DollarSign, Wand2, LogOut, FileText, ChevronRight, Zap, Calendar, Bot, Database, ShieldCheck, Sheet, Sparkles } from 'lucide-react';
 
 interface SidebarProps {
   setView: (view: string) => void;
@@ -20,6 +20,8 @@ const Sidebar: React.FC<SidebarProps> = ({ setView, onLogout, onSyncSheets, shee
     { id: 'financial', label: 'Financeiro', description: 'Fluxo de Caixa', icon: DollarSign, color: 'text-emerald-600', bg: 'bg-emerald-50', glow: 'group-hover:shadow-lg' },
     { id: 'scheduled_orders', label: 'Agendamentos', description: 'Pedidos Futuros', icon: Calendar, color: 'text-indigo-600', bg: 'bg-indigo-50', glow: 'group-hover:shadow-lg' },
     { id: 'heifers', label: 'Gestão Abate', description: 'Novilhas Diárias', icon: Beef, color: 'text-emerald-700', bg: 'bg-emerald-100', glow: 'group-hover:shadow-lg' },
+    { id: 'carnaval', label: 'Campanha 🎭', description: 'Carnaval 2026', icon: Sparkles, color: 'text-orange-600', bg: 'bg-orange-50', glow: 'group-hover:shadow-lg group-hover:shadow-orange-200' },
+    { id: 'carnaval_cards', label: 'Cartões 🎨', description: 'Baixar Imagens', icon: Sheet, color: 'text-pink-600', bg: 'bg-pink-50', glow: 'group-hover:shadow-lg' },
     { id: 'sales_agent', label: 'Agente IA', description: 'Robô de Vendas', icon: Bot, color: 'text-purple-600', bg: 'bg-purple-100', glow: 'group-hover:shadow-lg' },
     { id: 'report', label: 'Relatório', description: 'Resumo Diário', icon: FileText, color: 'text-emerald-600', bg: 'bg-emerald-50', glow: 'group-hover:shadow-lg' },
     { id: 'audit', label: 'Auditoria', description: 'Quem Fez O Quê', icon: ShieldCheck, color: 'text-rose-600', bg: 'bg-rose-50', glow: 'group-hover:shadow-lg' },
@@ -117,12 +119,12 @@ const Sidebar: React.FC<SidebarProps> = ({ setView, onLogout, onSyncSheets, shee
                 onClick={onSyncSheets}
                 disabled={sheetsSyncStatus === 'syncing'}
                 className={`flex items-center gap-3 px-8 py-5 rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] backdrop-blur-md border transition-all hover:shadow-lg active:scale-95 group ${sheetsSyncStatus === 'syncing'
-                    ? 'text-amber-300/80 bg-amber-500/20 border-amber-400/30 cursor-wait'
-                    : sheetsSyncStatus === 'ok'
-                      ? 'text-emerald-300/80 bg-emerald-500/20 border-emerald-400/30'
-                      : sheetsSyncStatus === 'error'
-                        ? 'text-rose-300/80 bg-rose-500/20 border-rose-400/30'
-                        : 'text-white/80 bg-white/10 border-white/20 hover:border-blue-400 hover:text-blue-300 hover:bg-blue-500/20'
+                  ? 'text-amber-300/80 bg-amber-500/20 border-amber-400/30 cursor-wait'
+                  : sheetsSyncStatus === 'ok'
+                    ? 'text-emerald-300/80 bg-emerald-500/20 border-emerald-400/30'
+                    : sheetsSyncStatus === 'error'
+                      ? 'text-rose-300/80 bg-rose-500/20 border-rose-400/30'
+                      : 'text-white/80 bg-white/10 border-white/20 hover:border-blue-400 hover:text-blue-300 hover:bg-blue-500/20'
                   }`}
               >
                 <Sheet size={16} className={sheetsSyncStatus === 'syncing' ? 'animate-spin' : 'group-hover:scale-110 transition-transform'} />

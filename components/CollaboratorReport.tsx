@@ -37,7 +37,7 @@ interface CollaboratorReportProps {
 
 const WaveVisualizer: React.FC<{ isRecording: boolean; color: string; stream: MediaStream | null }> = ({ isRecording, color, stream }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const requestRef = useRef<number>();
+    const requestRef = useRef<number | null>(null);
 
     useEffect(() => {
         if (!isRecording || !stream || !canvasRef.current) return;

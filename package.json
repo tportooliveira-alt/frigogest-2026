@@ -12,6 +12,7 @@
     "@google/genai": "^1.37.0",
     "dotenv": "^17.2.3",
     "firebase": "^11.1.0",
+    "html2canvas": "^1.4.1",
     "jspdf": "^2.5.2",
     "lucide-react": "^0.475.0",
     "react": "^19.0.0",
@@ -19,8 +20,10 @@
     "recharts": "^2.15.1"
   },
   "devDependencies": {
+    "@types/html2canvas": "^0.5.35",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
+    "@types/xlsx": "^0.0.35",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.5.1",

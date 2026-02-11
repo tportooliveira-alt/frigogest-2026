@@ -1,0 +1,23 @@
+[debug] [2026-02-11T17:56:24.308Z] ----------------------------------------------------------------------
+[debug] [2026-02-11T17:56:24.338Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\Priscila\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js init functions --project gestfri
+[debug] [2026-02-11T17:56:24.339Z] CLI Version:   15.5.1
+[debug] [2026-02-11T17:56:24.339Z] Platform:      win32
+[debug] [2026-02-11T17:56:24.339Z] Node Version:  v24.13.0
+[debug] [2026-02-11T17:56:24.340Z] Time:          Wed Feb 11 2026 14:56:24 GMT-0300 (Horário Padrão de Brasília)
+[debug] [2026-02-11T17:56:24.340Z] ----------------------------------------------------------------------
+[debug] 
+[info] 
+     ######## #### ########  ######## ########     ###     ######  ########
+     ##        ##  ##     ## ##       ##     ##  ##   ##  ##       ##
+     ######    ##  ########  ######   ########  #########  ######  ######
+     ##        ##  ##    ##  ##       ##     ## ##     ##       ## ##
+     ##       #### ##     ## ######## ########  ##     ##  ######  ########
+
+You're about to initialize a Firebase project in this directory:
+
+  C:\Users\Priscila\.gemini\antigravity\scratch\frigogest-2026
+
+Before we get started, keep in mind:
+
+  * You are initializing within an existing Firebase project directory
+
