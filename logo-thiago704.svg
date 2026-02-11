@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" width="400" height="200">
+  <!-- Fundo Transparente -->
+  
+  <!-- Linha decorativa superior -->
+  <line x1="80" y1="30" x2="320" y2="30" stroke="#000" stroke-width="1.5" />
+  
+  <!-- THIAGO - Fonte principal, bold, espaçada -->
+  <text x="200" y="90" 
+    font-family="Georgia, 'Times New Roman', serif" 
+    font-size="58" 
+    font-weight="bold" 
+    fill="#000" 
+    text-anchor="middle" 
+    letter-spacing="12">THIAGO</text>
+  
+  <!-- Linha divisória central -->
+  <line x1="120" y1="105" x2="280" y2="105" stroke="#000" stroke-width="2" />
+  
+  <!-- 704 - Número com estilo diferente -->
+  <text x="200" y="150" 
+    font-family="'Helvetica Neue', Arial, sans-serif" 
+    font-size="52" 
+    font-weight="300" 
+    fill="#000" 
+    text-anchor="middle" 
+    letter-spacing="18">704</text>
+  
+  <!-- Linha decorativa inferior -->
+  <line x1="80" y1="170" x2="320" y2="170" stroke="#000" stroke-width="1.5" />
+</svg>
