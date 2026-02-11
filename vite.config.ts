@@ -9,6 +9,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 export default defineConfig({
+  base: '/frigogest-2026/',
+  build: {
+    chunkSizeWarningLimit: 2000,
+  },
   plugins: [
     react(),
     VitePWA({
