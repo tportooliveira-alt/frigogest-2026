@@ -724,16 +724,16 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
                           </div>
                           <div className="flex flex-col items-end">
                             <span className="text-[9px] font-black text-blue-600 uppercase tracking-wide mb-1">PESO SAÍDA</span>
-                            <div className="flex items-center gap-2 bg-blue-100 border-2 border-blue-400 rounded-xl px-3 py-2">
-                              <Scale size={18} className="text-blue-600" />
+                            <div className="flex items-center gap-2 bg-blue-100 border-2 border-blue-400 rounded-xl px-4 py-3">
+                              <Scale size={20} className="text-blue-600" />
                               <input
                                 type="number"
                                 step="0.01"
-                                className="w-24 bg-transparent text-right font-black text-lg text-blue-700 outline-none"
+                                className="w-32 bg-transparent text-right font-black text-xl text-blue-700 outline-none"
                                 value={Number(groupItemsWeight.toFixed(2))}
                                 onChange={(e) => handleGroupWeightChange(group, parseFloat(e.target.value) || 0)}
                               />
-                              <span className="text-xs font-black text-blue-500">KG</span>
+                              <span className="text-sm font-black text-blue-500">KG</span>
                             </div>
                           </div>
                         </div>
@@ -748,16 +748,16 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
                                 <span className="text-[9px] font-black text-slate-900 uppercase">{item.tipo === 1 ? 'INT' : item.tipo === 2 ? 'B-A' : 'B-B'}</span>
                               </div>
                               <div className="flex flex-col items-end">
-                                <span className="text-[8px] font-black text-blue-500 uppercase mb-1">PESO SAÍDA</span>
-                                <div className="flex items-center gap-1 bg-blue-50 border-2 border-blue-300 rounded-lg px-2 py-1">
+                                <span className="text-[9px] font-black text-blue-500 uppercase mb-1">PESO SAÍDA</span>
+                                <div className="flex items-center gap-2 bg-blue-50 border-2 border-blue-300 rounded-xl px-3 py-2">
                                   <input
                                     type="number"
                                     step="0.01"
-                                    className="w-20 bg-transparent text-right font-black text-base text-blue-700 outline-none"
+                                    className="w-28 bg-transparent text-right font-black text-lg text-blue-700 outline-none"
                                     value={currentWeight}
                                     onChange={e => handleWeightChange(item.id_completo, parseFloat(e.target.value) || 0)}
                                   />
-                                  <span className="text-[10px] font-black text-blue-400">KG</span>
+                                  <span className="text-xs font-black text-blue-400">KG</span>
                                 </div>
                               </div>
                             </div>
@@ -772,12 +772,12 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
           </div>
 
           {/* CHECKOUT ACTION AREA - CONDENSED */}
-          <div className="shrink-0 bg-slate-900 text-white p-6 relative overflow-hidden">
+          <div className="shrink-0 bg-slate-900 text-white p-4 relative overflow-hidden">
             <div className="absolute top-0 right-0 opacity-5 pointer-events-none">
               <ShoppingCart size={200} className="rotate-12 translate-x-20 translate-y-20" />
             </div>
 
-            <div className="relative z-10 space-y-5">
+            <div className="relative z-10 space-y-3">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest px-1">R$ Preço / KG</label>

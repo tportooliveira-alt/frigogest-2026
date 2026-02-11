@@ -174,6 +174,38 @@ const App: React.FC = () => {
             }
           });
 
+          // 1b. Limpar PAYABLES DUPLICADOS (Compra Lote vs Restante Lote)
+          const payablesByLote = new Map<string, Array<{ ref: any, data: any, docId: string }>>();
+          payablesSnapshot.forEach(docSnap => {
+            const payable = docSnap.data();
+            if (payable.categoria === 'COMPRA_GADO') {
+              let loteId = payable.id_lote;
+              if (!loteId && payable.descricao) {
+                const match = payable.descricao.match(/Lote (LOTE-[A-Z0-9]+-\d+)/);
+                if (match) loteId = match[1];
+              }
+              if (loteId) {
+                if (!payablesByLote.has(loteId)) payablesByLote.set(loteId, []);
+                payablesByLote.get(loteId)!.push({ ref: docSnap.ref, data: payable, docId: docSnap.id });
+              }
+            }
+          });
+          payablesByLote.forEach((entries, loteId) => {
+            if (entries.length > 1) {
+              // Manter o que tem ID determinístico (PAY-LOTE-X), deletar os outros
+              const hasDetId = entries.some(e => e.docId.startsWith('PAY-LOTE-'));
+              if (hasDetId) {
+                entries.forEach(e => {
+                  if (!e.docId.startsWith('PAY-LOTE-')) {
+                    batch.delete(e.ref);
+                    orphanCount++;
+                    console.log(`🗑️ Payable DUPLICADO removido: "${e.data.descricao}" (ID: ${e.docId})`);
+                  }
+                });
+              }
+            }
+          });
+
           // 2. Limpar STOCK_ITEMS órfãos
           stockSnapshot.forEach(docSnap => {
             const item = docSnap.data();
@@ -407,21 +439,10 @@ const App: React.FC = () => {
           referencia_id: cleanBatch.id_lote
         };
         await addTransaction(transactionData as any);
-      } else if (totalCost > 0 && formPagamento === 'PRAZO') {
-        // Se for a prazo, registra no CONTAS A PAGAR
-        const payableData: Payable = {
-          id: `PAY-LOTE-${cleanBatch.id_lote}`,
-          id_lote: cleanBatch.id_lote, // IMPORTANTE: salvar id_lote para poder deletar junto
-          descricao: `Compra Lote ${cleanBatch.id_lote} - ${cleanBatch.fornecedor}`,
-          valor: totalCost,
-          data_vencimento: new Date(Date.now() + ((cleanBatch.prazo_dias || 30) * 24 * 60 * 60 * 1000)).toISOString().split('T')[0],
-          status: 'PENDENTE',
-          categoria: 'COMPRA_GADO',
-          observacoes: `Compra de Lote a Prazo`
-        };
-        const docRef = await addDoc(collection(db, 'payables'), payableData);
-        await setDoc(docRef, { ...payableData, id: docRef.id });
       }
+      // NOTA: Compras a PRAZO são tratadas pela registerBatchFinancial()
+      // que é chamada ao fechar o lote no Batches.tsx, com lógica de
+      // entrada/restante e guard contra duplicatas.
 
       await fetchData();
       return { success: true };
@@ -1041,7 +1062,7 @@ const App: React.FC = () => {
           setCurrentView('sales_history');
         }} onBack={() => setCurrentView('menu')} />
       }
-      {currentView === 'sales_history' && <SalesHistory stock={closedStock} batches={closedBatches} sales={data.sales} clients={data.clients} initialSearchTerm={viewParams?.searchTerm} onBack={() => setCurrentView('menu')} />}
+      {currentView === 'sales_history' && <SalesHistory stock={closedStock} batches={closedBatches} sales={data.sales} clients={data.clients} initialSearchTerm={viewParams?.searchTerm} onBack={() => setCurrentView('menu')} onGoToSales={() => setCurrentView('expedition')} />}
       {currentView === 'financial' && <Financial sales={data.sales} batches={closedBatches} stock={closedStock} clients={data.clients} transactions={data.transactions} updateSaleCost={updateSaleCost} addTransaction={addTransaction} deleteTransaction={deleteTransaction} addPartialPayment={addPartialPayment} onBack={() => setCurrentView('menu')} payables={data.payables} addPayable={handleAddPayable} updatePayable={handleUpdatePayable} deletePayable={handleDeletePayable} />}
       {currentView === 'scheduled_orders' && <ScheduledOrders scheduledOrders={data.scheduledOrders} clients={data.clients} addScheduledOrder={addScheduledOrder} updateScheduledOrder={updateScheduledOrder} deleteScheduledOrder={deleteScheduledOrder} onViewClientHistory={(clientName) => { setViewParams({ searchTerm: clientName }); setCurrentView('sales_history'); }} onBack={() => setCurrentView('menu')} />}
       {

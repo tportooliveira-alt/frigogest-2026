@@ -21,7 +21,8 @@ import {
     ArrowUpDown,
     CheckCircle,
     TrendingUp,
-    BarChart3
+    BarChart3,
+    Scale
 } from 'lucide-react';
 import { jsPDF } from "jspdf";
 
@@ -32,11 +33,12 @@ interface SalesHistoryProps {
     clients: Client[];
     initialSearchTerm?: string;
     onBack: () => void;
+    onGoToSales?: () => void;
 }
 
 type GroupBy = 'date' | 'client' | 'batch';
 
-const SalesHistory: React.FC<SalesHistoryProps> = ({ stock, batches, sales, clients, initialSearchTerm, onBack }) => {
+const SalesHistory: React.FC<SalesHistoryProps> = ({ stock, batches, sales, clients, initialSearchTerm, onBack, onGoToSales }) => {
     const [searchTerm, setSearchTerm] = useState(initialSearchTerm || '');
     const [groupBy, setGroupBy] = useState<GroupBy>(initialSearchTerm ? 'client' : 'date');
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -174,6 +176,11 @@ const SalesHistory: React.FC<SalesHistoryProps> = ({ stock, batches, sales, clie
                     <button onClick={onBack} className="group self-start flex items-center gap-2 px-4 py-1.5 bg-white border border-gray-200 rounded-full text-xs font-bold text-gray-500 hover:text-slate-900 hover:border-slate-300 transition-all shadow-sm">
                         <ArrowLeft size={14} /> Voltar ao Início
                     </button>
+                    {onGoToSales && (
+                        <button onClick={onGoToSales} className="group flex items-center gap-3 px-8 py-3 bg-blue-600 rounded-2xl text-sm font-black text-white hover:bg-slate-900 transition-all shadow-xl shadow-blue-200 uppercase tracking-wider animate-pulse hover:animate-none">
+                            <Scale size={20} /> FAZER NOVA VENDA
+                        </button>
+                    )}
                     <div className="flex items-center gap-5">
                         <div className="bg-slate-900 p-3 rounded-2xl text-white shadow-xl">
                             <History size={28} />

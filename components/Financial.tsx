@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { jsPDF } from 'jspdf';
 import { Sale, Batch, StockItem, Client, Transaction, PaymentMethod, Payable } from '../types';
 import { formatCurrency, formatWeight } from '../utils/helpers';
 import {
@@ -82,11 +83,13 @@ const Financial: React.FC<FinancialProps> = ({
   cleanAllFinancialData
 }) => {
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'cashflow' | 'receivables' | 'payables' | 'profit'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'cashflow' | 'receivables' | 'payables' | 'profit' | 'suppliers'>('overview');
   const [showTransactionForm, setShowTransactionForm] = useState(false);
   const [showPayableForm, setShowPayableForm] = useState(false);
   const [payableFilterStatus, setPayableFilterStatus] = useState<'ALL' | 'PENDING' | 'PAID' | 'LATE'>('PENDING');
   const [receivablesFilter, setReceivablesFilter] = useState<'ALL' | 'OVERDUE' | 'CRITICAL'>('ALL');
+  const [supplierFilter, setSupplierFilter] = useState<string>('ALL');
+  const [supplierLoteFilter, setSupplierLoteFilter] = useState<string>('ALL');
 
   const [newPayable, setNewPayable] = useState<Partial<Payable>>({
     descricao: '', valor: 0, valor_pago: 0, categoria: 'OPERACIONAL',
@@ -97,6 +100,18 @@ const Financial: React.FC<FinancialProps> = ({
     const date = new Date(); date.setDate(1); return date.toISOString().split('T')[0];
   });
   const [filterEndDate, setFilterEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+
+  // FILTROS AVANÇADOS - A PAGAR
+  const [payableLoteFilter, setPayableLoteFilter] = useState('');
+  const [payableSupplierFilter, setPayableSupplierFilter] = useState('');
+  const [payableDateStart, setPayableDateStart] = useState('');
+  const [payableDateEnd, setPayableDateEnd] = useState('');
+
+  // FILTROS AVANÇADOS - A RECEBER
+  const [receivableLoteFilter, setReceivableLoteFilter] = useState('');
+  const [receivableClientFilter, setReceivableClientFilter] = useState('');
+  const [receivableDateStart, setReceivableDateStart] = useState('');
+  const [receivableDateEnd, setReceivableDateEnd] = useState('');
 
   const [newTransaction, setNewTransaction] = useState<Partial<Transaction>>({
     descricao: '', valor: 0, tipo: 'SAIDA', categoria: 'OPERACIONAL',
@@ -381,13 +396,13 @@ const Financial: React.FC<FinancialProps> = ({
 
         <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
           <div className="flex p-1 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto no-scrollbar">
-            {(['overview', 'cashflow', 'receivables', 'payables', 'profit'] as const).map((tab) => (
+            {(['overview', 'cashflow', 'receivables', 'payables', 'suppliers', 'profit'] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
                 className={`px-4 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === tab ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'}`}
               >
-                {tab === 'overview' ? 'Visão Geral' : tab === 'cashflow' ? 'Fluxo Caixa' : tab === 'receivables' ? 'A Receber' : tab === 'payables' ? 'A Pagar' : 'DRE'}
+                {tab === 'overview' ? 'Visão Geral' : tab === 'cashflow' ? 'Fluxo Caixa' : tab === 'receivables' ? 'A Receber' : tab === 'payables' ? 'A Pagar' : tab === 'suppliers' ? 'Fornecedores' : 'DRE'}
               </button>
             ))}
           </div>
@@ -616,10 +631,98 @@ const Financial: React.FC<FinancialProps> = ({
 
           <div className="lg:col-span-8">
             <div className="premium-card overflow-hidden">
-              <div className="p-8 bg-slate-50/50 border-b border-slate-50 flex justify-between items-center">
+              <div className="p-8 bg-slate-50/50 border-b border-slate-50 flex flex-wrap justify-between items-center gap-4">
                 <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Buffer de Movimentações</h4>
-                <div className="px-4 py-1.5 bg-white rounded-full border border-slate-100 text-[10px] font-black text-slate-900 shadow-sm">
-                  {filteredTransactions.length} Registros Encontrados
+                <div className="flex items-center gap-3">
+                  <div className="px-4 py-1.5 bg-white rounded-full border border-slate-100 text-[10px] font-black text-slate-900 shadow-sm">
+                    {filteredTransactions.length} Registros
+                  </div>
+                  <button
+                    onClick={() => {
+                      const doc = new jsPDF();
+                      const pw = doc.internal.pageSize.width;
+                      // ═══ LOGO THIAGO 704 ═══
+                      doc.setFillColor(15, 23, 42);
+                      doc.rect(15, 10, pw - 30, 28, 'F');
+                      doc.setFont('courier', 'bold');
+                      doc.setFontSize(28);
+                      doc.setTextColor(255, 255, 255);
+                      doc.text('THIAGO', 22, 28);
+                      doc.setFontSize(32);
+                      doc.setTextColor(59, 130, 246);
+                      doc.text('704', 68, 32);
+                      // Linha decorativa azul
+                      doc.setFillColor(59, 130, 246);
+                      doc.rect(15, 38, pw - 30, 2, 'F');
+                      // Título
+                      doc.setFont('helvetica', 'bold');
+                      doc.setFontSize(14);
+                      doc.setTextColor(15, 23, 42);
+                      doc.text('FLUXO DE CAIXA', pw / 2, 50, { align: 'center' });
+                      doc.setFontSize(10);
+                      doc.setTextColor(100, 116, 139);
+                      doc.text(`Período: ${filterStartDate}  a  ${filterEndDate}`, pw / 2, 58, { align: 'center' });
+                      doc.text(`Gerado: ${new Date().toLocaleString('pt-BR')}`, pw / 2, 65, { align: 'center' });
+                      doc.setDrawColor(200, 200, 200);
+                      doc.line(15, 70, pw - 15, 70);
+                      // ═══ RESUMO ═══
+                      const totalEntradas = filteredTransactions.filter(t => t.tipo === 'ENTRADA').reduce((a, t) => a + t.valor, 0);
+                      const totalSaidas = filteredTransactions.filter(t => t.tipo === 'SAIDA').reduce((a, t) => a + t.valor, 0);
+                      const saldo = totalEntradas - totalSaidas;
+                      doc.setFont('helvetica', 'bold');
+                      doc.setFontSize(11);
+                      doc.setTextColor(16, 185, 129);
+                      doc.text(`ENTRADAS:  R$ ${totalEntradas.toFixed(2)}`, 18, 80);
+                      doc.setTextColor(239, 68, 68);
+                      doc.text(`SAÍDAS:  R$ ${totalSaidas.toFixed(2)}`, 85, 80);
+                      doc.setTextColor(15, 23, 42);
+                      doc.text(`SALDO:  R$ ${saldo.toFixed(2)}`, 148, 80);
+                      doc.setDrawColor(200, 200, 200);
+                      doc.line(15, 86, pw - 15, 86);
+                      // ═══ TABELA ═══
+                      let y = 96;
+                      doc.setFillColor(235, 240, 245);
+                      doc.rect(15, y - 6, pw - 30, 10, 'F');
+                      doc.setFontSize(9);
+                      doc.setFont('helvetica', 'bold');
+                      doc.setTextColor(15, 23, 42);
+                      doc.text('DATA', 18, y);
+                      doc.text('DESCRIÇÃO', 48, y);
+                      doc.text('CATEGORIA', 125, y);
+                      doc.text('VALOR', pw - 18, y, { align: 'right' });
+                      y += 10;
+                      doc.setFontSize(10);
+                      filteredTransactions.forEach(t => {
+                        if (y > 270) { doc.addPage(); y = 25; }
+                        doc.setFont('helvetica', 'bold');
+                        doc.setTextColor(80, 80, 80);
+                        doc.text(new Date(t.data).toLocaleDateString('pt-BR'), 18, y);
+                        doc.setTextColor(15, 23, 42);
+                        doc.text((t.descricao || '').substring(0, 38), 48, y);
+                        doc.setFontSize(8);
+                        doc.setTextColor(100, 116, 139);
+                        doc.text(t.categoria || '', 125, y);
+                        doc.setFontSize(10);
+                        doc.setFont('helvetica', 'bold');
+                        if (t.tipo === 'ENTRADA') doc.setTextColor(16, 185, 129);
+                        else doc.setTextColor(239, 68, 68);
+                        doc.text(`${t.tipo === 'ENTRADA' ? '+' : '-'} R$ ${t.valor.toFixed(2)}`, pw - 18, y, { align: 'right' });
+                        y += 8;
+                      });
+                      // ═══ RODAPÉ ═══
+                      y += 8;
+                      doc.setFillColor(15, 23, 42);
+                      doc.rect(15, y, pw - 30, 12, 'F');
+                      doc.setFont('courier', 'bold');
+                      doc.setFontSize(8);
+                      doc.setTextColor(255, 255, 255);
+                      doc.text('THIAGO 704  //  FRIGOGEST PRO X  //  DOCUMENTO OFICIAL', pw / 2, y + 8, { align: 'center' });
+                      doc.save(`FLUXO_CAIXA_${filterStartDate}_${filterEndDate}.pdf`);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-sm"
+                  >
+                    <Printer size={14} /> Exportar PDF
+                  </button>
                 </div>
               </div>
               <div className="overflow-x-auto">
@@ -699,6 +802,31 @@ const Financial: React.FC<FinancialProps> = ({
                 <button onClick={() => setReceivablesFilter('CRITICAL')} className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${receivablesFilter === 'CRITICAL' ? 'bg-rose-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'}`}>Críticos</button>
               </div>
             </div>
+            {/* FILTROS AVANÇADOS - A RECEBER */}
+            <div className="px-8 py-4 bg-white border-b border-slate-50 grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1">Filtrar Cliente</label>
+                <select value={receivableClientFilter} onChange={e => setReceivableClientFilter(e.target.value)} className="modern-input h-10 py-0 text-xs font-bold">
+                  <option value="">TODOS</option>
+                  {Array.from(new Set(pendingSales.map(s => s.nome_cliente || 'Desconhecido'))).sort().map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1">Filtrar Lote</label>
+                <select value={receivableLoteFilter} onChange={e => setReceivableLoteFilter(e.target.value)} className="modern-input h-10 py-0 text-xs font-bold">
+                  <option value="">TODOS</option>
+                  {Array.from(new Set(pendingSales.map(s => s.id_completo.split('-').slice(0, 3).join('-')))).sort().map(l => <option key={l} value={l}>{l}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1">Início</label>
+                <input type="date" value={receivableDateStart} onChange={e => setReceivableDateStart(e.target.value)} className="modern-input h-10 py-0 text-xs" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1">Fim</label>
+                <input type="date" value={receivableDateEnd} onChange={e => setReceivableDateEnd(e.target.value)} className="modern-input h-10 py-0 text-xs" />
+              </div>
+            </div>
             <div className="overflow-x-auto">
               <table className="technical-table">
                 <thead>
@@ -712,11 +840,15 @@ const Financial: React.FC<FinancialProps> = ({
                 </thead>
                 <tbody>
                   {pendingSales.filter(s => {
+                    if (receivableClientFilter && s.nome_cliente !== receivableClientFilter) return false;
+                    if (receivableLoteFilter && !s.id_completo.includes(receivableLoteFilter)) return false;
+                    if (receivableDateStart && s.data_vencimento < receivableDateStart) return false;
+                    if (receivableDateEnd && s.data_vencimento > receivableDateEnd) return false;
                     const isOverdue = s.data_vencimento < today;
                     if (receivablesFilter === 'OVERDUE') return isOverdue;
                     if (receivablesFilter === 'CRITICAL') return s.data_vencimento < criticalDateStr;
                     return true;
-                  }).map(sale => {
+                  }).sort((a, b) => b.data_vencimento.localeCompare(a.data_vencimento)).map(sale => {
                     const { saldoDevedor } = getSaleBalance(sale);
                     const isOverdue = sale.data_vencimento < today;
                     const diffDays = Math.ceil(Math.abs(new Date(today).getTime() - new Date(sale.data_vencimento).getTime()) / 86400000);
@@ -776,6 +908,31 @@ const Financial: React.FC<FinancialProps> = ({
           </div>
 
           <div className="premium-card overflow-hidden shadow-xl">
+            {/* FILTROS AVANÇADOS - A PAGAR */}
+            <div className="px-8 py-4 bg-slate-50/50 border-b border-slate-100 grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1">Filtrar Lote</label>
+                <select value={payableLoteFilter} onChange={e => setPayableLoteFilter(e.target.value)} className="modern-input h-10 py-0 text-xs font-bold">
+                  <option value="">TODOS</option>
+                  {Array.from(new Set(payables.map(p => p.id_lote).filter(Boolean) as string[])).sort().map(l => <option key={l} value={l}>{l}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1">Filtrar Fornecedor</label>
+                <select value={payableSupplierFilter} onChange={e => setPayableSupplierFilter(e.target.value)} className="modern-input h-10 py-0 text-xs font-bold">
+                  <option value="">TODOS</option>
+                  {Array.from(new Set(payables.map(p => { const parts = p.descricao.split(' - '); return parts.length > 1 ? parts[parts.length - 1] : null; }).filter(Boolean) as string[])).sort().map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1">Início</label>
+                <input type="date" value={payableDateStart} onChange={e => setPayableDateStart(e.target.value)} className="modern-input h-10 py-0 text-xs" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1">Fim</label>
+                <input type="date" value={payableDateEnd} onChange={e => setPayableDateEnd(e.target.value)} className="modern-input h-10 py-0 text-xs" />
+              </div>
+            </div>
             <div className="overflow-x-auto">
               <table className="technical-table">
                 <thead>
@@ -789,11 +946,15 @@ const Financial: React.FC<FinancialProps> = ({
                 </thead>
                 <tbody>
                   {payables.filter(p => {
+                    if (payableLoteFilter && p.id_lote !== payableLoteFilter && !(p.descricao && p.descricao.includes(payableLoteFilter))) return false;
+                    if (payableSupplierFilter && !(p.descricao && p.descricao.includes(payableSupplierFilter))) return false;
+                    if (payableDateStart && p.data_vencimento < payableDateStart) return false;
+                    if (payableDateEnd && p.data_vencimento > payableDateEnd) return false;
                     if (payableFilterStatus === 'ALL') return true;
                     if (payableFilterStatus === 'LATE') return p.status !== 'PAGO' && p.data_vencimento < today;
                     if (payableFilterStatus === 'PENDING') return p.status !== 'PAGO';
                     return p.status === 'PAGO';
-                  }).sort((a, b) => a.data_vencimento.localeCompare(b.data_vencimento)).map(p => {
+                  }).sort((a, b) => b.data_vencimento.localeCompare(a.data_vencimento)).map(p => {
                     const isLate = p.status !== 'PAGO' && p.data_vencimento < today;
                     return (
                       <tr key={p.id} className={`hover:bg-slate-50 transition-colors group ${isLate ? "bg-rose-50/10" : ""}`}>
@@ -864,6 +1025,286 @@ const Financial: React.FC<FinancialProps> = ({
           </div>
         </div>
       )}
+
+      {/* SUPPLIERS TAB - PAGAMENTOS A FORNECEDORES */}
+      {activeTab === 'suppliers' && (() => {
+        // Agrupar pagamentos por fornecedor usando payables + transações
+        const supplierPayments = new Map<string, Array<{ descricao: string, lote: string, valor: number, valorPago: number, dataPagamento: string, dataVencimento: string, status: string }>>();
+
+        payables.filter(p => p.categoria === 'COMPRA_GADO').forEach(p => {
+          let fornecedor = p.fornecedor_id || '';
+          if (!fornecedor && p.descricao) {
+            const parts = p.descricao.split(' - ');
+            if (parts.length > 1) fornecedor = parts[parts.length - 1].trim();
+          }
+          if (!fornecedor) fornecedor = 'Não Identificado';
+
+          if (!supplierPayments.has(fornecedor)) supplierPayments.set(fornecedor, []);
+          supplierPayments.get(fornecedor)!.push({
+            descricao: p.descricao,
+            lote: p.id_lote || (p.descricao.match(/LOTE-[A-Z0-9]+-\d+/) || [''])[0] || '-',
+            valor: p.valor,
+            valorPago: p.valor_pago || 0,
+            dataPagamento: p.data_pagamento || '-',
+            dataVencimento: p.data_vencimento,
+            status: p.status
+          });
+        });
+
+        // Também incluir transações diretas (VISTA)
+        transactions.filter(t => t.tipo === 'SAIDA' && t.categoria === 'COMPRA_GADO' && !t.id.startsWith('TR-PAY-')).forEach(t => {
+          let fornecedor = '';
+          if (t.descricao) {
+            const parts = t.descricao.split(' - ');
+            if (parts.length > 1) fornecedor = parts[parts.length - 1].trim();
+          }
+          if (!fornecedor) fornecedor = 'Não Identificado';
+          const loteMatch = t.descricao?.match(/LOTE-[A-Z0-9]+-\d+/) || t.referencia_id?.match(/LOTE-[A-Z0-9]+-\d+/);
+
+          if (!supplierPayments.has(fornecedor)) supplierPayments.set(fornecedor, []);
+          supplierPayments.get(fornecedor)!.push({
+            descricao: t.descricao || '',
+            lote: loteMatch ? loteMatch[0] : t.referencia_id || '-',
+            valor: t.valor,
+            valorPago: t.valor,
+            dataPagamento: t.data,
+            dataVencimento: t.data,
+            status: 'PAGO'
+          });
+        });
+
+        const sortedSuppliers = Array.from(supplierPayments.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+        const allSupplierNames = sortedSuppliers.map(([name]) => name);
+        const allLotes = Array.from(new Set(sortedSuppliers.flatMap(([, items]) => items.map(i => i.lote)).filter(l => l && l !== '-'))).sort();
+        const filteredSuppliers = (supplierFilter === 'ALL' ? sortedSuppliers : sortedSuppliers.filter(([name]) => name === supplierFilter))
+          .map(([name, items]) => [name, supplierLoteFilter === 'ALL' ? items : items.filter(i => i.lote === supplierLoteFilter)] as [string, typeof items])
+          .filter(([, items]) => items.length > 0);
+        const grandTotal = filteredSuppliers.reduce((sum, [, items]) => sum + items.reduce((s, i) => s + i.valor, 0), 0);
+        const grandTotalPago = filteredSuppliers.reduce((sum, [, items]) => sum + items.reduce((s, i) => s + i.valorPago, 0), 0);
+
+        return (
+          <div className="max-w-7xl mx-auto space-y-4 animate-reveal">
+            {/* KPIs compactos */}
+            <div className="flex flex-wrap gap-3 items-center">
+              {/* FILTRO DE FORNECEDOR */}
+              <div className="bg-white rounded-xl border border-slate-100 px-3 py-1.5 shadow-sm flex items-center gap-2">
+                <Filter size={12} className="text-blue-500" />
+                <select
+                  className="text-[10px] font-black text-slate-700 uppercase bg-transparent outline-none cursor-pointer pr-4"
+                  value={supplierFilter}
+                  onChange={e => setSupplierFilter(e.target.value)}
+                >
+                  <option value="ALL">TODOS FORNECEDORES</option>
+                  {allSupplierNames.map(name => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
+              {/* FILTRO DE LOTE */}
+              <div className="bg-white rounded-xl border border-slate-100 px-3 py-1.5 shadow-sm flex items-center gap-2">
+                <Tag size={12} className="text-blue-500" />
+                <select
+                  className="text-[10px] font-black text-slate-700 uppercase bg-transparent outline-none cursor-pointer pr-4"
+                  value={supplierLoteFilter}
+                  onChange={e => setSupplierLoteFilter(e.target.value)}
+                >
+                  <option value="ALL">TODOS LOTES</option>
+                  {allLotes.map(lote => (
+                    <option key={lote} value={lote}>{lote}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-100 px-4 py-2 shadow-sm flex items-center gap-3">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Fornecedores</span>
+                <span className="text-lg font-black text-slate-900">{filteredSuppliers.length}</span>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-100 px-4 py-2 shadow-sm flex items-center gap-3">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Total</span>
+                <span className="text-lg font-black text-slate-900">{formatCurrency(grandTotal)}</span>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-100 px-4 py-2 shadow-sm flex items-center gap-3">
+                <span className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">Pago</span>
+                <span className="text-lg font-black text-emerald-600">{formatCurrency(grandTotalPago)}</span>
+              </div>
+              {grandTotal - grandTotalPago > 0.01 && (
+                <div className="bg-white rounded-xl border border-orange-100 px-4 py-2 shadow-sm flex items-center gap-3">
+                  <span className="text-[9px] font-black text-orange-500 uppercase tracking-wider">Pendente</span>
+                  <span className="text-lg font-black text-orange-500">{formatCurrency(grandTotal - grandTotalPago)}</span>
+                </div>
+              )}
+              <button
+                onClick={() => {
+                  const doc = new jsPDF();
+                  const pw = doc.internal.pageSize.width;
+                  // ═══ LOGO THIAGO 704 ═══
+                  doc.setFillColor(15, 23, 42);
+                  doc.rect(15, 10, pw - 30, 28, 'F');
+                  doc.setFont('courier', 'bold');
+                  doc.setFontSize(28);
+                  doc.setTextColor(255, 255, 255);
+                  doc.text('THIAGO', 22, 28);
+                  doc.setFontSize(32);
+                  doc.setTextColor(59, 130, 246);
+                  doc.text('704', 68, 32);
+                  doc.setFillColor(59, 130, 246);
+                  doc.rect(15, 38, pw - 30, 2, 'F');
+                  // Título
+                  doc.setFont('helvetica', 'bold');
+                  doc.setFontSize(14);
+                  doc.setTextColor(15, 23, 42);
+                  doc.text('PAGAMENTOS A FORNECEDORES', pw / 2, 50, { align: 'center' });
+                  doc.setFontSize(10);
+                  doc.setTextColor(100, 116, 139);
+                  doc.text(`Gerado: ${new Date().toLocaleString('pt-BR')}`, pw / 2, 58, { align: 'center' });
+                  doc.setDrawColor(200, 200, 200);
+                  doc.line(15, 63, pw - 15, 63);
+                  // ═══ RESUMO GERAL ═══
+                  doc.setFont('helvetica', 'bold');
+                  doc.setFontSize(11);
+                  doc.setTextColor(15, 23, 42);
+                  doc.text(`TOTAL:  R$ ${grandTotal.toFixed(2)}`, 18, 73);
+                  doc.setTextColor(16, 185, 129);
+                  doc.text(`PAGO:  R$ ${grandTotalPago.toFixed(2)}`, 85, 73);
+                  if (grandTotal - grandTotalPago > 0.01) {
+                    doc.setTextColor(239, 68, 68);
+                    doc.text(`PENDENTE:  R$ ${(grandTotal - grandTotalPago).toFixed(2)}`, 148, 73);
+                  }
+                  doc.line(15, 79, pw - 15, 79);
+                  let y = 90;
+                  // ═══ POR FORNECEDOR ═══
+                  filteredSuppliers.forEach(([fornecedor, items]) => {
+                    if (y > 255) { doc.addPage(); y = 25; }
+                    const totalF = items.reduce((s, i) => s + i.valor, 0);
+                    const pagoF = items.reduce((s, i) => s + i.valorPago, 0);
+                    // Barra do fornecedor
+                    doc.setFillColor(230, 235, 242);
+                    doc.rect(15, y - 5, pw - 30, 10, 'F');
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(10);
+                    doc.setTextColor(15, 23, 42);
+                    doc.text(`${fornecedor}  (${items.length})`, 18, y + 1);
+                    doc.setFontSize(9);
+                    doc.text(`Total: R$ ${totalF.toFixed(2)}`, 115, y + 1);
+                    doc.setTextColor(16, 185, 129);
+                    doc.text(`Pago: R$ ${pagoF.toFixed(2)}`, 158, y + 1);
+                    y += 10;
+                    // Cabeçalhos das colunas
+                    doc.setFontSize(8);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setTextColor(100, 116, 139);
+                    doc.text('DATA', 22, y);
+                    doc.text('LOTE', 52, y);
+                    doc.text('VALOR', 120, y, { align: 'right' });
+                    doc.text('PAGO', 152, y, { align: 'right' });
+                    doc.text('STATUS', pw - 18, y, { align: 'right' });
+                    y += 7;
+                    // Itens detalhados
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(9);
+                    items.forEach(item => {
+                      if (y > 270) { doc.addPage(); y = 25; }
+                      doc.setTextColor(80, 80, 80);
+                      doc.text(item.dataPagamento !== '-' ? new Date(item.dataPagamento).toLocaleDateString('pt-BR') : '-', 22, y);
+                      doc.setTextColor(59, 130, 246);
+                      doc.text(item.lote, 52, y);
+                      doc.setTextColor(15, 23, 42);
+                      doc.text(`R$ ${item.valor.toFixed(2)}`, 120, y, { align: 'right' });
+                      doc.setTextColor(16, 185, 129);
+                      doc.text(item.valorPago > 0 ? `R$ ${item.valorPago.toFixed(2)}` : '-', 152, y, { align: 'right' });
+                      doc.setTextColor(item.status === 'PAGO' ? 16 : item.status === 'PARCIAL' ? 234 : 239, item.status === 'PAGO' ? 185 : item.status === 'PARCIAL' ? 138 : 68, item.status === 'PAGO' ? 129 : item.status === 'PARCIAL' ? 42 : 68);
+                      doc.text(item.status, pw - 18, y, { align: 'right' });
+                      y += 7;
+                    });
+                    y += 5;
+                  });
+                  // ═══ RODAPÉ ═══
+                  y += 8;
+                  if (y > 280) { doc.addPage(); y = 25; }
+                  doc.setFillColor(15, 23, 42);
+                  doc.rect(15, y, pw - 30, 12, 'F');
+                  doc.setFont('courier', 'bold');
+                  doc.setFontSize(8);
+                  doc.setTextColor(255, 255, 255);
+                  doc.text('THIAGO 704  //  FRIGOGEST PRO X  //  DOCUMENTO OFICIAL', pw / 2, y + 8, { align: 'center' });
+                  doc.save(`FORNECEDORES_${new Date().toISOString().split('T')[0]}.pdf`);
+                }}
+                className="bg-blue-600 text-white rounded-xl px-4 py-2 shadow-sm flex items-center gap-2 text-[9px] font-black uppercase tracking-wider hover:bg-blue-700 transition-all"
+              >
+                <Printer size={14} /> Exportar PDF
+              </button>
+            </div>
+
+            {/* PLANILHA UNIFICADA */}
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse" style={{ fontSize: '11px' }}>
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      <th className="px-3 py-2 text-[9px] font-black text-slate-500 uppercase tracking-wider">Fornecedor</th>
+                      <th className="px-3 py-2 text-[9px] font-black text-slate-500 uppercase tracking-wider">Data Pgto</th>
+                      <th className="px-3 py-2 text-[9px] font-black text-slate-500 uppercase tracking-wider">Lote</th>
+                      <th className="px-3 py-2 text-[9px] font-black text-slate-500 uppercase tracking-wider text-right">Valor</th>
+                      <th className="px-3 py-2 text-[9px] font-black text-slate-500 uppercase tracking-wider text-right">Pago</th>
+                      <th className="px-3 py-2 text-[9px] font-black text-slate-500 uppercase tracking-wider text-center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredSuppliers.map(([fornecedor, items]) => {
+                      const totalF = items.reduce((s, i) => s + i.valor, 0);
+                      const pagoF = items.reduce((s, i) => s + i.valorPago, 0);
+                      const sorted = [...items].sort((a, b) => b.dataVencimento.localeCompare(a.dataVencimento));
+                      return (
+                        <React.Fragment key={fornecedor}>
+                          {/* LINHA CABEÇALHO DO FORNECEDOR */}
+                          <tr className="bg-slate-100/80 border-t-2 border-slate-200">
+                            <td className="px-3 py-1.5 font-black text-xs text-slate-800 uppercase" colSpan={3}>
+                              <span className="flex items-center gap-2">
+                                <Truck size={12} className="text-blue-500" />
+                                {fornecedor}
+                                <span className="text-[8px] font-bold text-slate-400 ml-1">({items.length})</span>
+                              </span>
+                            </td>
+                            <td className="px-3 py-1.5 text-right font-black text-xs text-slate-700">{formatCurrency(totalF)}</td>
+                            <td className="px-3 py-1.5 text-right font-black text-xs text-emerald-600">{formatCurrency(pagoF)}</td>
+                            <td className="px-3 py-1.5 text-center">
+                              {totalF - pagoF > 0.01 && <span className="text-[8px] font-black text-orange-500">DEVE {formatCurrency(totalF - pagoF)}</span>}
+                            </td>
+                          </tr>
+                          {/* LINHAS DE DETALHE */}
+                          {sorted.map((item, idx) => (
+                            <tr key={idx} className="border-b border-slate-50 hover:bg-blue-50/40 transition-colors">
+                              <td className="px-3 py-1.5 pl-8 text-[10px] text-slate-300">—</td>
+                              <td className="px-3 py-1.5 text-[10px] font-semibold text-slate-500">{item.dataPagamento !== '-' ? new Date(item.dataPagamento).toLocaleDateString() : '-'}</td>
+                              <td className="px-3 py-1.5">
+                                <span className="text-[9px] font-mono font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">{item.lote}</span>
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-bold text-xs text-slate-700">{formatCurrency(item.valor)}</td>
+                              <td className="px-3 py-1.5 text-right font-bold text-xs text-emerald-600">{item.valorPago > 0 ? formatCurrency(item.valorPago) : '-'}</td>
+                              <td className="px-3 py-1.5 text-center">
+                                <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase ${item.status === 'PAGO' ? 'bg-emerald-50 text-emerald-600' :
+                                  item.status === 'PARCIAL' ? 'bg-orange-50 text-orange-600' :
+                                    'bg-rose-50 text-rose-600'
+                                  }`}>{item.status}</span>
+                              </td>
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {filteredSuppliers.length === 0 && (
+              <div className="bg-white rounded-2xl border border-slate-100 p-12 text-center">
+                <Truck size={40} className="mx-auto mb-4 text-slate-200" />
+                <p className="font-black text-[9px] uppercase text-slate-300 tracking-[0.3em]">Nenhum pagamento a fornecedor registrado</p>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* MODALS - UNIFIED DESIGN SYSTEM */}
       {(saleToPay || payableToPay || showTransactionForm || showPayableForm) && (
@@ -937,6 +1378,38 @@ const Financial: React.FC<FinancialProps> = ({
                     </div>
                   </div>
 
+                  {/* FORMA DE RECEBIMENTO + DATA */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Forma de Recebimento</label>
+                      <div className="relative">
+                        <select
+                          className="modern-input h-14 bg-slate-50/30 appearance-none font-black text-xs uppercase cursor-pointer w-full"
+                          value={receiveMethod}
+                          onChange={e => setReceiveMethod(e.target.value as PaymentMethod)}
+                        >
+                          <option value="PIX">💠 PIX</option>
+                          <option value="DINHEIRO">💵 DINHEIRO</option>
+                          <option value="CHEQUE">📄 CHEQUE</option>
+                          <option value="TRANSFERENCIA">🏦 TRANSFERÊNCIA</option>
+                          <option value="BOLETO">📋 BOLETO</option>
+                          <option value="CARTAO">💳 CARTÃO</option>
+                          <option value="OUTROS">📎 OUTROS</option>
+                        </select>
+                        <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none opacity-20"><ChevronRight size={16} className="rotate-90" /></div>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Data Recebimento</label>
+                      <input
+                        type="date"
+                        className="modern-input h-14 font-bold text-xs"
+                        value={receiveDate}
+                        onChange={e => setReceiveDate(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
                   {/* TOTAL SUMMARY */}
                   <div className="p-6 bg-slate-900 rounded-3xl">
                     <div className="flex justify-between items-center mb-3">
@@ -951,6 +1424,10 @@ const Financial: React.FC<FinancialProps> = ({
                     <div className="flex justify-between items-center">
                       <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Total Baixado:</span>
                       <span className="text-3xl font-black text-white">{formatCurrency((parseFloat(partialPaymentAmount.replace(',', '.')) || 0) + (parseFloat(discountAmount.replace(',', '.')) || 0))}</span>
+                    </div>
+                    <div className="mt-3 flex justify-between items-center">
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Via:</span>
+                      <span className="text-sm font-black text-blue-400 uppercase">{receiveMethod}</span>
                     </div>
                   </div>
 

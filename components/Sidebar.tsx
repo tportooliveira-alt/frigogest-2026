@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Users, Package, Truck, Scale, Beef, DollarSign, Wand2, LogOut, FileText, ChevronRight, Zap, Calendar, Bot, Database } from 'lucide-react';
+import { LayoutDashboard, Users, Package, Truck, Scale, Beef, DollarSign, Wand2, LogOut, FileText, ChevronRight, Zap, Calendar, Bot, Database, ShieldCheck } from 'lucide-react';
 
 interface SidebarProps {
   setView: (view: string) => void;
@@ -20,6 +20,7 @@ const Sidebar: React.FC<SidebarProps> = ({ setView, onLogout }) => {
     { id: 'heifers', label: 'Gestão Abate', description: 'Novilhas Diárias', icon: Beef, color: 'text-emerald-700', bg: 'bg-emerald-100', glow: 'group-hover:shadow-lg' },
     { id: 'sales_agent', label: 'Agente IA', description: 'Robô de Vendas', icon: Bot, color: 'text-purple-600', bg: 'bg-purple-100', glow: 'group-hover:shadow-lg' },
     { id: 'report', label: 'Relatório', description: 'Resumo Diário', icon: FileText, color: 'text-emerald-600', bg: 'bg-emerald-50', glow: 'group-hover:shadow-lg' },
+    { id: 'audit', label: 'Auditoria', description: 'Quem Fez O Quê', icon: ShieldCheck, color: 'text-rose-600', bg: 'bg-rose-50', glow: 'group-hover:shadow-lg' },
     { id: 'aistudio', label: 'AI Studio', description: 'Processamento IA', icon: Wand2, color: 'text-fuchsia-600', bg: 'bg-fuchsia-50', glow: 'group-hover:shadow-lg' },
   ];
 
