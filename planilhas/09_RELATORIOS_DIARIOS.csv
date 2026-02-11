@@ -1,0 +1,4 @@
+ID;DATA;HORA;USUARIO;INTENSIDADE;SENTIMENTO;NOTAS;TIPO;MOVIMENTO_EXTRA;PROBLEMAS_TECNICOS
+REL-001;2026-02-11;2026-02-11T06:30:00;Thiago;intenso;positive;Dia cheio, 3 vendas concluídas. Chegou lote novo da Fazenda São José.;RELATORIO;false;false
+REL-002;2026-02-10;2026-02-10T07:00:00;Thiago;normal;neutral;Dia normal, 1 venda. Câmara fria operando normal.;RELATORIO;false;false
+REL-003;2026-02-10;2026-02-10T14:00:00;Funcionário;normal;negative;Cliente CLI-002 reclamou do peso da última entrega.;RECLAMACAO;false;false

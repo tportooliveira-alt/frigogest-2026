@@ -19,6 +19,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, onSnapshot, writeBatch, query, limit } from 'firebase/firestore';
 import { Cloud, CloudOff, Loader2, ShieldCheck, Activity, RefreshCw } from 'lucide-react';
 import { logAction } from './utils/audit';
+import { syncAllToSheets, forceSyncToSheets, isSheetsConfigured } from './utils/sheetsSync';
 import CollaboratorReport from './components/CollaboratorReport';
 import HeiferManager from './components/HeiferManager';
 import SalesAgent from './components/SalesAgent';
@@ -34,6 +35,7 @@ const App: React.FC = () => {
   const [dbStatus, setDbStatus] = useState<'online' | 'offline' | 'checking'>(OFFLINE_MODE ? 'offline' : 'checking');
   const [data, setData] = useState<AppState>({ ...MOCK_DATA, scheduledOrders: [], suppliers: [], payables: [] });
   const [loading, setLoading] = useState(!OFFLINE_MODE);
+  const [sheetsSyncStatus, setSheetsSyncStatus] = useState<'idle' | 'syncing' | 'ok' | 'error'>('idle');
 
   useEffect(() => {
     if (OFFLINE_MODE || !auth) {
@@ -129,6 +131,25 @@ const App: React.FC = () => {
       });
 
       setDbStatus('online');
+
+      // ── SYNC GOOGLE SHEETS ──
+      if (isSheetsConfigured()) {
+        setSheetsSyncStatus('syncing');
+        syncAllToSheets({
+          clients: clientsWithDebt,
+          batches,
+          stock,
+          sales,
+          transactions,
+          scheduledOrders,
+          reports,
+          suppliers,
+          payables
+        }).then(r => {
+          setSheetsSyncStatus(r.success ? 'ok' : 'idle');
+          if (r.success) setTimeout(() => setSheetsSyncStatus('idle'), 5000);
+        }).catch(() => setSheetsSyncStatus('error'));
+      }
     } catch (e) {
       console.error(e);
       setDbStatus('offline');
@@ -920,7 +941,12 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-sans overflow-x-hidden selection:bg-blue-200" >
-      {currentView === 'menu' && <Sidebar setView={setCurrentView} onLogout={handleLogout} />}
+      {currentView === 'menu' && <Sidebar setView={setCurrentView} onLogout={handleLogout} onSyncSheets={isSheetsConfigured() ? async () => {
+        setSheetsSyncStatus('syncing');
+        const r = await forceSyncToSheets(data);
+        setSheetsSyncStatus(r.success ? 'ok' : 'error');
+        if (r.success) setTimeout(() => setSheetsSyncStatus('idle'), 5000);
+      } : undefined} sheetsSyncStatus={sheetsSyncStatus} />}
       {currentView === 'system_reset' && <SystemReset onBack={() => setCurrentView('menu')} refreshData={fetchData} />}
       {currentView === 'dashboard' && <Dashboard sales={data.sales} stock={closedStock} transactions={data.transactions} batches={closedBatches} clients={data.clients} onBack={() => setCurrentView('menu')} />}
       {

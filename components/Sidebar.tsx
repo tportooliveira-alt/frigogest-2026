@@ -1,12 +1,14 @@
 import React from 'react';
-import { LayoutDashboard, Users, Package, Truck, Scale, Beef, DollarSign, Wand2, LogOut, FileText, ChevronRight, Zap, Calendar, Bot, Database, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, Users, Package, Truck, Scale, Beef, DollarSign, Wand2, LogOut, FileText, ChevronRight, Zap, Calendar, Bot, Database, ShieldCheck, Sheet } from 'lucide-react';
 
 interface SidebarProps {
   setView: (view: string) => void;
   onLogout: () => void;
+  onSyncSheets?: () => void;
+  sheetsSyncStatus?: 'idle' | 'syncing' | 'ok' | 'error';
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ setView, onLogout }) => {
+const Sidebar: React.FC<SidebarProps> = ({ setView, onLogout, onSyncSheets, sheetsSyncStatus }) => {
   const menuItems = [
     { id: 'dashboard', label: 'Painel Geral', description: 'Visão Macro & KPIs', icon: LayoutDashboard, color: 'text-blue-600', bg: 'bg-blue-50', glow: 'group-hover:shadow-lg' },
     { id: 'clients', label: 'Clientes', description: 'Agenda & Contatos', icon: Users, color: 'text-indigo-600', bg: 'bg-indigo-50', glow: 'group-hover:shadow-lg' },
@@ -110,6 +112,23 @@ const Sidebar: React.FC<SidebarProps> = ({ setView, onLogout }) => {
               <Zap size={16} className="group-hover:rotate-180 transition-transform" />
               ATUALIZAR
             </button>
+            {onSyncSheets && (
+              <button
+                onClick={onSyncSheets}
+                disabled={sheetsSyncStatus === 'syncing'}
+                className={`flex items-center gap-3 px-8 py-5 rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] backdrop-blur-md border transition-all hover:shadow-lg active:scale-95 group ${sheetsSyncStatus === 'syncing'
+                    ? 'text-amber-300/80 bg-amber-500/20 border-amber-400/30 cursor-wait'
+                    : sheetsSyncStatus === 'ok'
+                      ? 'text-emerald-300/80 bg-emerald-500/20 border-emerald-400/30'
+                      : sheetsSyncStatus === 'error'
+                        ? 'text-rose-300/80 bg-rose-500/20 border-rose-400/30'
+                        : 'text-white/80 bg-white/10 border-white/20 hover:border-blue-400 hover:text-blue-300 hover:bg-blue-500/20'
+                  }`}
+              >
+                <Sheet size={16} className={sheetsSyncStatus === 'syncing' ? 'animate-spin' : 'group-hover:scale-110 transition-transform'} />
+                {sheetsSyncStatus === 'syncing' ? 'SINCRONIZANDO...' : sheetsSyncStatus === 'ok' ? '✅ SINCRONIZADO' : 'SYNC PLANILHA'}
+              </button>
+            )}
             <button
               onClick={onLogout}
               className="flex items-center gap-3 px-8 py-5 rounded-[2rem] text-white/80 font-black text-xs uppercase tracking-[0.2em] bg-white/10 backdrop-blur-md border border-white/20 hover:border-rose-400 hover:text-rose-300 hover:bg-rose-500/20 transition-all hover:shadow-lg active:scale-95 group"

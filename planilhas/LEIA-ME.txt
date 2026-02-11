@@ -1,0 +1,29 @@
+╔══════════════════════════════════════════════════════════════╗
+║          PLANILHAS FRIGOGEST - THIAGO 704                  ║
+║          Para uso no Google Planilhas                       ║
+╚══════════════════════════════════════════════════════════════╝
+
+COMO IMPORTAR NO GOOGLE PLANILHAS:
+-----------------------------------
+1. Abra o Google Planilhas (sheets.google.com)
+2. Arquivo > Importar > Upload
+3. Selecione o arquivo CSV desejado
+4. Separador: Ponto e vírgula (;)
+5. Pronto!
+
+LISTA DAS PLANILHAS:
+--------------------
+01_CLIENTES.csv        → Cadastro de clientes (ID, nome, WhatsApp, endereço, limite)
+02_FORNECEDORES.csv    → Cadastro de fornecedores (fazendas, dados bancários)
+03_LOTES.csv           → Registro de lotes de gado (entrada, peso, valor, custo/kg)
+04_ESTOQUE.csv         → Controle de peças na câmara fria (bandas A/B, inteiros)
+05_VENDAS.csv          → Registro de vendas (cliente, peso, preço/kg, pagamento)
+06_FLUXO_CAIXA.csv     → Todas as transações financeiras (entradas e saídas)
+07_CONTAS_A_PAGAR.csv  → Obrigações a pagar (fornecedores, contas, impostos)
+08_AGENDAMENTOS.csv    → Pedidos agendados para entrega
+09_RELATORIOS_DIARIOS.csv → Diário de operações
+
+SEPARADOR: Ponto e vírgula (;)
+CODIFICAÇÃO: UTF-8
+
+Os dados de exemplo são fictícios. Apague e preencha com seus dados reais!
