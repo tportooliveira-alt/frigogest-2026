@@ -143,9 +143,10 @@ const CustomerCare: React.FC<CustomerCareProps> = ({ onBack, clients }) => {
                                         Desconto (%)
                                     </label>
                                     <input
-                                        type="number"
-                                        value={discountPercent}
-                                        onChange={e => setDiscountPercent(Number(e.target.value))}
+                                        type="text" inputMode="numeric"
+                                        value={discountPercent || ''}
+                                        onChange={e => { const v = e.target.value; if (v === '' || /^\d*$/.test(v)) setDiscountPercent(Number(v) || 0); }}
+                                        placeholder="Ex: 10"
                                         className="modern-input h-12"
                                     />
                                 </div>

@@ -44,8 +44,9 @@ const Suppliers: React.FC<SuppliersProps> = ({ suppliers, addSupplier, updateSup
     const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
 
     const filteredSuppliers = suppliers.filter(s =>
-        s.nome_fantasia.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.cpf_cnpj.includes(searchTerm)
+        s.status !== 'INATIVO' &&
+        (s.nome_fantasia.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            s.cpf_cnpj.includes(searchTerm))
     ).sort((a, b) => a.nome_fantasia.localeCompare(b.nome_fantasia));
 
     const handleSubmitNewSupplier = (e: React.FormEvent) => {
@@ -186,9 +187,9 @@ const Suppliers: React.FC<SuppliersProps> = ({ suppliers, addSupplier, updateSup
                                                 <ChevronRightIcon size={20} />
                                             </button>
                                             <button
-                                                onClick={(e) => { e.stopPropagation(); if (confirm('Confirmar exclusão de registro?')) deleteSupplier(supplier.id); }}
-                                                className="p-2 text-gray-200 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
-                                                title="Excluir"
+                                                onClick={(e) => { e.stopPropagation(); if (confirm('Inativar este fornecedor?\n\nO registro será mantido no histórico mas não aparecerá mais nas listas.')) deleteSupplier(supplier.id); }}
+                                                className="p-2 text-gray-200 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all"
+                                                title="Inativar"
                                             >
                                                 <TrashIcon size={18} />
                                             </button>

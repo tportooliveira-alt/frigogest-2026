@@ -219,14 +219,14 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
 
               <div className="mt-8 flex items-center justify-center gap-3 opacity-30">
                 <div className="h-px w-8 bg-slate-300" />
-                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">v2.5 Enterprise</span>
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">v2.6.5 Enterprise</span>
                 <div className="h-px w-8 bg-slate-300" />
               </div>
             </div>
           </form>
         </div>
-      </div>
-    </div>
+      </div >
+    </div >
   );
 };
 

@@ -174,10 +174,10 @@ const TeamManagement: React.FC<TeamManagementProps> = ({ onBack }) => {
                                         Bônus (Opcional)
                                     </label>
                                     <input
-                                        type="number"
+                                        type="text" inputMode="decimal"
                                         value={bonusAmount || ''}
-                                        onChange={e => setBonusAmount(Number(e.target.value))}
-                                        placeholder="0.00"
+                                        onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setBonusAmount(Number(v) || 0); }}
+                                        placeholder="Valor"
                                         className="modern-input h-12"
                                     />
                                 </div>
@@ -218,9 +218,9 @@ const TeamManagement: React.FC<TeamManagementProps> = ({ onBack }) => {
                                     </select>
 
                                     <input
-                                        type="number"
+                                        type="text" inputMode="numeric"
                                         value={hoursWorked || ''}
-                                        onChange={e => setHoursWorked(Number(e.target.value))}
+                                        onChange={e => { const v = e.target.value; if (v === '' || /^\d*$/.test(v)) setHoursWorked(Number(v) || 0); }}
                                         placeholder="Horas trabalhadas"
                                         className="modern-input h-10 text-sm"
                                     />
@@ -354,10 +354,10 @@ const TeamManagement: React.FC<TeamManagementProps> = ({ onBack }) => {
                                     Valor do Bônus (R$)
                                 </label>
                                 <input
-                                    type="number"
+                                    type="text" inputMode="decimal"
                                     value={bonusAmount || ''}
-                                    onChange={e => setBonusAmount(Number(e.target.value))}
-                                    placeholder="0.00"
+                                    onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setBonusAmount(Number(v) || 0); }}
+                                    placeholder="Valor"
                                     className="modern-input h-12"
                                 />
                             </div>

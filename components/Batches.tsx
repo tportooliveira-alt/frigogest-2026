@@ -27,7 +27,8 @@ import {
   Mic as MicIcon,
   MicOff as MicOffIcon,
   Waves as WavesIcon,
-  Pencil as PencilIcon
+  Pencil as PencilIcon,
+  RotateCcw as RotateCcwIcon
 } from 'lucide-react';
 import { calculateRealCost, formatCurrency, formatWeight } from '../utils/helpers';
 
@@ -448,27 +449,30 @@ const Batches: React.FC<BatchesProps> = ({
   const handleDeleteBatch = async () => {
     if (!editingBatch || !deleteBatch) return;
 
-    // Confirmação com aviso forte
-    const confirmDelete = window.confirm(
-      `⚠️ ATENÇÃO - EXCLUSÃO PERMANENTE!\n\n` +
-      `Você está prestes a EXCLUIR o lote:\n${editingBatch.id_lote} - ${editingBatch.fornecedor}\n\n` +
-      `Esta ação é IRREVERSÍVEL e irá:\n` +
-      `• Remover o lote do sistema\n` +
-      `• Perder todos os dados financeiros\n` +
-      `• Afetar relatórios e histórico\n\n` +
-      `Tem CERTEZA que deseja continuar?`
+    // Confirmação com aviso sobre estorno
+    const confirmEstorno = window.confirm(
+      `🔄 ESTORNO DE LOTE\n\n` +
+      `Lote: ${editingBatch.id_lote} - ${editingBatch.fornecedor}\n\n` +
+      `Esta ação irá ESTORNAR o lote inteiro:\n` +
+      `• O lote será marcado como ESTORNADO\n` +
+      `• Itens do estoque serão marcados como ESTORNADO\n` +
+      `• Contas a pagar serão canceladas/estornadas\n` +
+      `• Vendas vinculadas serão estornadas\n` +
+      `• Transações financeiras serão revertidas\n\n` +
+      `⚠️ Nenhum dado será APAGADO — tudo fica registrado como estorno.\n\n` +
+      `Confirma o ESTORNO?`
     );
 
-    if (!confirmDelete) return;
+    if (!confirmEstorno) return;
 
     try {
       await deleteBatch(editingBatch.id_lote);
-      alert('✅ Lote excluído com sucesso!');
+      alert('✅ Lote estornado com sucesso! Todos os registros vinculados foram revertidos.');
       setShowEditModal(false);
       setEditingBatch(null);
     } catch (e) {
-      console.error('Erro ao excluir lote:', e);
-      alert('❌ Erro ao excluir o lote.');
+      console.error('Erro ao estornar lote:', e);
+      alert('❌ Erro ao estornar o lote.');
     }
   };
 
@@ -613,7 +617,7 @@ const Batches: React.FC<BatchesProps> = ({
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Peso Romaneio (kg)</label>
-                    <input disabled={!!selectedBatch} type="number" step="0.01" inputMode="decimal" className="modern-input font-bold" placeholder="0,00 kg" value={selectedBatch ? selectedBatch.peso_total_romaneio : newBatch.peso_total_romaneio} onChange={e => setNewBatch({ ...newBatch, peso_total_romaneio: parseFloat(e.target.value) || 0 })} />
+                    <input disabled={!!selectedBatch} type="text" inputMode="decimal" className="modern-input font-bold text-lg" placeholder="Peso em kg" value={selectedBatch ? selectedBatch.peso_total_romaneio : (newBatch.peso_total_romaneio || '')} onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setNewBatch({ ...newBatch, peso_total_romaneio: parseFloat(v) || 0 }); }} />
                   </div>
                 </div>
               </div>
@@ -625,17 +629,17 @@ const Batches: React.FC<BatchesProps> = ({
                   <div className="space-y-4">
                     <div>
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Valor do Gado (R$)</label>
-                      <input type="number" step="0.01" inputMode="decimal" className="modern-input text-xl font-black bg-slate-50 border-slate-100" placeholder="R$ 0,00" value={newBatch.valor_compra_total} onChange={e => setNewBatch({ ...newBatch, valor_compra_total: parseFloat(e.target.value) || 0 })} />
+                      <input type="text" inputMode="decimal" className="modern-input text-xl font-black bg-slate-50 border-slate-100" placeholder="Valor total" value={newBatch.valor_compra_total || ''} onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setNewBatch({ ...newBatch, valor_compra_total: parseFloat(v) || 0 }); }} />
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Frete (R$)</label>
-                        <input type="number" step="0.01" inputMode="decimal" className="modern-input text-sm" placeholder="R$ 0,00" value={newBatch.frete} onChange={e => setNewBatch({ ...newBatch, frete: parseFloat(e.target.value) || 0 })} />
+                        <input type="text" inputMode="decimal" className="modern-input" placeholder="Frete" value={newBatch.frete || ''} onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setNewBatch({ ...newBatch, frete: parseFloat(v) || 0 }); }} />
                       </div>
                       <div>
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Extras (R$)</label>
-                        <input type="number" step="0.01" inputMode="decimal" className="modern-input text-sm" placeholder="R$ 0,00" value={newBatch.gastos_extras} onChange={e => setNewBatch({ ...newBatch, gastos_extras: parseFloat(e.target.value) || 0 })} />
+                        <input type="text" inputMode="decimal" className="modern-input" placeholder="Extras" value={newBatch.gastos_extras || ''} onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setNewBatch({ ...newBatch, gastos_extras: parseFloat(v) || 0 }); }} />
                       </div>
                     </div>
 
@@ -784,89 +788,75 @@ const Batches: React.FC<BatchesProps> = ({
                         )}
                       </div>
 
-                      {/* DISPLAY DO PESO */}
-                      <div className="w-full bg-white rounded-xl py-4 px-4 text-4xl md:text-5xl font-black text-slate-900 text-right shadow-xl mb-3 min-h-[70px] flex items-center justify-end">
-                        {newItemEntry.peso || '0'}<span className="text-xl text-slate-400 ml-1">kg</span>
+                      {/* DISPLAY DO PESO + BACKSPACE */}
+                      <div className="w-full bg-white rounded-xl py-3 px-4 shadow-xl mb-2 flex items-center justify-between min-h-[60px]">
+                        <button
+                          type="button"
+                          onClick={() => setNewItemEntry(prev => ({ ...prev, peso: prev.peso.slice(0, -1) }))}
+                          className="w-10 h-10 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition-all active:scale-90"
+                        >
+                          ←
+                        </button>
+                        <div className="text-4xl md:text-5xl font-black text-slate-900 text-right flex-1 px-2">
+                          {newItemEntry.peso || '0'}<span className="text-xl text-slate-400 ml-1">kg</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setNewItemEntry({ ...newItemEntry, peso: '' })}
+                          className="w-10 h-10 rounded-lg bg-rose-100 hover:bg-rose-200 flex items-center justify-center text-rose-500 font-black text-sm transition-all active:scale-90"
+                        >
+                          C
+                        </button>
                       </div>
 
-                      {/* TECLADO NUMÉRICO */}
-                      <div className="grid grid-cols-4 gap-2">
-                        {['7', '8', '9', 'C'].map((key) => (
+                      {/* TECLADO NUMÉRICO COMPACTO — 3 colunas, layout celular */}
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((key) => (
                           <button
                             key={key}
                             type="button"
-                            onClick={() => {
-                              if (key === 'C') {
-                                setNewItemEntry({ ...newItemEntry, peso: '' });
-                              } else {
-                                setNewItemEntry(prev => ({ ...prev, peso: prev.peso + key }));
-                              }
-                            }}
-                            className={`h-14 md:h-16 rounded-xl font-black text-2xl transition-all active:scale-95 shadow-md ${key === 'C'
-                                ? 'bg-rose-500 text-white hover:bg-rose-600'
-                                : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
-                              }`}
+                            onClick={() => setNewItemEntry(prev => ({ ...prev, peso: prev.peso + key }))}
+                            className="h-14 rounded-xl font-black text-2xl bg-slate-100 text-slate-800 hover:bg-slate-200 transition-all active:scale-95 shadow-sm"
                           >
                             {key}
                           </button>
                         ))}
-                        {['4', '5', '6', ','].map((key) => (
-                          <button
-                            key={key}
-                            type="button"
-                            onClick={() => {
-                              if (key === ',') {
-                                if (!newItemEntry.peso.includes('.')) {
-                                  setNewItemEntry(prev => ({ ...prev, peso: prev.peso + '.' }));
-                                }
-                              } else {
-                                setNewItemEntry(prev => ({ ...prev, peso: prev.peso + key }));
-                              }
-                            }}
-                            className={`h-14 md:h-16 rounded-xl font-black text-2xl transition-all active:scale-95 shadow-md ${key === ','
-                                ? 'bg-slate-300 text-slate-700 hover:bg-slate-400'
-                                : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
-                              }`}
-                          >
-                            {key}
-                          </button>
-                        ))}
-                        {['1', '2', '3', '←'].map((key) => (
-                          <button
-                            key={key}
-                            type="button"
-                            onClick={() => {
-                              if (key === '←') {
-                                setNewItemEntry(prev => ({ ...prev, peso: prev.peso.slice(0, -1) }));
-                              } else {
-                                setNewItemEntry(prev => ({ ...prev, peso: prev.peso + key }));
-                              }
-                            }}
-                            className={`h-14 md:h-16 rounded-xl font-black text-2xl transition-all active:scale-95 shadow-md ${key === '←'
-                                ? 'bg-slate-400 text-white hover:bg-slate-500'
-                                : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
-                              }`}
-                          >
-                            {key}
-                          </button>
-                        ))}
+                        {/* Última linha: vírgula, 0, 00 */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!newItemEntry.peso.includes('.')) {
+                              setNewItemEntry(prev => ({ ...prev, peso: (prev.peso || '0') + '.' }));
+                            }
+                          }}
+                          className="h-14 rounded-xl font-black text-2xl bg-slate-300 text-slate-700 hover:bg-slate-400 transition-all active:scale-95 shadow-sm"
+                        >
+                          ,
+                        </button>
                         <button
                           type="button"
                           onClick={() => setNewItemEntry(prev => ({ ...prev, peso: prev.peso + '0' }))}
-                          className="h-14 md:h-16 col-span-2 rounded-xl font-black text-2xl bg-slate-100 text-slate-800 hover:bg-slate-200 transition-all active:scale-95 shadow-md"
+                          className="h-14 rounded-xl font-black text-2xl bg-slate-100 text-slate-800 hover:bg-slate-200 transition-all active:scale-95 shadow-sm"
                         >
                           0
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
-                            handleAddItem();
-                          }}
-                          className="h-14 md:h-16 col-span-2 rounded-xl font-black text-xl bg-orange-600 text-white hover:bg-orange-500 transition-all active:scale-95 shadow-xl shadow-orange-900/30 flex items-center justify-center gap-2"
+                          onClick={() => setNewItemEntry(prev => ({ ...prev, peso: prev.peso + '00' }))}
+                          className="h-14 rounded-xl font-black text-xl bg-slate-100 text-slate-800 hover:bg-slate-200 transition-all active:scale-95 shadow-sm"
                         >
-                          <PlusIcon size={24} /> ADD
+                          00
                         </button>
                       </div>
+
+                      {/* BOTÃO ADD GRANDE */}
+                      <button
+                        type="button"
+                        onClick={() => handleAddItem()}
+                        className="w-full h-14 mt-2 rounded-xl font-black text-xl bg-orange-600 text-white hover:bg-orange-500 transition-all active:scale-95 shadow-xl shadow-orange-900/30 flex items-center justify-center gap-2"
+                      >
+                        <PlusIcon size={24} /> ADICIONAR PEÇA
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1022,171 +1012,263 @@ const Batches: React.FC<BatchesProps> = ({
               </div>
             </div>
           </div>
-        )}
-      </div>
+        )
+        }
+      </div >
 
-      {showFinalizationModal && selectedBatch && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 animate-reveal">
-          <div className="bg-white rounded-[48px] shadow-2xl max-w-lg w-full overflow-hidden border border-white">
-            <div className="bg-orange-600 p-12 text-white text-center">
-              <div className="w-24 h-24 bg-white/20 rounded-[32px] flex items-center justify-center mx-auto mb-8">
-                <CheckIcon size={48} />
-              </div>
-              <h3 className="text-3xl font-black tracking-tight leading-none uppercase">Confirmar Fechamento</h3>
-              <p className="text-[10px] font-bold tracking-[0.2em] mt-4 uppercase text-orange-100 opacity-60">Operação de Finalização de Lote</p>
-            </div>
-            <div className="p-12 space-y-8">
-              <div className="bg-slate-50 rounded-3xl p-10 text-center space-y-3">
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Peso Total Acumulado</p>
-                <p className="text-6xl font-black text-slate-900 tracking-tighter">{formatWeight(batchSummary?.totalWeighed || 0)}</p>
-                <div className="flex justify-center gap-6 text-[10px] font-black pt-6 border-t border-slate-200 mt-6 uppercase tracking-wider">
-                  <span className="text-slate-400">Alvo: {formatWeight(selectedBatch.peso_total_romaneio)}</span>
-                  <span className={`${(batchSummary?.diff || 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>Desvio: {batchSummary?.diff} kg</span>
+      {showFinalizationModal && selectedBatch && (() => {
+        const totalCost = (selectedBatch.valor_compra_total || 0) + (selectedBatch.frete || 0) + (selectedBatch.gastos_extras || 0);
+        const custoKg = selectedBatch.peso_total_romaneio > 0 ? totalCost / selectedBatch.peso_total_romaneio : 0;
+        const formaPag = (selectedBatch as any).forma_pagamento || (draftBatch as any)?.forma_pagamento || 'PRAZO';
+        const valorEntrada = (selectedBatch as any).valor_entrada || (draftBatch as any)?.valor_entrada || 0;
+        const pesoReal = batchSummary?.totalWeighed || 0;
+        const pesoNF = selectedBatch.peso_total_romaneio;
+        const diffPeso = pesoReal - pesoNF;
+        const diffPercent = pesoNF > 0 ? ((diffPeso / pesoNF) * 100).toFixed(1) : '0';
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 animate-reveal overflow-y-auto">
+            <div className="bg-white rounded-[48px] shadow-2xl max-w-lg w-full overflow-hidden border border-white my-4">
+              <div className="bg-orange-600 p-8 md:p-12 text-white text-center">
+                <div className="w-20 h-20 bg-white/20 rounded-[28px] flex items-center justify-center mx-auto mb-6">
+                  <CheckIcon size={40} />
                 </div>
+                <h3 className="text-2xl md:text-3xl font-black tracking-tight leading-none uppercase">Conferência Final</h3>
+                <p className="text-[10px] font-bold tracking-[0.2em] mt-3 uppercase text-orange-100 opacity-60">{selectedBatch.id_lote} — {selectedBatch.fornecedor}</p>
               </div>
-
-              <p className="text-xs font-medium text-slate-500 leading-relaxed text-center px-4">
-                Ao confirmar, este lote será <span className="text-slate-900 font-bold">travado permanentemente</span>.
-                Os dados financeiros serão registrados e os itens entrarão oficialmente no estoque.
-              </p>
-
-              <div className="flex flex-col gap-3 mt-4">
-                <button onClick={confirmFinalization} className="btn-modern bg-slate-900 text-white w-full py-5 rounded-2xl hover:bg-orange-600 shadow-xl transition-all">Sincronizar e Finalizar</button>
-                <button onClick={() => setShowFinalizationModal(false)} className="text-[10px] font-black text-slate-400 hover:text-slate-600 uppercase tracking-[0.2em] py-2">Cancelar Operação</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL DE EDIÇÃO DE LOTE */}
-      {showEditModal && editingBatch && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 animate-reveal overflow-y-auto">
-          <div className="bg-white rounded-[48px] shadow-2xl max-w-2xl w-full overflow-hidden border border-white my-8">
-            <div className="bg-blue-600 p-12 text-white text-center">
-              <div className="w-24 h-24 bg-white/20 rounded-[32px] flex items-center justify-center mx-auto mb-8">
-                <PencilIcon size={48} />
-              </div>
-              <h3 className="text-3xl font-black tracking-tight leading-none uppercase">Editar Lote</h3>
-              <p className="text-[10px] font-bold tracking-[0.2em] mt-4 uppercase text-blue-100 opacity-60">{editingBatch.id_lote}</p>
-            </div>
-            <div className="p-12 space-y-6 max-h-[60vh] overflow-y-auto">
-              {/* Fornecedor */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Fornecedor</label>
-                <input
-                  type="text"
-                  className="modern-input w-full"
-                  value={editingBatch.fornecedor}
-                  onChange={e => setEditingBatch({ ...editingBatch, fornecedor: e.target.value.toUpperCase() })}
-                />
-              </div>
-
-              {/* Peso do Romaneio */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Peso Romaneio (kg)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="modern-input w-full font-bold"
-                    value={editingBatch.peso_total_romaneio}
-                    onChange={e => setEditingBatch({ ...editingBatch, peso_total_romaneio: parseFloat(e.target.value) || 0 })}
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Data Recebimento</label>
-                  <input
-                    type="date"
-                    className="modern-input w-full"
-                    value={editingBatch.data_recebimento}
-                    onChange={e => setEditingBatch({ ...editingBatch, data_recebimento: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              {/* Valores Financeiros */}
-              <div className="pt-4 border-t border-slate-100">
-                <h4 className="text-[9px] font-black text-slate-300 uppercase tracking-[0.2em] mb-4">Valores Financeiros</h4>
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Valor do Gado (R$)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="modern-input w-full text-xl font-black"
-                      value={editingBatch.valor_compra_total}
-                      onChange={e => setEditingBatch({ ...editingBatch, valor_compra_total: parseFloat(e.target.value) || 0 })}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
+              <div className="p-6 md:p-10 space-y-5">
+                {/* COMPARAÇÃO PESO NF vs REAL */}
+                <div className="bg-slate-50 rounded-2xl p-5 space-y-3">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Peso: NF vs Pesado</p>
+                  <div className="grid grid-cols-3 gap-3 text-center">
                     <div>
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Frete (R$)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        className="modern-input w-full"
-                        value={editingBatch.frete}
-                        onChange={e => setEditingBatch({ ...editingBatch, frete: parseFloat(e.target.value) || 0 })}
-                      />
+                      <p className="text-[9px] font-bold text-slate-400 uppercase">NF (Romaneio)</p>
+                      <p className="text-xl font-black text-slate-700">{formatWeight(pesoNF)}</p>
                     </div>
                     <div>
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Extras (R$)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        className="modern-input w-full"
-                        value={editingBatch.gastos_extras}
-                        onChange={e => setEditingBatch({ ...editingBatch, gastos_extras: parseFloat(e.target.value) || 0 })}
-                      />
+                      <p className="text-[9px] font-bold text-slate-400 uppercase">Peso Real</p>
+                      <p className="text-xl font-black text-slate-900">{formatWeight(pesoReal)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase">Diferença</p>
+                      <p className={`text-xl font-black ${diffPeso >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        {diffPeso >= 0 ? '+' : ''}{diffPeso.toFixed(2)} kg
+                      </p>
+                      <p className={`text-[9px] font-bold ${diffPeso >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>({diffPercent}%)</p>
                     </div>
                   </div>
-
-                  <div className="bg-slate-900 rounded-2xl p-4 flex justify-between items-center">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Custo Real/Kg:</span>
-                    <span className="text-xl font-black text-orange-400">
-                      {formatCurrency(calculateRealCost(
-                        editingBatch.valor_compra_total,
-                        editingBatch.frete,
-                        editingBatch.gastos_extras,
-                        editingBatch.peso_total_romaneio
-                      ))}
+                  <div className="text-center pt-2 border-t border-slate-200">
+                    <span className="text-[10px] font-black bg-slate-900 text-white px-3 py-1 rounded-full uppercase">
+                      {batchSummary?.count || 0} peças
                     </span>
                   </div>
                 </div>
-              </div>
 
-              {/* Botões */}
-              <div className="flex flex-col gap-3 pt-6">
-                <button
-                  onClick={handleSaveEditedBatch}
-                  className="btn-modern bg-blue-600 text-white w-full py-5 rounded-2xl hover:bg-blue-700 shadow-xl transition-all"
-                >
-                  <CheckIcon size={20} className="inline mr-2" />
-                  Salvar Alterações
-                </button>
+                {/* RESUMO FINANCEIRO */}
+                <div className="bg-slate-50 rounded-2xl p-5 space-y-3">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Financeiro</p>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Valor do Gado</span>
+                      <span className="font-bold text-slate-800">{formatCurrency(selectedBatch.valor_compra_total)}</span>
+                    </div>
+                    {selectedBatch.frete > 0 && (
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-500">Frete</span>
+                        <span className="font-bold text-slate-800">{formatCurrency(selectedBatch.frete)}</span>
+                      </div>
+                    )}
+                    {selectedBatch.gastos_extras > 0 && (
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-500">Extras</span>
+                        <span className="font-bold text-slate-800">{formatCurrency(selectedBatch.gastos_extras)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-xs pt-2 border-t border-slate-200">
+                      <span className="font-bold text-slate-700">TOTAL CUSTO</span>
+                      <span className="font-black text-lg text-slate-900">{formatCurrency(totalCost)}</span>
+                    </div>
+                    <div className="bg-orange-100 rounded-xl p-3 flex justify-between items-center">
+                      <span className="text-[10px] font-bold text-orange-700 uppercase">Custo/kg</span>
+                      <span className="font-black text-orange-700">{formatCurrency(custoKg)}</span>
+                    </div>
+                  </div>
+                </div>
 
-                {/* Botão Excluir */}
-                <button
-                  onClick={handleDeleteBatch}
-                  className="btn-modern bg-rose-600 text-white w-full py-4 rounded-2xl hover:bg-rose-700 shadow-xl transition-all border-2 border-rose-700"
-                >
-                  <TrashIcon size={18} className="inline mr-2" />
-                  Excluir Lote Permanentemente
-                </button>
+                {/* FORMA DE PAGAMENTO */}
+                <div className="bg-slate-50 rounded-2xl p-5 space-y-2">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pagamento</p>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-black px-3 py-1 rounded-full uppercase ${formaPag === 'VISTA' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                      }`}>
+                      {formaPag === 'VISTA' ? '💰 À Vista' : '📋 A Prazo'}
+                    </span>
+                  </div>
+                  {formaPag !== 'VISTA' && (
+                    <div className="space-y-1 pt-2">
+                      {valorEntrada > 0 && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-500">Entrada</span>
+                          <span className="font-bold text-emerald-600">{formatCurrency(valorEntrada)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-500">Restante (A Pagar)</span>
+                        <span className="font-bold text-rose-600">{formatCurrency(totalCost - valorEntrada)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
 
-                <button
-                  onClick={() => { setShowEditModal(false); setEditingBatch(null); }}
-                  className="text-[10px] font-black text-slate-400 hover:text-slate-600 uppercase tracking-[0.2em] py-2"
-                >
-                  Cancelar
-                </button>
+                <p className="text-[10px] font-medium text-slate-400 leading-relaxed text-center px-4">
+                  Ao confirmar, este lote será <span className="text-slate-700 font-bold">travado</span> e os itens entrarão no estoque.
+                </p>
+
+                <div className="flex flex-col gap-3">
+                  <button onClick={confirmFinalization} className="btn-modern bg-slate-900 text-white w-full py-5 rounded-2xl hover:bg-orange-600 shadow-xl transition-all font-black uppercase tracking-wider text-sm">
+                    <CheckIcon size={20} className="inline mr-2" />
+                    Confirmar e Finalizar
+                  </button>
+                  <button onClick={() => setShowFinalizationModal(false)} className="btn-modern bg-slate-100 text-slate-600 w-full py-4 rounded-2xl hover:bg-slate-200 transition-all font-black uppercase tracking-wider text-[10px]">
+                    ← Voltar e Corrigir
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        );
+      })()}
+
+      {/* MODAL DE EDIÇÃO DE LOTE */}
+      {
+        showEditModal && editingBatch && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 animate-reveal overflow-y-auto">
+            <div className="bg-white rounded-[48px] shadow-2xl max-w-2xl w-full overflow-hidden border border-white my-8">
+              <div className="bg-blue-600 p-12 text-white text-center">
+                <div className="w-24 h-24 bg-white/20 rounded-[32px] flex items-center justify-center mx-auto mb-8">
+                  <PencilIcon size={48} />
+                </div>
+                <h3 className="text-3xl font-black tracking-tight leading-none uppercase">Editar Lote</h3>
+                <p className="text-[10px] font-bold tracking-[0.2em] mt-4 uppercase text-blue-100 opacity-60">{editingBatch.id_lote}</p>
+              </div>
+              <div className="p-12 space-y-6 max-h-[60vh] overflow-y-auto">
+                {/* Fornecedor */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Fornecedor</label>
+                  <input
+                    type="text"
+                    className="modern-input w-full"
+                    value={editingBatch.fornecedor}
+                    onChange={e => setEditingBatch({ ...editingBatch, fornecedor: e.target.value.toUpperCase() })}
+                  />
+                </div>
+
+                {/* Peso do Romaneio */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Peso Romaneio (kg)</label>
+                    <input
+                      type="text" inputMode="decimal"
+                      className="modern-input w-full font-bold text-lg"
+                      placeholder="Peso em kg"
+                      value={editingBatch.peso_total_romaneio || ''}
+                      onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setEditingBatch({ ...editingBatch, peso_total_romaneio: parseFloat(v) || 0 }); }}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Data Recebimento</label>
+                    <input
+                      type="date"
+                      className="modern-input w-full"
+                      value={editingBatch.data_recebimento}
+                      onChange={e => setEditingBatch({ ...editingBatch, data_recebimento: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                {/* Valores Financeiros */}
+                <div className="pt-4 border-t border-slate-100">
+                  <h4 className="text-[9px] font-black text-slate-300 uppercase tracking-[0.2em] mb-4">Valores Financeiros</h4>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Valor do Gado (R$)</label>
+                      <input
+                        type="text" inputMode="decimal"
+                        className="modern-input w-full text-xl font-black"
+                        placeholder="Valor total"
+                        value={editingBatch.valor_compra_total || ''}
+                        onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setEditingBatch({ ...editingBatch, valor_compra_total: parseFloat(v) || 0 }); }}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Frete (R$)</label>
+                        <input
+                          type="text" inputMode="decimal"
+                          className="modern-input w-full"
+                          placeholder="Frete"
+                          value={editingBatch.frete || ''}
+                          onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setEditingBatch({ ...editingBatch, frete: parseFloat(v) || 0 }); }}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Extras (R$)</label>
+                        <input
+                          type="text" inputMode="decimal"
+                          className="modern-input w-full"
+                          placeholder="Extras"
+                          value={editingBatch.gastos_extras || ''}
+                          onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setEditingBatch({ ...editingBatch, gastos_extras: parseFloat(v) || 0 }); }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-900 rounded-2xl p-4 flex justify-between items-center">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Custo Real/Kg:</span>
+                      <span className="text-xl font-black text-orange-400">
+                        {formatCurrency(calculateRealCost(
+                          editingBatch.valor_compra_total,
+                          editingBatch.frete,
+                          editingBatch.gastos_extras,
+                          editingBatch.peso_total_romaneio
+                        ))}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Botões */}
+                <div className="flex flex-col gap-3 pt-6">
+                  <button
+                    onClick={handleSaveEditedBatch}
+                    className="btn-modern bg-blue-600 text-white w-full py-5 rounded-2xl hover:bg-blue-700 shadow-xl transition-all"
+                  >
+                    <CheckIcon size={20} className="inline mr-2" />
+                    Salvar Alterações
+                  </button>
+
+                  {/* Botão Estornar */}
+                  <button
+                    onClick={handleDeleteBatch}
+                    className="btn-modern bg-amber-500 text-white w-full py-4 rounded-2xl hover:bg-amber-600 shadow-xl transition-all border-2 border-amber-600"
+                  >
+                    <RotateCcwIcon size={18} className="inline mr-2" />
+                    Estornar Lote
+                  </button>
+
+                  <button
+                    onClick={() => { setShowEditModal(false); setEditingBatch(null); }}
+                    className="text-[10px] font-black text-slate-400 hover:text-slate-600 uppercase tracking-[0.2em] py-2"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      }
+    </div >
   );
 };
 

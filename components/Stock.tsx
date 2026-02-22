@@ -33,7 +33,8 @@ import {
   AlertCircle,
   Pencil as PencilIcon,
   Trash as TrashIcon,
-  Check as CheckIcon
+  Check as CheckIcon,
+  RotateCcw
 } from 'lucide-react';
 
 interface StockProps {
@@ -111,25 +112,26 @@ const Stock: React.FC<StockProps> = ({ stock, batches, sales, clients, updateBat
     if (!editingBatch || !deleteBatch) return;
 
     const confirmDelete = window.confirm(
-      `⚠️ ATENÇÃO - EXCLUSÃO PERMANENTE!\n\n` +
-      `Você está prestes a EXCLUIR o lote:\n${editingBatch.id_lote} - ${editingBatch.fornecedor}\n\n` +
-      `Esta ação é IRREVERSÍVEL e irá:\n` +
-      `• Remover o lote do sistema\n` +
-      `• Perder todos os dados financeiros\n` +
-      `• Afetar relatórios e histórico\n\n` +
-      `Tem CERTEZA que deseja continuar?`
+      `🔄 ESTORNO DE LOTE\n\n` +
+      `Você está prestes a ESTORNAR o lote:\n${editingBatch.id_lote} - ${editingBatch.fornecedor}\n\n` +
+      `Esta ação irá:\n` +
+      `• Marcar o lote como ESTORNADO\n` +
+      `• Estornar vendas e devolver estoque\n` +
+      `• Criar transações inversas no financeiro\n` +
+      `• Manter histórico completo para auditoria\n\n` +
+      `Deseja continuar?`
     );
 
     if (!confirmDelete) return;
 
     try {
       await deleteBatch(editingBatch.id_lote);
-      alert('✅ Lote excluído com sucesso!');
+      alert('✅ Lote estornado com sucesso!');
       setShowEditModal(false);
       setEditingBatch(null);
     } catch (e) {
-      console.error('Erro ao excluir lote:', e);
-      alert('❌ Erro ao excluir o lote.');
+      console.error('Erro ao estornar lote:', e);
+      alert('❌ Erro ao estornar o lote.');
     }
   };
 
@@ -381,15 +383,12 @@ const Stock: React.FC<StockProps> = ({ stock, batches, sales, clients, updateBat
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              // CORREÇÃO AUDITORIA #9: Abrir modal de edição ao invés de deletar diretamente.
-                              // O setState é assíncrono, então handleDeleteBatch() era chamado antes
-                              // de editingBatch ser atualizado, causando falha silenciosa.
                               handleEditBatch(batch);
                             }}
-                            className="w-10 h-10 rounded-xl bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center transition-all shadow-lg hover:scale-110"
-                            title="Excluir lote"
+                            className="w-10 h-10 rounded-xl bg-amber-500 hover:bg-amber-600 text-white flex items-center justify-center transition-all shadow-lg hover:scale-110"
+                            title="Estornar lote"
                           >
-                            <TrashIcon size={16} />
+                            <RotateCcw size={16} />
                           </button>
                         </>
                       )}
@@ -599,11 +598,11 @@ const Stock: React.FC<StockProps> = ({ stock, batches, sales, clients, updateBat
                 <div>
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Peso Romaneio (kg)</label>
                   <input
-                    type="number"
-                    step="0.01"
-                    className="modern-input w-full font-bold"
-                    value={editingBatch.peso_total_romaneio}
-                    onChange={e => setEditingBatch({ ...editingBatch, peso_total_romaneio: parseFloat(e.target.value) || 0 })}
+                    type="text" inputMode="decimal"
+                    className="modern-input w-full font-bold text-lg"
+                    placeholder="Peso em kg"
+                    value={editingBatch.peso_total_romaneio || ''}
+                    onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setEditingBatch({ ...editingBatch, peso_total_romaneio: parseFloat(v) || 0 }); }}
                   />
                 </div>
                 <div>
@@ -623,32 +622,32 @@ const Stock: React.FC<StockProps> = ({ stock, batches, sales, clients, updateBat
                   <div>
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Valor do Gado (R$)</label>
                     <input
-                      type="number"
-                      step="0.01"
+                      type="text" inputMode="decimal"
                       className="modern-input w-full text-xl font-black"
-                      value={editingBatch.valor_compra_total}
-                      onChange={e => setEditingBatch({ ...editingBatch, valor_compra_total: parseFloat(e.target.value) || 0 })}
+                      placeholder="Valor total"
+                      value={editingBatch.valor_compra_total || ''}
+                      onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setEditingBatch({ ...editingBatch, valor_compra_total: parseFloat(v) || 0 }); }}
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Frete (R$)</label>
                       <input
-                        type="number"
-                        step="0.01"
+                        type="text" inputMode="decimal"
                         className="modern-input w-full"
-                        value={editingBatch.frete}
-                        onChange={e => setEditingBatch({ ...editingBatch, frete: parseFloat(e.target.value) || 0 })}
+                        placeholder="Frete"
+                        value={editingBatch.frete || ''}
+                        onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setEditingBatch({ ...editingBatch, frete: parseFloat(v) || 0 }); }}
                       />
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Extras (R$)</label>
                       <input
-                        type="number"
-                        step="0.01"
+                        type="text" inputMode="decimal"
                         className="modern-input w-full"
-                        value={editingBatch.gastos_extras}
-                        onChange={e => setEditingBatch({ ...editingBatch, gastos_extras: parseFloat(e.target.value) || 0 })}
+                        placeholder="Extras"
+                        value={editingBatch.gastos_extras || ''}
+                        onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setEditingBatch({ ...editingBatch, gastos_extras: parseFloat(v) || 0 }); }}
                       />
                     </div>
                   </div>
@@ -678,10 +677,10 @@ const Stock: React.FC<StockProps> = ({ stock, batches, sales, clients, updateBat
 
                 <button
                   onClick={handleDeleteBatch}
-                  className="btn-modern bg-rose-600 text-white w-full py-4 rounded-2xl hover:bg-rose-700 shadow-xl transition-all border-2 border-rose-700"
+                  className="btn-modern bg-amber-500 text-white w-full py-4 rounded-2xl hover:bg-amber-600 shadow-xl transition-all border-2 border-amber-600"
                 >
-                  <TrashIcon size={18} className="inline mr-2" />
-                  Excluir Lote Permanentemente
+                  <RotateCcw size={18} className="inline mr-2" />
+                  Estornar Lote
                 </button>
 
                 <button

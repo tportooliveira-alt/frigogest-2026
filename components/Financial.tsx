@@ -27,6 +27,7 @@ import {
   Calendar,
   Filter,
   Trash2 as TrashIcon,
+  RotateCcw,
   ShieldCheck,
   Activity,
   ChevronRight,
@@ -63,6 +64,7 @@ interface FinancialProps {
   addPayable: (p: Payable) => void;
   updatePayable: (p: Payable) => void;
   deletePayable: (id: string) => void;
+  estornoSale?: (saleId: string) => Promise<void>;
   cleanAllFinancialData?: () => Promise<void>; // NOVA: Limpa todos os dados financeiros
 }
 
@@ -80,6 +82,7 @@ const Financial: React.FC<FinancialProps> = ({
   addPayable,
   updatePayable,
   deletePayable,
+  estornoSale,
   cleanAllFinancialData
 }) => {
 
@@ -226,7 +229,7 @@ const Financial: React.FC<FinancialProps> = ({
 
   // CORREÇÃO: Primeiro declarar validLoteIds e validTransactions
 
-  // CORREÇÃO: Filtrar apenas lotes FECHADOS (cadastros completos)
+  // CORREÇÃO: Filtrar apenas lotes FECHADOS (cadastros completos) - excluir ESTORNADOS
   const closedBatches = useMemo(() => batches.filter(b => b.status === 'FECHADO'), [batches]);
   const validLoteIds = useMemo(() => new Set(closedBatches.map(b => b.id_lote)), [closedBatches]);
   const hasValidBatches = closedBatches.length > 0;
@@ -239,6 +242,8 @@ const Financial: React.FC<FinancialProps> = ({
       if (validLoteIds.has(t.referencia_id)) return true;
       // Transações de RECEBIMENTO de vendas (ex: TR-REC-V-xxx) = sempre válidas
       if (t.id?.startsWith('TR-REC-') || t.id?.startsWith('TR-PAY-') || t.categoria === 'VENDA') return true;
+      // Transações de ESTORNO = sempre válidas
+      if (t.id?.startsWith('TR-ESTORNO-') || t.categoria === 'ESTORNO') return true;
       // Transações de DESCONTO = sempre válidas
       if (t.id?.startsWith('TR-DESC-') || t.categoria === 'DESCONTO') return true;
       // Outros casos: se não tem hífen no referencia_id = válido
@@ -264,7 +269,8 @@ const Financial: React.FC<FinancialProps> = ({
       const loteFromSale = s.id_completo.split('-')[0] + '-' + s.id_completo.split('-')[1] + '-' + s.id_completo.split('-')[2];
       return validLoteIds.has(loteFromSale);
     });
-    return validSales.filter(s => getSaleBalance(s).saldoDevedor > 0.01).sort((a, b) => a.data_vencimento.localeCompare(b.data_vencimento));
+    // Filtrar vendas ESTORNADAS da lista de contas a receber
+    return validSales.filter(s => s.status_pagamento !== 'ESTORNADO' && getSaleBalance(s).saldoDevedor > 0.01).sort((a, b) => a.data_vencimento.localeCompare(b.data_vencimento));
   }, [sales, validLoteIds]);
 
   const totalReceivable = useMemo(() => pendingSales.reduce((acc, s) => acc + getSaleBalance(s).saldoDevedor, 0), [pendingSales]);
@@ -291,6 +297,8 @@ const Financial: React.FC<FinancialProps> = ({
     // Isso evita duplicação, já que lotes a prazo criam payables automaticamente
     return payables
       .filter(p => {
+        // Excluir ESTORNADOS e CANCELADOS
+        if (p.status === 'ESTORNADO' || p.status === 'CANCELADO') return false;
         // Se tem id_lote, verifica se é de um lote válido (fechado)
         if (p.id_lote) return validLoteIds.has(p.id_lote);
         // Se é COMPRA_GADO, extrai id_lote da descrição
@@ -306,8 +314,9 @@ const Financial: React.FC<FinancialProps> = ({
   }, [payables, validLoteIds, hasValidBatches]);
 
   const profitTotals = useMemo(() => {
-    // CORREÇÃO: Usar apenas sales de lotes válidos
+    // CORREÇÃO: Usar apenas sales de lotes válidos e excluir ESTORNADOS
     const validSales = sales.filter(s => {
+      if (s.status_pagamento === 'ESTORNADO') return false;
       const loteFromSale = s.id_completo.split('-')[0] + '-' + s.id_completo.split('-')[1] + '-' + s.id_completo.split('-')[2];
       return validLoteIds.has(loteFromSale);
     });
@@ -408,17 +417,7 @@ const Financial: React.FC<FinancialProps> = ({
           </div>
 
           {/* Botão Limpar Dados Antigos */}
-          <button
-            onClick={() => {
-              if (window.confirm('🧹 LIMPAR DADOS FINANCEIROS?\n\nIsso vai te levar para a tela de Configurações Avançadas onde você pode:\n\n✅ Limpar todos os dados de teste\n✅ Manter clientes e fornecedores\n✅ Recomeçar com sistema limpo\n\nDeseja continuar?')) {
-                onBack(); // Volta pro menu para acessar as configurações
-                alert('👉 Agora clique em "⚙️ Configurações Avançadas" e depois em "Limpar Dados de Teste"');
-              }
-            }}
-            className="btn-modern bg-orange-600 hover:bg-orange-700 text-white px-6 py-3 rounded-2xl gap-2 shadow-xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap"
-          >
-            <TrashIcon size={16} /> Limpar Dados Antigos
-          </button>
+          {/* Botão Limpar Dados removido por segurança */}
         </div>
       </div>
 
@@ -733,6 +732,7 @@ const Financial: React.FC<FinancialProps> = ({
                       <th>Histórico Operacional</th>
                       <th>Vínculo / Categoria</th>
                       <th className="text-right">Valor Líquido</th>
+                      <th className="w-16 text-center">Ações</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -741,18 +741,33 @@ const Financial: React.FC<FinancialProps> = ({
                         <td className="text-[10px] font-bold text-slate-400 group-hover:text-slate-900">{new Date(t.data).toLocaleDateString()}</td>
                         <td className="font-extrabold text-slate-900 uppercase text-xs truncate max-w-sm italic">"{t.descricao}"</td>
                         <td>
-                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 px-3 py-1 rounded-lg border border-slate-100">
+                          <span className={`text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-lg border ${t.categoria === 'ESTORNO' ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>
                             {t.categoria}
                           </span>
                         </td>
                         <td className={`text-right font-black text-sm ${t.tipo === 'ENTRADA' ? 'text-emerald-600' : 'text-rose-600'}`}>
                           {t.tipo === 'ENTRADA' ? '+' : '-'} {formatCurrency(t.valor)}
                         </td>
+                        <td className="text-center">
+                          {t.categoria !== 'ESTORNO' && !t.id?.startsWith('TR-ESTORNO-') && (
+                            <button
+                              onClick={() => {
+                                if (window.confirm(`Estornar transação?\n\n"${t.descricao}"\nValor: ${formatCurrency(t.valor)}\n\nUma transação inversa será criada.`)) {
+                                  deleteTransaction(t.id);
+                                }
+                              }}
+                              className="w-8 h-8 bg-slate-50 text-slate-300 hover:bg-amber-50 hover:text-amber-600 rounded-lg transition-all flex items-center justify-center opacity-0 group-hover:opacity-100"
+                              title="Estornar transação"
+                            >
+                              <RotateCcw size={14} />
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                     {filteredTransactions.length === 0 && (
                       <tr>
-                        <td colSpan={4} className="py-32 text-center">
+                        <td colSpan={5} className="py-32 text-center">
                           <Zap size={64} className="mx-auto mb-6 text-slate-100" />
                           <p className="font-black text-[10px] uppercase text-slate-300 tracking-[0.4em]">Nenhum registro no período</p>
                         </td>
@@ -976,8 +991,16 @@ const Financial: React.FC<FinancialProps> = ({
                                 <DollarSign size={18} />
                               </button>
                             )}
-                            <button onClick={() => deletePayable(p.id)} className="w-10 h-10 bg-slate-50 text-slate-300 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all flex items-center justify-center">
-                              <TrashIcon size={18} />
+                            <button
+                              onClick={() => {
+                                if (window.confirm(`Estornar conta a pagar?\n\n"${p.descricao}"\nValor: ${formatCurrency(p.valor)}\n${p.valor_pago && p.valor_pago > 0 ? `Já pago: ${formatCurrency(p.valor_pago)} — será devolvido ao caixa` : 'Nenhum pagamento realizado — será cancelada'}`)) {
+                                  deletePayable(p.id);
+                                }
+                              }}
+                              className="w-10 h-10 bg-slate-50 text-slate-300 hover:bg-amber-50 hover:text-amber-600 rounded-xl transition-all flex items-center justify-center"
+                              title="Estornar conta"
+                            >
+                              <RotateCcw size={18} />
                             </button>
                           </div>
                         </td>
@@ -1445,7 +1468,7 @@ const Financial: React.FC<FinancialProps> = ({
                   <div className="grid grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Montante (R$)</label>
-                      <input type="number" placeholder="0.00" className="modern-input h-16 font-black text-xl" value={newTransaction.valor || ''} onChange={e => setNewTransaction({ ...newTransaction, valor: parseFloat(e.target.value) })} />
+                      <input type="text" inputMode="decimal" placeholder="Valor" className="modern-input h-16 font-black text-xl" value={newTransaction.valor || ''} onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setNewTransaction({ ...newTransaction, valor: parseFloat(v) || 0 }); }} />
                     </div>
                     <div className="space-y-4">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Data Valor</label>
@@ -1480,7 +1503,7 @@ const Financial: React.FC<FinancialProps> = ({
                   <div className="grid grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Valor da Dívida</label>
-                      <input type="number" placeholder="0.00" className="modern-input h-16 font-black text-xl" value={newPayable.valor || ''} onChange={e => setNewPayable({ ...newPayable, valor: parseFloat(e.target.value) })} />
+                      <input type="text" inputMode="decimal" placeholder="Valor" className="modern-input h-16 font-black text-xl" value={newPayable.valor || ''} onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setNewPayable({ ...newPayable, valor: parseFloat(v) || 0 }); }} />
                     </div>
                     <div className="space-y-4">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Vencimento Fixo</label>

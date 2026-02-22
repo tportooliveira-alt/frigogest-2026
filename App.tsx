@@ -388,18 +388,55 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDeletePayable = async (id: string) => {
+  // ===== ESTORNO DE CONTA A PAGAR =====
+  const handleEstornoPayable = async (id: string) => {
     try {
+      const payable = data.payables.find(p => p.id === id);
+      if (!payable) return;
+
+      const isPago = payable.status === 'PAGO';
+      const isParcial = payable.status === 'PARCIAL';
+      const valorPago = payable.valor_pago || 0;
+
       if (OFFLINE_MODE) {
-        setData(prev => ({ ...prev, payables: prev.payables.filter(p => p.id !== id) }));
+        setData(prev => ({
+          ...prev,
+          payables: prev.payables.map(p =>
+            p.id === id ? { ...p, status: isPago || isParcial ? 'ESTORNADO' as const : 'CANCELADO' as const } : p
+          )
+        }));
         return;
       }
-      await deleteDoc(doc(db, 'payables', id));
-      setData(prev => ({ ...prev, payables: prev.payables.filter(p => p.id !== id) }));
-      logAction(session.user, 'DELETE', 'OTHER', `Conta excluída ID: ${id}`, { id });
+
+      // Marcar o payable como ESTORNADO ou CANCELADO
+      const novoStatus = (isPago || isParcial) ? 'ESTORNADO' : 'CANCELADO';
+      await updateDoc(doc(db, 'payables', id), { status: novoStatus });
+
+      // Se já foi pago (total ou parcial), criar transação inversa (ENTRADA de estorno)
+      if ((isPago || isParcial) && valorPago > 0 && db) {
+        const estornoTransaction = {
+          id: `TR-ESTORNO-PAY-${id}-${Date.now()}`,
+          data: new Date().toISOString().split('T')[0],
+          descricao: `ESTORNO: ${payable.descricao}`,
+          tipo: 'ENTRADA',
+          categoria: 'ESTORNO',
+          valor: isPago ? payable.valor : valorPago,
+          metodo_pagamento: 'OUTROS',
+          referencia_id: id
+        };
+        await addTransaction(estornoTransaction as any);
+      }
+
+      setData(prev => ({
+        ...prev,
+        payables: prev.payables.map(p =>
+          p.id === id ? { ...p, status: novoStatus as any } : p
+        )
+      }));
+      logAction(session.user, 'ESTORNO', 'OTHER', `Conta estornada (${novoStatus}): ${payable.descricao}`, { id, status: novoStatus });
     } catch (e) {
       console.error(e);
-      alert('Erro ao remover conta.');
+      alert('Erro ao estornar conta.');
     }
   };
 
@@ -474,15 +511,85 @@ const App: React.FC = () => {
     }
   };
 
-  const deleteBatch = async (id: string) => {
+  // ===== ESTORNO DE VENDA INDIVIDUAL =====
+  const estornoSale = async (saleId: string) => {
+    if (!db) return;
+    const sale = data.sales.find(s => s.id_venda === saleId);
+    if (!sale || sale.status_pagamento === 'ESTORNADO') {
+      if (sale?.status_pagamento === 'ESTORNADO') alert('Esta venda já foi estornada.');
+      return;
+    }
+
+    try {
+      const valorPago = (sale as any).valor_pago || 0;
+
+      // 1. Marcar venda como ESTORNADO e zerar valor_pago (P4)
+      await updateDoc(doc(db, 'sales', saleId), { status_pagamento: 'ESTORNADO', valor_pago: 0 });
+
+      // 2. Devolver item(ns) ao estoque → DISPONÍVEL
+      const stockIds = (sale as any).stock_ids_originais && Array.isArray((sale as any).stock_ids_originais)
+        ? (sale as any).stock_ids_originais
+        : [sale.id_completo];
+
+      for (const stockId of stockIds) {
+        try {
+          await updateDoc(doc(db, 'stock_items', stockId), { status: 'DISPONIVEL' });
+        } catch (e) {
+          console.warn(`⚠️ Item de estoque ${stockId} não encontrado para devolver`);
+        }
+      }
+
+      // 3. Se já recebeu dinheiro, criar SAÍDA de estorno (dinheiro sai do caixa)
+      if (valorPago > 0) {
+        const estornoTx = {
+          id: `TR-ESTORNO-VENDA-${saleId}-${Date.now()}`,
+          data: new Date().toISOString().split('T')[0],
+          descricao: `ESTORNO VENDA: ${sale.nome_cliente || 'Cliente'} - ${sale.id_completo}`,
+          tipo: 'SAIDA',
+          categoria: 'ESTORNO',
+          valor: valorPago,
+          metodo_pagamento: sale.forma_pagamento || 'OUTROS',
+          referencia_id: saleId
+        };
+        await addTransaction(estornoTx as any);
+      }
+
+      // 4. Reverter descontos (P2): se houve TR-DESC, criar ENTRADA espelho
+      const descontosTx = data.transactions.filter(t =>
+        (t.referencia_id === saleId || t.id?.startsWith(`TR-DESC-${saleId}`)) &&
+        t.categoria === 'DESCONTO' && t.tipo === 'SAIDA'
+      );
+      for (const descTx of descontosTx) {
+        const estornoDesc = {
+          id: `TR-ESTORNO-DESC-${saleId}-${Date.now()}`,
+          data: new Date().toISOString().split('T')[0],
+          descricao: `ESTORNO DESCONTO: ${descTx.descricao}`,
+          tipo: 'ENTRADA',
+          categoria: 'ESTORNO',
+          valor: descTx.valor,
+          metodo_pagamento: 'OUTROS',
+          referencia_id: saleId
+        };
+        await addTransaction(estornoDesc as any);
+      }
+
+      logAction(session?.user, 'ESTORNO', 'SALE', `Venda estornada: ${saleId} (${sale.nome_cliente}) - Pago: R$${valorPago.toFixed(2)}`, { saleId, valorPago });
+      fetchData();
+    } catch (error) {
+      console.error('❌ Erro ao estornar venda:', error);
+      alert('Erro ao estornar a venda.');
+    }
+  };
+
+  // ===== ESTORNO DE LOTE (CASCATA) =====
+  const estornoBatch = async (id: string) => {
     if (OFFLINE_MODE) {
       setData(prev => ({
         ...prev,
-        batches: prev.batches.filter(b => b.id_lote !== id),
-        stock: prev.stock.filter(s => s.id_lote !== id),
-        payables: prev.payables.filter(p => p.id_lote !== id),
-        sales: prev.sales.filter(s => !s.id_completo.startsWith(id)),
-        transactions: prev.transactions.filter(t => t.referencia_id !== id)
+        batches: prev.batches.map(b => b.id_lote === id ? { ...b, status: 'ESTORNADO' as const } : b),
+        stock: prev.stock.map(s => s.id_lote === id ? { ...s, status: 'ESTORNADO' as const } : s),
+        payables: prev.payables.map(p => p.id_lote === id ? { ...p, status: 'CANCELADO' as const } : p),
+        sales: prev.sales.map(s => s.id_completo.startsWith(id) ? { ...s, status_pagamento: 'ESTORNADO' as const } : s),
       }));
       return;
     }
@@ -490,94 +597,124 @@ const App: React.FC = () => {
     if (!db) return;
 
     try {
-      console.log(`🗑️ INICIANDO EXCLUSÃO COMPLETA DO LOTE: ${id}`);
+      console.log(`🔄 INICIANDO ESTORNO DO LOTE: ${id}`);
 
-      // 1. Deletar o lote principal
-      await deleteDoc(doc(db, 'batches', id));
-      console.log(`✅ Lote ${id} deletado`);
+      // 1. Marcar lote como ESTORNADO
+      await updateDoc(doc(db, 'batches', id), { status: 'ESTORNADO' });
+      console.log(`✅ Lote ${id} marcado como ESTORNADO`);
 
-      // 2. Deletar TODOS os itens de estoque do lote
-      const stockQuery = query(collection(db, 'stock_items'));
-      const stockSnapshot = await getDocs(stockQuery);
-      const deleteStockPromises: Promise<void>[] = [];
+      // 2. Marcar itens de estoque como ESTORNADO
+      const stockSnapshot = await getDocs(collection(db, 'stock_items'));
       let stockCount = 0;
-      stockSnapshot.forEach(docSnap => {
+      for (const docSnap of stockSnapshot.docs) {
         const item = docSnap.data();
-        if (item.id_lote === id) {
-          deleteStockPromises.push(deleteDoc(doc(db, 'stock_items', docSnap.id)));
+        if (item.id_lote === id && item.status !== 'ESTORNADO') {
+          await updateDoc(doc(db, 'stock_items', docSnap.id), { status: 'ESTORNADO' });
           stockCount++;
         }
-      });
-      await Promise.all(deleteStockPromises);
-      console.log(`✅ ${stockCount} itens de estoque deletados`);
+      }
+      console.log(`✅ ${stockCount} itens de estoque estornados`);
 
-      // 3. Deletar TODAS as transações financeiras (payables) do lote
-      const payablesQuery = query(collection(db, 'payables'));
-      const payablesSnapshot = await getDocs(payablesQuery);
-      const deletePayablesPromises: Promise<void>[] = [];
+      // 3. Estornar payables do lote
+      const payablesSnapshot = await getDocs(collection(db, 'payables'));
       let payablesCount = 0;
-      payablesSnapshot.forEach(docSnap => {
+      for (const docSnap of payablesSnapshot.docs) {
         const payable = docSnap.data();
-        // Deletar se: id_lote bate OU se o ID/descrição contém o id_lote
         const matchByIdLote = payable.id_lote === id;
         const matchById = payable.id && payable.id.includes(id);
         const matchByDescricao = payable.descricao && payable.descricao.includes(id);
-        if (matchByIdLote || matchById || matchByDescricao) {
-          deletePayablesPromises.push(deleteDoc(doc(db, 'payables', docSnap.id)));
+        if ((matchByIdLote || matchById || matchByDescricao) && payable.status !== 'ESTORNADO' && payable.status !== 'CANCELADO') {
+          const isPago = payable.status === 'PAGO';
+          const isParcial = payable.status === 'PARCIAL';
+          const valorPago = payable.valor_pago || 0;
+          const novoStatus = (isPago || isParcial) ? 'ESTORNADO' : 'CANCELADO';
+
+          await updateDoc(doc(db, 'payables', docSnap.id), { status: novoStatus });
+
+          // Se já pagou, criar ENTRADA de estorno
+          if ((isPago || isParcial) && valorPago > 0) {
+            await addTransaction({
+              id: `TR-ESTORNO-PAY-${docSnap.id}-${Date.now()}`,
+              data: new Date().toISOString().split('T')[0],
+              descricao: `ESTORNO LOTE: ${payable.descricao}`,
+              tipo: 'ENTRADA',
+              categoria: 'ESTORNO',
+              valor: isPago ? payable.valor : valorPago,
+              metodo_pagamento: 'OUTROS',
+              referencia_id: id
+            } as any);
+          }
           payablesCount++;
         }
-      });
-      await Promise.all(deletePayablesPromises);
-      console.log(`✅ ${payablesCount} contas a pagar deletadas`);
+      }
+      console.log(`✅ ${payablesCount} contas a pagar estornadas`);
 
-      // 4. Deletar TODAS as vendas (sales) do lote
-      const salesQuery = query(collection(db, 'sales'));
-      const salesSnapshot = await getDocs(salesQuery);
-      const deleteSalesPromises: Promise<void>[] = [];
+      // 4. Estornar vendas do lote
+      const salesSnapshot = await getDocs(collection(db, 'sales'));
       let salesCount = 0;
-      salesSnapshot.forEach(docSnap => {
+      for (const docSnap of salesSnapshot.docs) {
         const sale = docSnap.data();
-        // id_completo formato: "LOTE-SEQ-TIPO"
-        if (sale.id_completo && sale.id_completo.startsWith(id)) {
-          deleteSalesPromises.push(deleteDoc(doc(db, 'sales', docSnap.id)));
+        if (sale.id_completo && sale.id_completo.startsWith(id) && sale.status_pagamento !== 'ESTORNADO') {
+          const valorPago = sale.valor_pago || 0;
+
+          await updateDoc(doc(db, 'sales', docSnap.id), { status_pagamento: 'ESTORNADO' });
+
+          // Se já recebeu $, criar SAÍDA de estorno
+          if (valorPago > 0) {
+            await addTransaction({
+              id: `TR-ESTORNO-VENDA-${docSnap.id}-${Date.now()}`,
+              data: new Date().toISOString().split('T')[0],
+              descricao: `ESTORNO LOTE: Venda ${sale.nome_cliente || 'Cliente'} - ${sale.id_completo}`,
+              tipo: 'SAIDA',
+              categoria: 'ESTORNO',
+              valor: valorPago,
+              metodo_pagamento: 'OUTROS',
+              referencia_id: id
+            } as any);
+          }
           salesCount++;
         }
-      });
-      await Promise.all(deleteSalesPromises);
-      console.log(`✅ ${salesCount} vendas deletadas`);
+      }
+      console.log(`✅ ${salesCount} vendas estornadas`);
 
-      // 5. Deletar TODAS as transações (transactions) do lote
-      const transactionsQuery = query(collection(db, 'transactions'));
-      const transactionsSnapshot = await getDocs(transactionsQuery);
-      const deleteTransactionsPromises: Promise<void>[] = [];
-      let transactionsCount = 0;
-      transactionsSnapshot.forEach(docSnap => {
-        const transaction = docSnap.data();
-        // Deletar se referencia_id é o lote OU se a descrição menciona o lote
-        if (transaction.referencia_id === id || (transaction.descricao && transaction.descricao.includes(id))) {
-          deleteTransactionsPromises.push(deleteDoc(doc(db, 'transactions', docSnap.id)));
-          transactionsCount++;
+      // 5. Criar transação de estorno para transações de compra já lançadas
+      const transactionsSnapshot = await getDocs(collection(db, 'transactions'));
+      let txCount = 0;
+      for (const docSnap of transactionsSnapshot.docs) {
+        const tx = docSnap.data();
+        // Estornar transações de COMPRA deste lote (criar ENTRADA inversa)
+        if ((tx.referencia_id === id || (tx.descricao && tx.descricao.includes(id)))
+          && tx.categoria === 'COMPRA_GADO' && !tx.descricao?.includes('ESTORNO')) {
+          await addTransaction({
+            id: `TR-ESTORNO-${docSnap.id}-${Date.now()}`,
+            data: new Date().toISOString().split('T')[0],
+            descricao: `ESTORNO LOTE: ${tx.descricao}`,
+            tipo: 'ENTRADA',
+            categoria: 'ESTORNO',
+            valor: tx.valor,
+            metodo_pagamento: 'OUTROS',
+            referencia_id: id
+          } as any);
+          txCount++;
         }
-      });
-      await Promise.all(deleteTransactionsPromises);
-      console.log(`✅ ${transactionsCount} transações deletadas`);
+      }
+      console.log(`✅ ${txCount} transações de compra estornadas`);
 
-      console.log(`🎯 LOTE ${id} COMPLETAMENTE ELIMINADO!`);
-      console.log(`📊 RESUMO: Lote + ${stockCount} estoque + ${payablesCount} payables + ${salesCount} vendas + ${transactionsCount} transações`);
+      console.log(`🎯 LOTE ${id} COMPLETAMENTE ESTORNADO!`);
 
       if (session?.user) {
         logAction(
           session.user,
-          'DELETE',
+          'ESTORNO',
           'BATCH',
-          `Lote COMPLETAMENTE excluído: ${id} (${stockCount} estoque, ${payablesCount} payables, ${salesCount} vendas, ${transactionsCount} transações)`
+          `Lote COMPLETAMENTE estornado: ${id} (${stockCount} estoque, ${payablesCount} payables, ${salesCount} vendas, ${txCount} transações)`
         );
       }
 
       fetchData();
     } catch (error) {
-      console.error('❌ Erro ao excluir lote:', error);
-      alert('Erro ao excluir o lote. Verifique o console.');
+      console.error('❌ Erro ao estornar lote:', error);
+      alert('Erro ao estornar o lote. Verifique o console.');
     }
   };
 
@@ -827,10 +964,11 @@ const App: React.FC = () => {
     }
   };
 
-  const removeStockItem = async (id_completo: string) => {
+  // ===== ESTORNO DE ITEM DE ESTOQUE =====
+  const estornoStockItem = async (id_completo: string) => {
     if (!db) return;
-    await deleteDoc(doc(db, 'stock_items', id_completo));
-    if (session?.user) logAction(session.user, 'DELETE', 'STOCK', `Item removido do estoque: ${id_completo}`);
+    await updateDoc(doc(db, 'stock_items', id_completo), { status: 'ESTORNADO' });
+    if (session?.user) logAction(session.user, 'ESTORNO', 'STOCK', `Item estornado no estoque: ${id_completo}`);
     fetchData();
   };
 
@@ -840,9 +978,41 @@ const App: React.FC = () => {
     fetchData();
   };
 
-  const deleteTransaction = async (id: string) => {
+  // ===== ESTORNO DE TRANSAÇÃO (P10/P11: bloquear se vinculada) =====
+  const estornoTransaction = async (id: string) => {
     if (!db) return;
-    await deleteDoc(doc(db, 'transactions', id));
+    const tx = data.transactions.find(t => t.id === id);
+    if (!tx) return;
+
+    // P10: Bloquear se vinculada a uma venda (TR-REC)
+    if (tx.id?.startsWith('TR-REC-') || (tx.referencia_id && data.sales.some(s => s.id_venda === tx.referencia_id))) {
+      alert('⚠️ Esta transação está vinculada a uma VENDA.\nUse o estorno de VENDA no Histórico de Vendas.');
+      return;
+    }
+    // P11: Bloquear se vinculada a uma conta a pagar (TR-PAY)
+    if (tx.id?.startsWith('TR-PAY-') || (tx.referencia_id && data.payables.some(p => p.id === tx.referencia_id))) {
+      alert('⚠️ Esta transação está vinculada a uma CONTA A PAGAR.\nUse o estorno de CONTA em Financeiro > A Pagar.');
+      return;
+    }
+    // Bloquear se já é uma transação de estorno
+    if (tx.categoria === 'ESTORNO' || tx.id?.startsWith('TR-ESTORNO-')) {
+      alert('⚠️ Esta transação já é um estorno. Não pode ser estornada novamente.');
+      return;
+    }
+
+    // Apenas transações manuais/avulsas podem ser estornadas diretamente
+    const inversa = {
+      id: `TR-ESTORNO-${id}-${Date.now()}`,
+      data: new Date().toISOString().split('T')[0],
+      descricao: `ESTORNO: ${tx.descricao}`,
+      tipo: tx.tipo === 'ENTRADA' ? 'SAIDA' : 'ENTRADA',
+      categoria: 'ESTORNO',
+      valor: tx.valor,
+      metodo_pagamento: tx.metodo_pagamento || 'OUTROS',
+      referencia_id: tx.referencia_id || id
+    };
+    await addTransaction(inversa as any);
+    logAction(session?.user, 'ESTORNO', 'TRANSACTION', `Transação estornada: ${tx.descricao} (R$${tx.valor})`);
     fetchData();
   };
 
@@ -971,8 +1141,8 @@ const App: React.FC = () => {
           }}
           deleteClient={async (id) => {
             if (db) {
-              await deleteDoc(doc(db, 'clients', id));
-              if (session?.user) logAction(session.user, 'DELETE', 'CLIENT', `Cliente excluído: ${id}`);
+              await updateDoc(doc(db, 'clients', id), { status: 'INATIVO' });
+              if (session?.user) logAction(session.user, 'UPDATE', 'CLIENT', `Cliente inativado: ${id}`);
               fetchData();
             }
           }}
@@ -985,7 +1155,13 @@ const App: React.FC = () => {
           suppliers={data.suppliers}
           addSupplier={handleAddSupplier}
           updateSupplier={handleUpdateSupplier}
-          deleteSupplier={handleDeleteSupplier}
+          deleteSupplier={async (id) => {
+            if (db) {
+              await updateDoc(doc(db, 'suppliers', id), { status: 'INATIVO' });
+              if (session?.user) logAction(session.user, 'UPDATE', 'OTHER', `Fornecedor inativado: ${id}`);
+              fetchData();
+            }
+          }}
           onBack={() => setCurrentView('menu')}
         />
       }
@@ -1001,10 +1177,10 @@ const App: React.FC = () => {
             if (session?.user) logAction(session.user, 'UPDATE', 'BATCH', `Lote atualizado: ${id}`);
             fetchData();
           }}
-          deleteBatch={deleteBatch}
+          deleteBatch={estornoBatch}
           addStockItem={addStockItem}
           updateStockItem={updateStockItem}
-          removeStockItem={removeStockItem}
+          removeStockItem={estornoStockItem}
           registerBatchFinancial={registerBatchFinancial}
           onGoToStock={() => setCurrentView('stock')}
           onBack={() => setCurrentView('menu')}
@@ -1021,7 +1197,7 @@ const App: React.FC = () => {
           if (session?.user) logAction(session.user, 'UPDATE', 'BATCH', `Lote atualizado: ${id}`);
           fetchData();
         }}
-        deleteBatch={deleteBatch}
+        deleteBatch={estornoBatch}
         onBack={() => setCurrentView('menu')}
       />}
       {
@@ -1090,8 +1266,8 @@ const App: React.FC = () => {
           setCurrentView('sales_history');
         }} onBack={() => setCurrentView('menu')} />
       }
-      {currentView === 'sales_history' && <SalesHistory stock={closedStock} batches={closedBatches} sales={data.sales} clients={data.clients} initialSearchTerm={viewParams?.searchTerm} onBack={() => setCurrentView('menu')} onGoToSales={() => setCurrentView('expedition')} />}
-      {currentView === 'financial' && <Financial sales={data.sales} batches={closedBatches} stock={closedStock} clients={data.clients} transactions={data.transactions} updateSaleCost={updateSaleCost} addTransaction={addTransaction} deleteTransaction={deleteTransaction} addPartialPayment={addPartialPayment} onBack={() => setCurrentView('menu')} payables={data.payables} addPayable={handleAddPayable} updatePayable={handleUpdatePayable} deletePayable={handleDeletePayable} />}
+      {currentView === 'sales_history' && <SalesHistory stock={closedStock} batches={closedBatches} sales={data.sales} clients={data.clients} initialSearchTerm={viewParams?.searchTerm} onBack={() => setCurrentView('menu')} onGoToSales={() => setCurrentView('expedition')} estornoSale={estornoSale} />}
+      {currentView === 'financial' && <Financial sales={data.sales} batches={closedBatches} stock={closedStock} clients={data.clients} transactions={data.transactions} updateSaleCost={updateSaleCost} addTransaction={addTransaction} deleteTransaction={estornoTransaction} addPartialPayment={addPartialPayment} onBack={() => setCurrentView('menu')} payables={data.payables} addPayable={handleAddPayable} updatePayable={handleUpdatePayable} deletePayable={handleEstornoPayable} estornoSale={estornoSale} />}
       {currentView === 'scheduled_orders' && <ScheduledOrders scheduledOrders={data.scheduledOrders} clients={data.clients} addScheduledOrder={addScheduledOrder} updateScheduledOrder={updateScheduledOrder} deleteScheduledOrder={deleteScheduledOrder} onViewClientHistory={(clientName) => { setViewParams({ searchTerm: clientName }); setCurrentView('sales_history'); }} onBack={() => setCurrentView('menu')} />}
       {
         currentView === 'report' && <CollaboratorReport
@@ -1165,8 +1341,8 @@ const App: React.FC = () => {
 
         <div className="bg-slate-900 text-white px-4 py-2 rounded-xl md:rounded-2xl font-black text-[8px] md:text-[9px] uppercase tracking-[0.15em] md:tracking-[0.2em] flex items-center justify-center gap-2 shadow-[0_20px_40px_rgba(15,23,42,0.3)] animate-reveal">
           <Activity size={12} className="text-blue-400" />
-          <span className="hidden md:inline">FG-PRO_v2.5.5</span>
-          <span className="md:hidden">v2.5.5</span>
+          <span className="hidden md:inline">FG-PRO_v2.6.5</span>
+          <span className="md:hidden">v2.6.5</span>
         </div>
       </div>
     </div >

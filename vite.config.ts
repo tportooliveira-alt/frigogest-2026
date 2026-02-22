@@ -18,6 +18,9 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'pwa-192x192.png', 'pwa-512x512.png'],
+      workbox: {
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024 // 5MB - monolith app has large chunks
+      },
       manifest: {
         name: 'FrigoGest 2026',
         short_name: 'FrigoGest',

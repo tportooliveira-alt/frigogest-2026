@@ -82,8 +82,9 @@ const Clients: React.FC<ClientsProps> = ({ clients, addClient, updateClient, del
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('PIX');
 
   const filteredClients = clients.filter(c =>
-    c.id_ferro.includes(searchTerm) ||
-    c.nome_social.toLowerCase().includes(searchTerm.toLowerCase())
+    c.status !== 'INATIVO' &&
+    (c.id_ferro.includes(searchTerm) ||
+      c.nome_social.toLowerCase().includes(searchTerm.toLowerCase()))
   ).sort((a, b) => a.nome_social.localeCompare(b.nome_social));
 
   const handleSubmitNewClient = (e: React.FormEvent) => {
@@ -232,7 +233,7 @@ const Clients: React.FC<ClientsProps> = ({ clients, addClient, updateClient, del
                   <label className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mb-2 block">Limite de Crédito</label>
                   <div className="relative">
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-emerald-600 text-sm">R$</span>
-                    <input type="number" className="modern-input pl-12 bg-emerald-50 border-emerald-100 text-emerald-700 font-bold" value={newClient.limite_credito} onChange={e => setNewClient({ ...newClient, limite_credito: Number(e.target.value) })} />
+                    <input type="text" inputMode="decimal" className="modern-input pl-12 bg-emerald-50 border-emerald-100 text-emerald-700 font-bold" placeholder="Limite" value={newClient.limite_credito || ''} onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setNewClient({ ...newClient, limite_credito: Number(v) || 0 }); }} />
                   </div>
                 </div>
               </div>
@@ -328,12 +329,12 @@ const Clients: React.FC<ClientsProps> = ({ clients, addClient, updateClient, del
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (confirm(`⚠️ Excluir cliente ${client.nome_social}?\n\nEsta ação não pode ser desfeita!`)) {
+                          if (confirm(`Inativar cliente ${client.nome_social}?\n\nO registro será mantido no histórico mas não aparecerá mais nas listas.`)) {
                             deleteClient(client.id_ferro);
                           }
                         }}
-                        className="opacity-0 group-hover:opacity-100 p-2 rounded-lg bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white transition-all"
-                        title="Excluir cliente"
+                        className="opacity-0 group-hover:opacity-100 p-2 rounded-lg bg-amber-50 text-amber-500 hover:bg-amber-500 hover:text-white transition-all"
+                        title="Inativar cliente"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -472,7 +473,7 @@ const Clients: React.FC<ClientsProps> = ({ clients, addClient, updateClient, del
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold text-emerald-600 uppercase">Limite de Crédito</label>
-                    <input type="number" className="modern-input bg-emerald-50 border-emerald-100 font-bold text-emerald-700" value={editingClient?.limite_credito || 0} onChange={e => setEditingClient(prev => prev ? ({ ...prev, limite_credito: Number(e.target.value) }) : null)} />
+                    <input type="text" inputMode="decimal" className="modern-input bg-emerald-50 border-emerald-100 font-bold text-emerald-700" placeholder="Limite" value={editingClient?.limite_credito || ''} onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setEditingClient(prev => prev ? ({ ...prev, limite_credito: Number(v) || 0 }) : null); }} />
                   </div>
                 </form>
               )}
@@ -522,7 +523,7 @@ const Clients: React.FC<ClientsProps> = ({ clients, addClient, updateClient, del
             <form onSubmit={handlePaymentSubmit} className="space-y-8">
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center block">Valor do Recebimento</label>
-                <input autoFocus required type="number" step="0.01" className="w-full bg-slate-50 rounded-3xl p-8 text-slate-900 text-4xl font-extrabold text-center focus:bg-blue-50 focus:ring-4 focus:ring-blue-100 transition-all outline-none" placeholder="0.00" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} />
+                <input autoFocus required type="text" inputMode="decimal" className="w-full bg-slate-50 rounded-3xl p-8 text-slate-900 text-4xl font-extrabold text-center focus:bg-blue-50 focus:ring-4 focus:ring-blue-100 transition-all outline-none" placeholder="Valor" value={paymentAmount} onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setPaymentAmount(v); }} />
               </div>
 
               <div className="grid grid-cols-2 gap-4">

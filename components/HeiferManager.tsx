@@ -195,7 +195,7 @@ const HeiferManager: React.FC<HeiferManagerProps> = ({ onBack, onAddOrder, exist
                             </div>
                             <div className="space-y-3">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block px-1">Quantidade de Cabeças</label>
-                                <input type="number" placeholder="0" value={quantity} onChange={(e) => setQuantity(e.target.value === '' ? '' : parseInt(e.target.value))} className="modern-input h-14 font-black text-lg" />
+                                <input type="text" inputMode="numeric" placeholder="Qtd" value={quantity === '' ? '' : quantity} onChange={(e) => { const v = e.target.value; if (v === '' || /^\d*$/.test(v)) setQuantity(v === '' ? '' : parseInt(v)); }} className="modern-input h-14 font-black text-lg" />
                             </div>
                         </div>
 

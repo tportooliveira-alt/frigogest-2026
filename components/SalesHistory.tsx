@@ -22,7 +22,8 @@ import {
     CheckCircle,
     TrendingUp,
     BarChart3,
-    Scale
+    Scale,
+    RotateCcw
 } from 'lucide-react';
 import { jsPDF } from "jspdf";
 
@@ -34,11 +35,12 @@ interface SalesHistoryProps {
     initialSearchTerm?: string;
     onBack: () => void;
     onGoToSales?: () => void;
+    estornoSale?: (saleId: string) => void;
 }
 
 type GroupBy = 'date' | 'client' | 'batch';
 
-const SalesHistory: React.FC<SalesHistoryProps> = ({ stock, batches, sales, clients, initialSearchTerm, onBack, onGoToSales }) => {
+const SalesHistory: React.FC<SalesHistoryProps> = ({ stock, batches, sales, clients, initialSearchTerm, onBack, onGoToSales, estornoSale }) => {
     const [searchTerm, setSearchTerm] = useState(initialSearchTerm || '');
     const [groupBy, setGroupBy] = useState<GroupBy>(initialSearchTerm ? 'client' : 'date');
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -296,16 +298,36 @@ const SalesHistory: React.FC<SalesHistoryProps> = ({ stock, batches, sales, clie
                                             {group.items.map((entry, idx) => {
                                                 const loss = (entry.item?.peso_entrada || 0) - entry.sale.peso_real_saida;
                                                 return (
-                                                    <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                                    <tr key={idx} className={`hover:bg-slate-50 transition-colors ${entry.sale.status_pagamento === 'ESTORNADO' ? 'opacity-50' : ''}`}>
                                                         <td className="text-[10px] font-bold text-slate-400">{new Date(entry.sale.data_venda).toLocaleDateString()}</td>
-                                                        <td className="font-extrabold uppercase text-xs text-slate-900 truncate max-w-[150px]">{entry.sale.nome_cliente || 'Loja Física'}</td>
+                                                        <td className="font-extrabold uppercase text-xs text-slate-900 truncate max-w-[150px]">
+                                                            {entry.sale.nome_cliente || 'Loja Física'}
+                                                            {entry.sale.status_pagamento === 'ESTORNADO' && (
+                                                                <span className="ml-2 text-[8px] font-black bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full uppercase tracking-widest border border-amber-200">ESTORNADO</span>
+                                                            )}
+                                                        </td>
                                                         <td className="font-mono text-[9px] text-slate-400">{entry.item?.id_completo || 'N/A'}</td>
                                                         <td className="text-right font-black text-slate-900">{formatWeight(entry.sale.peso_real_saida)}</td>
                                                         <td className={`text-right font-black ${loss > 0 ? 'text-orange-600' : 'text-emerald-600'}`}>{formatWeight(loss)}</td>
                                                         <td className="text-right font-black text-slate-900">{formatCurrency(entry.revenue)}</td>
                                                         <td className={`text-right font-black ${entry.profit >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>{formatCurrency(entry.profit)}</td>
                                                         <td className="text-center">
-                                                            <button onClick={() => generateReceipt(entry.sale)} className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:bg-slate-900 hover:text-white transition-all flex items-center justify-center"><Printer size={16} /></button>
+                                                            <div className="flex items-center justify-center gap-1">
+                                                                <button onClick={() => generateReceipt(entry.sale)} className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:bg-slate-900 hover:text-white transition-all flex items-center justify-center" title="Imprimir recibo"><Printer size={16} /></button>
+                                                                {entry.sale.status_pagamento !== 'ESTORNADO' && estornoSale && (
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            if (window.confirm(`🔄 Estornar esta venda?\n\nCliente: ${entry.sale.nome_cliente}\nItem: ${entry.sale.id_completo}\nValor: ${formatCurrency(entry.revenue)}\n\nO item voltará ao estoque e qualquer pagamento recebido será revertido no caixa.`)) {
+                                                                                estornoSale(entry.sale.id_venda);
+                                                                            }
+                                                                        }}
+                                                                        className="w-8 h-8 rounded-lg bg-slate-50 text-slate-300 hover:bg-amber-50 hover:text-amber-600 transition-all flex items-center justify-center"
+                                                                        title="Estornar venda"
+                                                                    >
+                                                                        <RotateCcw size={14} />
+                                                                    </button>
+                                                                )}
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                 );

@@ -727,11 +727,11 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
                             <div className="flex items-center gap-2 bg-blue-100 border-2 border-blue-400 rounded-xl px-4 py-3">
                               <Scale size={20} className="text-blue-600" />
                               <input
-                                type="number"
-                                step="0.01"
+                                type="text" inputMode="decimal"
                                 className="w-32 bg-transparent text-right font-black text-xl text-blue-700 outline-none"
-                                value={Number(groupItemsWeight.toFixed(2))}
-                                onChange={(e) => handleGroupWeightChange(group, parseFloat(e.target.value) || 0)}
+                                placeholder="Peso"
+                                value={Number(groupItemsWeight.toFixed(2)) || ''}
+                                onChange={(e) => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) handleGroupWeightChange(group, parseFloat(v) || 0); }}
                               />
                               <span className="text-sm font-black text-blue-500">KG</span>
                             </div>
@@ -751,11 +751,11 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
                                 <span className="text-[9px] font-black text-blue-500 uppercase mb-1">PESO SAÍDA</span>
                                 <div className="flex items-center gap-2 bg-blue-50 border-2 border-blue-300 rounded-xl px-3 py-2">
                                   <input
-                                    type="number"
-                                    step="0.01"
+                                    type="text" inputMode="decimal"
                                     className="w-28 bg-transparent text-right font-black text-lg text-blue-700 outline-none"
-                                    value={currentWeight}
-                                    onChange={e => handleWeightChange(item.id_completo, parseFloat(e.target.value) || 0)}
+                                    placeholder="Peso"
+                                    value={currentWeight || ''}
+                                    onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) handleWeightChange(item.id_completo, parseFloat(v) || 0); }}
                                   />
                                   <span className="text-xs font-black text-blue-400">KG</span>
                                 </div>
@@ -783,12 +783,11 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
                   <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest px-1">R$ Preço / KG</label>
                   <div className="flex items-center bg-white/10 border border-white/10 rounded-xl px-4 h-12 focus-within:bg-white/20 transition-all">
                     <input
-                      type="number"
-                      step="0.01"
+                      type="text" inputMode="decimal"
                       className="w-full bg-transparent text-white font-black text-xl outline-none"
                       value={pricePerKg || ''}
-                      onChange={e => setPricePerKg(parseFloat(e.target.value))}
-                      placeholder="0.00"
+                      onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setPricePerKg(parseFloat(v) || 0); }}
+                      placeholder="Preço/kg"
                     />
                   </div>
                 </div>
@@ -796,12 +795,11 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
                   <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest px-1">Custos Extras</label>
                   <div className="flex items-center bg-white/10 border border-white/10 rounded-xl px-4 h-12 focus-within:bg-white/20 transition-all">
                     <input
-                      type="number"
-                      step="0.01"
+                      type="text" inputMode="decimal"
                       className="w-full bg-transparent text-white font-black text-lg outline-none"
                       value={extrasCost || ''}
-                      onChange={e => setExtrasCost(parseFloat(e.target.value))}
-                      placeholder="0.00"
+                      onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setExtrasCost(parseFloat(v) || 0); }}
+                      placeholder="Extras"
                     />
                   </div>
                 </div>

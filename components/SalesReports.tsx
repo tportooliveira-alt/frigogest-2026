@@ -151,10 +151,9 @@ const SalesReports: React.FC<SalesReportsProps> = ({ sales, batches, stock, clie
                           {isEditing ? (
                             <input
                               autoFocus
-                              type="number"
-                              step="0.01"
+                              type="text" inputMode="decimal"
                               value={tempCost}
-                              onChange={e => setTempCost(e.target.value)}
+                              onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setTempCost(v); }}
                               onKeyDown={e => e.key === 'Enter' && (updateSaleCost(s.id_venda, parseFloat(tempCost) || 0), setEditingSaleId(null))}
                               className="w-full h-full bg-white border border-orange-500 rounded-none p-4 text-right font-black text-xs text-blue-600 focus:ring-0 outline-none"
                             />

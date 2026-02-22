@@ -14,6 +14,7 @@ export interface Client {
   bairro?: string;
   cidade?: string;
   observacoes?: string;
+  status?: 'ATIVO' | 'INATIVO'; // Para inativação em vez de delete
 }
 
 export interface Supplier {
@@ -27,6 +28,7 @@ export interface Supplier {
   estado?: string;
   dados_bancarios?: string; // PIX ou Conta
   observacoes?: string;
+  status?: 'ATIVO' | 'INATIVO'; // Para inativação em vez de delete
 }
 
 export interface Batch {
@@ -39,7 +41,7 @@ export interface Batch {
   gastos_extras: number;
   custo_real_kg: number;
   url_romaneio?: string; // Novo campo para imagem/PDF do romaneio original
-  status?: 'ABERTO' | 'FECHADO';
+  status?: 'ABERTO' | 'FECHADO' | 'ESTORNADO';
   valor_entrada?: number; // Valor de entrada/adiantamento para compras a prazo
 }
 
@@ -56,7 +58,7 @@ export interface StockItem {
   tipo: StockType;
   peso_entrada: number;
   peso_animal_entrada?: number; // Soma de A+B ou Integral
-  status: 'DISPONIVEL' | 'VENDIDO';
+  status: 'DISPONIVEL' | 'VENDIDO' | 'ESTORNADO';
   data_entrada: string;
 }
 
@@ -76,7 +78,7 @@ export interface Sale {
   prazo_dias: number;
   data_vencimento: string;
   forma_pagamento: PaymentMethod;
-  status_pagamento: 'PENDENTE' | 'PAGO';
+  status_pagamento: 'PENDENTE' | 'PAGO' | 'ESTORNADO';
 }
 
 export interface ScheduledOrder {
@@ -96,7 +98,7 @@ export interface Transaction {
   data: string;
   descricao: string;
   tipo: 'ENTRADA' | 'SAIDA';
-  categoria: 'VENDA' | 'COMPRA_GADO' | 'OPERACIONAL' | 'ADMINISTRATIVO' | 'OUTROS' | 'ESTRUTURA' | 'FUNCIONARIOS' | 'INSUMOS' | 'MANUTENCAO' | 'IMPOSTOS' | 'DESCONTO';
+  categoria: 'VENDA' | 'COMPRA_GADO' | 'OPERACIONAL' | 'ADMINISTRATIVO' | 'OUTROS' | 'ESTRUTURA' | 'FUNCIONARIOS' | 'INSUMOS' | 'MANUTENCAO' | 'IMPOSTOS' | 'DESCONTO' | 'ESTORNO';
   valor: number;
   referencia_id?: string;
   metodo_pagamento?: PaymentMethod;
@@ -108,7 +110,7 @@ export interface AuditLogEntry {
   userId: string;
   userEmail: string;
   userName?: string;
-  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'LOGOUT' | 'OTHER';
+  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'ESTORNO' | 'LOGIN' | 'LOGOUT' | 'OTHER';
   entity: 'CLIENT' | 'BATCH' | 'STOCK' | 'SALE' | 'TRANSACTION' | 'ORDER' | 'SYSTEM' | 'OTHER';
   details: string; // Human readable description
   metadata?: any; // ID of the object changed, or old/new values
@@ -152,7 +154,7 @@ export interface Payable {
   valor_pago?: number;
   data_vencimento: string; // ISO YYYY-MM-DD
   data_pagamento?: string;
-  status: 'PENDENTE' | 'PAGO' | 'PARCIAL' | 'ATRASADO';
+  status: 'PENDENTE' | 'PAGO' | 'PARCIAL' | 'ATRASADO' | 'ESTORNADO' | 'CANCELADO';
   fornecedor_id?: string; // Opcional, link com Supplier
   id_lote?: string; // NOVO: Referência ao lote de gado comprado
   observacoes?: string;
