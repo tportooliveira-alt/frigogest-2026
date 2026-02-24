@@ -1,5 +1,12 @@
 import { AppState, StockType, Transaction } from './types';
 
+// ===== VERSÃO DO SISTEMA — FONTE ÚNICA DE VERDADE =====
+export const APP_VERSION = '2.7.0';
+export const APP_BUILD_DATE = '2026-02-24';
+export const APP_VERSION_LABEL = `FG-PRO_v${APP_VERSION}`;
+export const APP_VERSION_SHORT = `v${APP_VERSION}`;
+// ======================================================
+
 export const CURRENT_DATE = new Date().toISOString().split('T')[0];
 
 // MOCK_DATA vazio - sistema começa limpo

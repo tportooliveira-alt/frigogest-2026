@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { StockItem, Client, Sale, Batch } from '../types';
+import DecimalInput from './DecimalInput';
 import {
   Search,
   ShoppingCart,
@@ -726,12 +727,11 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
                             <span className="text-[9px] font-black text-blue-600 uppercase tracking-wide mb-1">PESO SAÍDA</span>
                             <div className="flex items-center gap-2 bg-blue-100 border-2 border-blue-400 rounded-xl px-4 py-3">
                               <Scale size={20} className="text-blue-600" />
-                              <input
-                                type="text" inputMode="decimal"
+                              <DecimalInput
                                 className="w-32 bg-transparent text-right font-black text-xl text-blue-700 outline-none"
                                 placeholder="Peso"
-                                value={Number(groupItemsWeight.toFixed(2)) || ''}
-                                onChange={(e) => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) handleGroupWeightChange(group, parseFloat(v) || 0); }}
+                                value={Number(groupItemsWeight.toFixed(2)) || 0}
+                                onValueChange={(v) => handleGroupWeightChange(group, v)}
                               />
                               <span className="text-sm font-black text-blue-500">KG</span>
                             </div>
@@ -750,12 +750,11 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
                               <div className="flex flex-col items-end">
                                 <span className="text-[9px] font-black text-blue-500 uppercase mb-1">PESO SAÍDA</span>
                                 <div className="flex items-center gap-2 bg-blue-50 border-2 border-blue-300 rounded-xl px-3 py-2">
-                                  <input
-                                    type="text" inputMode="decimal"
+                                  <DecimalInput
                                     className="w-28 bg-transparent text-right font-black text-lg text-blue-700 outline-none"
                                     placeholder="Peso"
-                                    value={currentWeight || ''}
-                                    onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) handleWeightChange(item.id_completo, parseFloat(v) || 0); }}
+                                    value={currentWeight || 0}
+                                    onValueChange={v => handleWeightChange(item.id_completo, v)}
                                   />
                                   <span className="text-xs font-black text-blue-400">KG</span>
                                 </div>
@@ -782,11 +781,10 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
                 <div className="space-y-1.5">
                   <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest px-1">R$ Preço / KG</label>
                   <div className="flex items-center bg-white/10 border border-white/10 rounded-xl px-4 h-12 focus-within:bg-white/20 transition-all">
-                    <input
-                      type="text" inputMode="decimal"
+                    <DecimalInput
                       className="w-full bg-transparent text-white font-black text-xl outline-none"
-                      value={pricePerKg || ''}
-                      onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setPricePerKg(parseFloat(v) || 0); }}
+                      value={pricePerKg || 0}
+                      onValueChange={v => setPricePerKg(v)}
                       placeholder="Preço/kg"
                     />
                   </div>
@@ -794,11 +792,10 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
                 <div className="space-y-1.5">
                   <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest px-1">Custos Extras</label>
                   <div className="flex items-center bg-white/10 border border-white/10 rounded-xl px-4 h-12 focus-within:bg-white/20 transition-all">
-                    <input
-                      type="text" inputMode="decimal"
+                    <DecimalInput
                       className="w-full bg-transparent text-white font-black text-lg outline-none"
-                      value={extrasCost || ''}
-                      onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setExtrasCost(parseFloat(v) || 0); }}
+                      value={extrasCost || 0}
+                      onValueChange={v => setExtrasCost(v)}
                       placeholder="Extras"
                     />
                   </div>

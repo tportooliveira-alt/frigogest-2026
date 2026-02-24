@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { auth } from '../firebaseClient';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { Lock, Mail, Loader2, ShieldAlert, Activity, ShieldCheck, Fingerprint, ScanFace } from 'lucide-react';
+import { APP_VERSION_SHORT } from '../constants';
 
 interface LoginProps {
   onLoginSuccess: () => void;
@@ -219,7 +220,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
 
               <div className="mt-8 flex items-center justify-center gap-3 opacity-30">
                 <div className="h-px w-8 bg-slate-300" />
-                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">v2.6.5 Enterprise</span>
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{APP_VERSION_SHORT} Enterprise</span>
                 <div className="h-px w-8 bg-slate-300" />
               </div>
             </div>

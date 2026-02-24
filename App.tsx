@@ -13,7 +13,7 @@ import Login from './components/Login';
 import SystemReset from './components/SystemReset';
 import Suppliers from './components/Suppliers';
 import { AppState, Sale, PaymentMethod, StockItem, Batch, Client, Transaction, DailyReport, Supplier, Payable } from './types';
-import { MOCK_DATA } from './constants';
+import { MOCK_DATA, APP_VERSION_LABEL, APP_VERSION_SHORT } from './constants';
 import { auth, db } from './firebaseClient';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, onSnapshot, writeBatch, query, limit } from 'firebase/firestore';
@@ -1341,8 +1341,8 @@ const App: React.FC = () => {
 
         <div className="bg-slate-900 text-white px-4 py-2 rounded-xl md:rounded-2xl font-black text-[8px] md:text-[9px] uppercase tracking-[0.15em] md:tracking-[0.2em] flex items-center justify-center gap-2 shadow-[0_20px_40px_rgba(15,23,42,0.3)] animate-reveal">
           <Activity size={12} className="text-blue-400" />
-          <span className="hidden md:inline">FG-PRO_v2.6.5</span>
-          <span className="md:hidden">v2.6.5</span>
+          <span className="hidden md:inline">{APP_VERSION_LABEL}</span>
+          <span className="md:hidden">{APP_VERSION_SHORT}</span>
         </div>
       </div>
     </div >

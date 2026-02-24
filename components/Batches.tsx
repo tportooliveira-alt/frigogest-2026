@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Batch, StockItem, StockType, Supplier } from '../types';
+import DecimalInput from './DecimalInput';
 import {
   PackagePlus as PackagePlusIcon,
   X as XIcon,
@@ -617,7 +618,7 @@ const Batches: React.FC<BatchesProps> = ({
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Peso Romaneio (kg)</label>
-                    <input disabled={!!selectedBatch} type="text" inputMode="decimal" className="modern-input font-bold text-lg" placeholder="Peso em kg" value={selectedBatch ? selectedBatch.peso_total_romaneio : (newBatch.peso_total_romaneio || '')} onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setNewBatch({ ...newBatch, peso_total_romaneio: parseFloat(v) || 0 }); }} />
+                    <DecimalInput disabled={!!selectedBatch} className="modern-input font-bold text-lg" placeholder="Peso em kg" value={selectedBatch ? selectedBatch.peso_total_romaneio : (newBatch.peso_total_romaneio || 0)} onValueChange={v => setNewBatch({ ...newBatch, peso_total_romaneio: v })} />
                   </div>
                 </div>
               </div>
@@ -629,17 +630,17 @@ const Batches: React.FC<BatchesProps> = ({
                   <div className="space-y-4">
                     <div>
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Valor do Gado (R$)</label>
-                      <input type="text" inputMode="decimal" className="modern-input text-xl font-black bg-slate-50 border-slate-100" placeholder="Valor total" value={newBatch.valor_compra_total || ''} onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setNewBatch({ ...newBatch, valor_compra_total: parseFloat(v) || 0 }); }} />
+                      <DecimalInput className="modern-input text-xl font-black bg-slate-50 border-slate-100" placeholder="Valor total" value={newBatch.valor_compra_total || 0} onValueChange={v => setNewBatch({ ...newBatch, valor_compra_total: v })} />
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Frete (R$)</label>
-                        <input type="text" inputMode="decimal" className="modern-input" placeholder="Frete" value={newBatch.frete || ''} onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setNewBatch({ ...newBatch, frete: parseFloat(v) || 0 }); }} />
+                        <DecimalInput className="modern-input" placeholder="Frete" value={newBatch.frete || 0} onValueChange={v => setNewBatch({ ...newBatch, frete: v })} />
                       </div>
                       <div>
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Extras (R$)</label>
-                        <input type="text" inputMode="decimal" className="modern-input" placeholder="Extras" value={newBatch.gastos_extras || ''} onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setNewBatch({ ...newBatch, gastos_extras: parseFloat(v) || 0 }); }} />
+                        <DecimalInput className="modern-input" placeholder="Extras" value={newBatch.gastos_extras || 0} onValueChange={v => setNewBatch({ ...newBatch, gastos_extras: v })} />
                       </div>
                     </div>
 
@@ -1167,12 +1168,11 @@ const Batches: React.FC<BatchesProps> = ({
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Peso Romaneio (kg)</label>
-                    <input
-                      type="text" inputMode="decimal"
+                    <DecimalInput
                       className="modern-input w-full font-bold text-lg"
                       placeholder="Peso em kg"
-                      value={editingBatch.peso_total_romaneio || ''}
-                      onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setEditingBatch({ ...editingBatch, peso_total_romaneio: parseFloat(v) || 0 }); }}
+                      value={editingBatch.peso_total_romaneio || 0}
+                      onValueChange={v => setEditingBatch({ ...editingBatch, peso_total_romaneio: v })}
                     />
                   </div>
                   <div>
@@ -1198,36 +1198,33 @@ const Batches: React.FC<BatchesProps> = ({
                   <div className="space-y-4">
                     <div>
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Valor do Gado (R$)</label>
-                      <input
-                        type="text" inputMode="decimal"
+                      <DecimalInput
                         className={`modern-input w-full text-xl font-black ${editingBatch.status === 'FECHADO' ? 'opacity-50 cursor-not-allowed bg-slate-100' : ''}`}
                         placeholder="Valor total"
-                        value={editingBatch.valor_compra_total || ''}
+                        value={editingBatch.valor_compra_total || 0}
                         disabled={editingBatch.status === 'FECHADO'}
-                        onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setEditingBatch({ ...editingBatch, valor_compra_total: parseFloat(v) || 0 }); }}
+                        onValueChange={v => setEditingBatch({ ...editingBatch, valor_compra_total: v })}
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Frete (R$)</label>
-                        <input
-                          type="text" inputMode="decimal"
+                        <DecimalInput
                           className={`modern-input w-full ${editingBatch.status === 'FECHADO' ? 'opacity-50 cursor-not-allowed bg-slate-100' : ''}`}
                           placeholder="Frete"
-                          value={editingBatch.frete || ''}
+                          value={editingBatch.frete || 0}
                           disabled={editingBatch.status === 'FECHADO'}
-                          onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setEditingBatch({ ...editingBatch, frete: parseFloat(v) || 0 }); }}
+                          onValueChange={v => setEditingBatch({ ...editingBatch, frete: v })}
                         />
                       </div>
                       <div>
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Extras (R$)</label>
-                        <input
-                          type="text" inputMode="decimal"
+                        <DecimalInput
                           className={`modern-input w-full ${editingBatch.status === 'FECHADO' ? 'opacity-50 cursor-not-allowed bg-slate-100' : ''}`}
                           placeholder="Extras"
-                          value={editingBatch.gastos_extras || ''}
+                          value={editingBatch.gastos_extras || 0}
                           disabled={editingBatch.status === 'FECHADO'}
-                          onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setEditingBatch({ ...editingBatch, gastos_extras: parseFloat(v) || 0 }); }}
+                          onValueChange={v => setEditingBatch({ ...editingBatch, gastos_extras: v })}
                         />
                       </div>
                     </div>

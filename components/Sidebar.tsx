@@ -1,5 +1,6 @@
 import React from 'react';
 import { LayoutDashboard, Users, Package, Truck, Scale, Beef, DollarSign, Wand2, LogOut, FileText, ChevronRight, Zap, Calendar, Bot, Database, ShieldCheck, Sheet, Sparkles } from 'lucide-react';
+import { APP_VERSION_SHORT, APP_BUILD_DATE } from '../constants';
 
 interface SidebarProps {
   setView: (view: string) => void;
@@ -55,7 +56,7 @@ const Sidebar: React.FC<SidebarProps> = ({ setView, onLogout, onSyncSheets, shee
           <div className="flex items-center justify-center gap-4">
             <div className="h-[1px] w-12 bg-gradient-to-r from-transparent to-white/30" />
             <p className="text-white/70 font-black text-[10px] uppercase tracking-[0.4em] flex items-center gap-2">
-              <Zap size={12} className="text-blue-200" /> Sistema Avançado v2.6.5
+              <Zap size={12} className="text-blue-200" /> Sistema Avançado {APP_VERSION_SHORT} • {APP_BUILD_DATE}
             </p>
             <div className="h-[1px] w-12 bg-gradient-to-l from-transparent to-white/30" />
           </div>
