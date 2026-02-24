@@ -29,6 +29,8 @@ export interface Supplier {
   dados_bancarios?: string; // PIX ou Conta
   observacoes?: string;
   status?: 'ATIVO' | 'INATIVO'; // Para inativação em vez de delete
+  raca_predominante?: string; // Raça principal do rebanho (Nelore, Angus×Nelore, etc.)
+  regiao?: string; // Região/praça do fornecedor (ex: "BA Sul", "MT Norte")
 }
 
 export interface Batch {
@@ -43,6 +45,14 @@ export interface Batch {
   url_romaneio?: string; // Novo campo para imagem/PDF do romaneio original
   status?: 'ABERTO' | 'FECHADO' | 'ESTORNADO';
   valor_entrada?: number; // Valor de entrada/adiantamento para compras a prazo
+  // ═══ CAMPOS ESTÁGIO 1 — PRODUÇÃO & RAÇA ═══
+  raca?: string; // Raça do lote (Nelore, Angus×Nelore, etc.)
+  qtd_cabecas?: number; // Quantidade de cabeças no lote
+  peso_vivo_medio?: number; // Peso vivo médio por cabeça (kg) na fazenda
+  peso_gancho?: number; // Peso total no gancho do frigorífico (kg)
+  rendimento_real?: number; // (peso_desossa / peso_gancho) × 100 — calculado
+  toalete_kg?: number; // Peso removido na toalete pelo frigorífico (kg)
+  preco_arroba?: number; // Preço pago por arroba (R$) — ref. CEPEA regional
 }
 
 export enum StockType {
@@ -229,3 +239,37 @@ export interface SupplierScore {
   tendencia: 'subindo' | 'estavel' | 'caindo';
   ultimo_lote?: string;
 }
+
+// ═══ COTAÇÕES DE MERCADO (SINCRONIZAÇÃO DIÁRIA) ═══
+
+export interface MarketPrice {
+  id: string; // "2026-02-24_BA_SUL"
+  data: string; // ISO date "2026-02-24"
+  praca: 'BA_SUL' | 'FEIRA_SANTANA' | 'ITAPETINGA' | 'SP_CEPEA' | string;
+  preco_arroba: number; // R$ por arroba
+  preco_arroba_prazo?: number; // Preço a prazo (30 dias)
+  tipo: 'BOI_COMUM' | 'BOI_CHINA' | 'NOVILHA' | string;
+  diesel_litro?: number; // Preço diesel na região
+  variacao_dia?: number; // % variação no dia
+  variacao_mes?: number; // % variação no mês
+  fonte: 'SCOT' | 'COOPERFEIRA' | 'AREGIAO' | 'CEPEA' | 'IMEA' | string;
+  ultima_sincronizacao: string; // ISO timestamp da busca
+  status_sync: 'OK' | 'FALHA' | 'MANUAL';
+}
+
+// ═══ TABELA DE RAÇAS — REFERÊNCIA EMBRAPA ═══
+
+export const BREED_REFERENCE_DATA: BreedReference[] = [
+  { raca: 'Nelore', rendimento_min: 48, rendimento_max: 62, quebra_resfriamento_min: 1.5, quebra_resfriamento_max: 2.5, peso_medio_min: 240, peso_medio_max: 280, observacoes: 'Raça predominante no Brasil. Referência EMBRAPA Gado de Corte.' },
+  { raca: 'Angus × Nelore (F1)', rendimento_min: 50, rendimento_max: 55, quebra_resfriamento_min: 1.5, quebra_resfriamento_max: 2.0, peso_medio_min: 250, peso_medio_max: 270, observacoes: 'Cruzamento industrial mais popular. EMBRAPA/UNESP.' },
+  { raca: 'Senepol × Nelore (F1)', rendimento_min: 53, rendimento_max: 57, quebra_resfriamento_min: 1.5, quebra_resfriamento_max: 2.0, peso_medio_min: 250, peso_medio_max: 300, observacoes: 'Excelente acabamento precoce. Gene pelo zero. EMBRAPA.' },
+  { raca: 'Senepol (puro)', rendimento_min: 53, rendimento_max: 54, quebra_resfriamento_min: 1.5, quebra_resfriamento_max: 2.0, peso_medio_min: 260, peso_medio_max: 265, observacoes: 'Adaptado ao trópico. FATEC BT.' },
+  { raca: 'Angus (puro)', rendimento_min: 52, rendimento_max: 56, quebra_resfriamento_min: 1.0, quebra_resfriamento_max: 1.8, peso_medio_min: 260, peso_medio_max: 290, observacoes: 'Referência em marmoreio. UNESP.' },
+  { raca: 'Hereford × Nelore', rendimento_min: 52, rendimento_max: 55, quebra_resfriamento_min: 1.5, quebra_resfriamento_max: 2.0, peso_medio_min: 240, peso_medio_max: 260, observacoes: 'Boa cobertura de gordura. EMBRAPA.' },
+  { raca: 'Brangus', rendimento_min: 51, rendimento_max: 55, quebra_resfriamento_min: 1.5, quebra_resfriamento_max: 2.0, peso_medio_min: 250, peso_medio_max: 280, observacoes: '3/8 Angus + 5/8 Nelore. EMBRAPA.' },
+  { raca: 'Tabapuã', rendimento_min: 49, rendimento_max: 53, quebra_resfriamento_min: 1.5, quebra_resfriamento_max: 2.5, peso_medio_min: 230, peso_medio_max: 260, observacoes: 'Zebuíno mocho brasileiro. EMBRAPA.' },
+  { raca: 'Guzerá', rendimento_min: 48, rendimento_max: 52, quebra_resfriamento_min: 1.5, quebra_resfriamento_max: 2.5, peso_medio_min: 220, peso_medio_max: 250, observacoes: 'Dupla aptitude (leite e corte). EMBRAPA.' },
+  { raca: 'Brahman × Nelore', rendimento_min: 50, rendimento_max: 54, quebra_resfriamento_min: 1.5, quebra_resfriamento_max: 2.0, peso_medio_min: 240, peso_medio_max: 270, observacoes: 'Vigor híbrido zebuíno. EMBRAPA.' },
+  { raca: 'Charolês × Nelore', rendimento_min: 53, rendimento_max: 57, quebra_resfriamento_min: 1.5, quebra_resfriamento_max: 2.0, peso_medio_min: 260, peso_medio_max: 300, observacoes: 'Alto rendimento muscular. EMBRAPA.' },
+  { raca: 'Simental × Nelore', rendimento_min: 52, rendimento_max: 56, quebra_resfriamento_min: 1.5, quebra_resfriamento_max: 2.0, peso_medio_min: 250, peso_medio_max: 290, observacoes: 'Bom crescimento e precocidade. EMBRAPA.' },
+];

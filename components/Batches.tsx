@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Batch, StockItem, StockType, Supplier } from '../types';
+import { Batch, StockItem, StockType, Supplier, BREED_REFERENCE_DATA } from '../types';
 import DecimalInput from './DecimalInput';
 import {
   PackagePlus as PackagePlusIcon,
@@ -162,8 +162,21 @@ const Batches: React.FC<BatchesProps> = ({
     valor_entrada: 0,
     prazo_dias: 30,
     status: 'ABERTO',
-    id_sequencia: 1
+    id_sequencia: 1,
+    // Estágio 1 — Produção & Raça
+    raca: '',
+    qtd_cabecas: 0,
+    peso_vivo_medio: 0,
+    peso_gancho: 0,
+    toalete_kg: 0,
+    preco_arroba: 0
   } as any);
+
+  // Rendimento esperado baseado na raça selecionada
+  const breedRef = useMemo(() => {
+    const r = newBatch.raca || (selectedBatchId ? (safeBatches.find(b => b.id_lote === selectedBatchId) as any)?.raca : '');
+    return BREED_REFERENCE_DATA.find(b => b.raca === r) || null;
+  }, [newBatch.raca, selectedBatchId, safeBatches]);
 
   // --- FUNÇÃO DE GERAR ID (ESTILO PREMIUM LIGHT) ---
   const generateNextId = (manualSeq?: number) => {
@@ -619,6 +632,57 @@ const Batches: React.FC<BatchesProps> = ({
                   <div>
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Peso Romaneio (kg)</label>
                     <DecimalInput disabled={!!selectedBatch} className="modern-input font-bold text-lg" placeholder="Peso em kg" value={selectedBatch ? selectedBatch.peso_total_romaneio : (newBatch.peso_total_romaneio || 0)} onValueChange={v => setNewBatch({ ...newBatch, peso_total_romaneio: v })} />
+                  </div>
+                </div>
+
+                {/* ═══ ESTÁGIO 1 — RAÇA & PRODUÇÃO ═══ */}
+                <div className="pt-4 border-t border-slate-50 space-y-4">
+                  <h4 className="text-[9px] font-black text-emerald-600 uppercase tracking-[0.2em] flex items-center gap-1.5">🐂 Dados da Produção</h4>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Raça do Lote</label>
+                    <select
+                      disabled={!!selectedBatch}
+                      className="modern-input text-xs"
+                      value={selectedBatch ? (selectedBatch as any).raca || '' : newBatch.raca}
+                      onChange={e => setNewBatch({ ...newBatch, raca: e.target.value })}
+                    >
+                      <option value="">Selecionar raça...</option>
+                      {BREED_REFERENCE_DATA.map(b => (
+                        <option key={b.raca} value={b.raca}>{b.raca} ({b.rendimento_min}-{b.rendimento_max}%)</option>
+                      ))}
+                    </select>
+                    {breedRef && (
+                      <div className="mt-2 px-3 py-2 bg-emerald-50 rounded-xl text-[10px] text-emerald-700 font-medium">
+                        📊 Rendimento esperado: <strong>{breedRef.rendimento_min}–{breedRef.rendimento_max}%</strong> · Peso carcaça: {breedRef.peso_medio_min}–{breedRef.peso_medio_max}kg · Quebra frio: {breedRef.quebra_resfriamento_min}–{breedRef.quebra_resfriamento_max}%
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Qtd Cabeças</label>
+                      <DecimalInput disabled={!!selectedBatch} className="modern-input" placeholder="Nº" value={selectedBatch ? (selectedBatch as any).qtd_cabecas || 0 : (newBatch.qtd_cabecas || 0)} onValueChange={v => setNewBatch({ ...newBatch, qtd_cabecas: v })} />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Peso Gancho (kg)</label>
+                      <DecimalInput disabled={!!selectedBatch} className="modern-input" placeholder="Peso total gancho" value={selectedBatch ? (selectedBatch as any).peso_gancho || 0 : (newBatch.peso_gancho || 0)} onValueChange={v => setNewBatch({ ...newBatch, peso_gancho: v })} />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Peso Vivo Médio</label>
+                      <DecimalInput disabled={!!selectedBatch} className="modern-input text-xs" placeholder="kg/cab" value={selectedBatch ? (selectedBatch as any).peso_vivo_medio || 0 : (newBatch.peso_vivo_medio || 0)} onValueChange={v => setNewBatch({ ...newBatch, peso_vivo_medio: v })} />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Toalete (kg)</label>
+                      <DecimalInput disabled={!!selectedBatch} className="modern-input text-xs" placeholder="kg" value={selectedBatch ? (selectedBatch as any).toalete_kg || 0 : (newBatch.toalete_kg || 0)} onValueChange={v => setNewBatch({ ...newBatch, toalete_kg: v })} />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">R$/Arroba</label>
+                      <DecimalInput disabled={!!selectedBatch} className="modern-input text-xs" placeholder="R$" value={selectedBatch ? (selectedBatch as any).preco_arroba || 0 : (newBatch.preco_arroba || 0)} onValueChange={v => setNewBatch({ ...newBatch, preco_arroba: v })} />
+                    </div>
                   </div>
                 </div>
               </div>
