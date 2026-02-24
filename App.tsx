@@ -1048,6 +1048,7 @@ const App: React.FC = () => {
 
     let remaining = amount;
     let count = 0;
+    const clientName = data.clients.find(c => c.id_ferro === clientId)?.nome_social || 'Cliente';
 
     for (const sale of pendingSales) {
       if (remaining <= 0.01) break;
@@ -1058,13 +1059,27 @@ const App: React.FC = () => {
 
       if (pagarNesta > 0) {
         await addPartialPayment(sale.id_venda, pagarNesta, method, date);
+
+        // CORREÇÃO AUDITORIA #2: Criar Transaction ENTRADA no caixa
+        // addPartialPayment só atualiza o sale, não cria Transaction
+        await addTransaction({
+          id: `TR-REC-CLIENT-${sale.id_venda}-${Date.now()}`,
+          data: date,
+          descricao: `Recebimento ${clientName} - ${sale.id_completo}`,
+          tipo: 'ENTRADA',
+          categoria: 'VENDA',
+          valor: pagarNesta,
+          metodo_pagamento: method,
+          referencia_id: sale.id_venda
+        } as any);
+
         remaining -= pagarNesta;
         count++;
       }
     }
 
     if (count > 0) {
-      if (session?.user) logAction(session.user, 'CREATE', 'TRANSACTION', `Pagamento recebido de cliente: ${amount} (${method})`);
+      if (session?.user) logAction(session.user, 'CREATE', 'TRANSACTION', `Pagamento recebido de cliente ${clientName}: R$${amount} (${method})`);
       fetchData();
     }
   };
@@ -1125,6 +1140,8 @@ const App: React.FC = () => {
         currentView === 'clients' && <Clients
           clients={data.clients}
           sales={data.sales}
+          transactions={data.transactions}
+          batches={closedBatches}
           addClient={async (c) => {
             if (db) {
               await setDoc(doc(db, 'clients', c.id_ferro), sanitize(c));
@@ -1139,14 +1156,7 @@ const App: React.FC = () => {
               fetchData();
             }
           }}
-          deleteClient={async (id) => {
-            if (db) {
-              await updateDoc(doc(db, 'clients', id), { status: 'INATIVO' });
-              if (session?.user) logAction(session.user, 'UPDATE', 'CLIENT', `Cliente inativado: ${id}`);
-              fetchData();
-            }
-          }}
-          receiveClientPayment={receiveClientPayment}
+          onGoToFinancial={() => setCurrentView('financial')}
           onBack={() => setCurrentView('menu')}
         />
       }
