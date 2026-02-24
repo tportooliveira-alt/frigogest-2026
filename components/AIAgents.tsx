@@ -1,11 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
     ArrowLeft, Brain, Shield, TrendingUp, BarChart3,
     Bell, CheckCircle, AlertTriangle, XCircle, Eye,
     ChevronRight, Activity, Zap, Settings,
     Clock, Package, Users, DollarSign, Truck,
-    Calendar, MessageCircle, ShieldCheck, Beef, Bot
+    Calendar, MessageCircle, ShieldCheck, Beef, Bot,
+    Loader2, Send, Sparkles
 } from 'lucide-react';
+import { GoogleGenAI } from '@google/genai';
 import {
     AgentType, AgentConfig, AgentAlert, AlertSeverity,
     Batch, StockItem, Sale, Client, Transaction, Supplier, Payable, ScheduledOrder
@@ -77,6 +79,10 @@ const AIAgents: React.FC<AIAgentsProps> = ({
     const [selectedAgent, setSelectedAgent] = useState<AgentType | null>(null);
     const [activeTab, setActiveTab] = useState<'overview' | 'alerts' | 'config'>('overview');
     const [agents] = useState<AgentConfig[]>(DEFAULT_AGENTS);
+    const [auditResponse, setAuditResponse] = useState<string | null>(null);
+    const [auditLoading, setAuditLoading] = useState(false);
+    const [auditError, setAuditError] = useState<string | null>(null);
+    const auditResultRef = useRef<HTMLDivElement>(null);
 
     // ═══ LIVE AUDIT: Generate real alerts from actual data ═══
     const liveAlerts = useMemo<AgentAlert[]>(() => {
@@ -308,6 +314,98 @@ const AIAgents: React.FC<AIAgentsProps> = ({
         ? liveAlerts.filter(a => a.agent === selectedAgent)
         : liveAlerts;
 
+    // ═══ GEMINI AUDITOR — LIVE ANALYSIS ═══
+    const runGeminiAudit = async () => {
+        setAuditLoading(true);
+        setAuditError(null);
+        setAuditResponse(null);
+        try {
+            const apiKey = (import.meta as any).env.VITE_AI_API_KEY;
+            if (!apiKey) throw new Error('API Key não configurada. Defina VITE_AI_API_KEY no .env');
+            const ai = new GoogleGenAI({ apiKey });
+
+            // Build financial snapshot
+            const validTx = transactions.filter(t => t.categoria !== 'ESTORNO');
+            const totalEntradas = validTx.filter(t => t.tipo === 'ENTRADA').reduce((s, t) => s + t.valor, 0);
+            const totalSaidas = validTx.filter(t => t.tipo === 'SAIDA').reduce((s, t) => s + t.valor, 0);
+            const vendasPagas = sales.filter(s => s.status_pagamento === 'PAGO');
+            const vendasPendentes = sales.filter(s => s.status_pagamento === 'PENDENTE');
+            const vendasEstornadas = sales.filter(s => s.status_pagamento === 'ESTORNADO');
+            const payablesPendentes = payables.filter(p => p.status === 'PENDENTE' || p.status === 'PARCIAL');
+            const payablesVencidos = payablesPendentes.filter(p => new Date(p.data_vencimento) < new Date());
+            const estoqueDisp = stock.filter(s => s.status === 'DISPONIVEL');
+
+            const snapshot = `
+## SNAPSHOT FINANCEIRO — FRIGOGEST
+Data: ${new Date().toLocaleDateString('pt-BR')}
+
+### CAIXA
+- Entradas totais: R$ ${totalEntradas.toFixed(2)}
+- Saídas totais: R$ ${totalSaidas.toFixed(2)}
+- Saldo: R$ ${(totalEntradas - totalSaidas).toFixed(2)}
+- Total transações: ${transactions.length}
+
+### VENDAS
+- Pagas: ${vendasPagas.length} (R$ ${vendasPagas.reduce((s, v) => s + v.peso_real_saida * v.preco_venda_kg, 0).toFixed(2)})
+- Pendentes: ${vendasPendentes.length} (R$ ${vendasPendentes.reduce((s, v) => s + v.peso_real_saida * v.preco_venda_kg, 0).toFixed(2)})
+- Estornadas: ${vendasEstornadas.length}
+
+### CONTAS A PAGAR
+- Pendentes: ${payablesPendentes.length} (R$ ${payablesPendentes.reduce((s, p) => s + p.valor, 0).toFixed(2)})
+- Vencidas: ${payablesVencidos.length} (R$ ${payablesVencidos.reduce((s, p) => s + p.valor, 0).toFixed(2)})
+
+### ESTOQUE
+- Peças disponíveis: ${estoqueDisp.length}
+- Peso total: ${estoqueDisp.reduce((s, e) => s + e.peso_entrada, 0).toFixed(1)} kg
+
+### LOTES
+- Total: ${batches.length}
+- Abertos: ${batches.filter(b => b.status === 'ABERTO').length}
+- Fechados: ${batches.filter(b => b.status === 'FECHADO').length}
+
+### ALERTAS DETECTADOS (${liveAlerts.length})
+${liveAlerts.slice(0, 15).map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}
+
+### CLIENTES
+- Total: ${clients.length}
+- Com saldo devedor: ${clients.filter(c => c.saldo_devedor > 0).length}
+            `.trim();
+
+            const systemPrompt = `Você é o AUDITOR FINANCEIRO do FrigoGest — sistema de gestão de frigorífico.
+
+Sua função:
+1. Analisar o snapshot financeiro abaixo
+2. Identificar RISCOS, FUROS e OPORTUNIDADES
+3. Dar recomendações CONCRETAS e ACIONÁVEIS
+
+Regras:
+- Responda SEMPRE em português brasileiro
+- Seja DIRETO e OBJETIVO
+- Use emojis para destacar prioridade: 🔴 crítico, 🟡 atenção, 🟢 ok
+- Cite valores e números específicos
+- Se não tiver dados suficientes, diga claramente
+- Máximo 500 palavras
+- Organize em seções: DIAGNÓSTICO, RISCOS, RECOMENDAÇÕES`;
+
+            const res = await ai.models.generateContent({
+                model: 'gemini-2.0-flash',
+                contents: { parts: [{ text: `${systemPrompt}\n\n${snapshot}` }] },
+            });
+
+            const text = res.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (text) {
+                setAuditResponse(text);
+                setTimeout(() => auditResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+            } else {
+                setAuditError('A IA não retornou resposta. Tente novamente.');
+            }
+        } catch (err: any) {
+            setAuditError(err.message || 'Erro ao consultar a IA.');
+        } finally {
+            setAuditLoading(false);
+        }
+    };
+
     return (
         <div className="p-4 md:p-10 min-h-screen bg-[#f8fafc] animate-reveal pb-20 font-sans">
             {/* HEADER */}
@@ -524,6 +622,50 @@ const AIAgents: React.FC<AIAgentsProps> = ({
                                 </div>
                             )}
                         </div>
+
+                        {/* ═══ GEMINI AUDITOR BUTTON ═══ */}
+                        <div className="mt-8">
+                            <button
+                                onClick={runGeminiAudit}
+                                disabled={auditLoading}
+                                className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white py-5 px-6 rounded-2xl font-black text-xs uppercase tracking-[0.2em] flex items-center justify-center gap-3 shadow-xl shadow-purple-200/50 transition-all disabled:opacity-50"
+                            >
+                                {auditLoading ? (
+                                    <><Loader2 size={18} className="animate-spin" /> Analisando dados com Gemini...</>
+                                ) : (
+                                    <><Sparkles size={18} /> Consultar Auditor IA</>
+                                )}
+                            </button>
+                            {auditError && (
+                                <div className="mt-3 p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-600 text-xs font-bold">
+                                    ⚠️ {auditError}
+                                </div>
+                            )}
+                            {auditResponse && (
+                                <div ref={auditResultRef} className="mt-6 bg-slate-900 rounded-3xl p-8 shadow-2xl animate-reveal">
+                                    <div className="flex items-center gap-3 mb-6">
+                                        <div className="bg-purple-500/20 p-2 rounded-xl">
+                                            <Sparkles size={20} className="text-purple-400" />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-sm font-black text-white uppercase tracking-widest">Parecer do Auditor IA</h4>
+                                            <p className="text-[10px] text-slate-500 font-bold">Gemini 2.0 Flash · Análise em tempo real</p>
+                                        </div>
+                                    </div>
+                                    <div className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap font-medium">
+                                        {auditResponse}
+                                    </div>
+                                    <div className="mt-6 pt-4 border-t border-slate-700/50 flex justify-between items-center">
+                                        <span className="text-[9px] text-slate-600 font-black uppercase tracking-widest">
+                                            {new Date().toLocaleString('pt-BR')}
+                                        </span>
+                                        <button onClick={runGeminiAudit} className="text-[10px] font-black text-purple-400 uppercase tracking-widest hover:text-purple-300 flex items-center gap-1">
+                                            <Zap size={12} /> Atualizar Análise
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
 
@@ -574,8 +716,8 @@ const AIAgents: React.FC<AIAgentsProps> = ({
                                                 {agent.systemPrompt}
                                             </div>
                                         </div>
-                                        <p className="mt-4 text-[10px] text-slate-300 italic text-center">
-                                            A IA será conectada aqui — por enquanto o terreno está preparado. 🏗️
+                                        <p className="mt-4 text-[10px] text-emerald-400 font-bold text-center flex items-center justify-center gap-1">
+                                            <Sparkles size={12} /> Auditor Financeiro conectado ao Gemini 2.0 Flash
                                         </p>
                                     </div>
                                 </div>
