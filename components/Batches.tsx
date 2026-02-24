@@ -532,7 +532,7 @@ const Batches: React.FC<BatchesProps> = ({
                 {safeBatches.length === 0 ? (
                   <p className="text-xs text-slate-400 text-center py-8">Nenhum lote cadastrado</p>
                 ) : (
-                  safeBatches.map(batch => (
+                  safeBatches.filter(b => b.status !== 'ESTORNADO').map(batch => (
                     <button
                       key={batch.id_lote}
                       onClick={() => handleEditBatch(batch)}
@@ -1189,14 +1189,21 @@ const Batches: React.FC<BatchesProps> = ({
                 {/* Valores Financeiros */}
                 <div className="pt-4 border-t border-slate-100">
                   <h4 className="text-[9px] font-black text-slate-300 uppercase tracking-[0.2em] mb-4">Valores Financeiros</h4>
+                  {editingBatch.status === 'FECHADO' && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-start gap-2">
+                      <LockIcon size={14} className="text-amber-600 mt-0.5 shrink-0" />
+                      <p className="text-[10px] font-bold text-amber-700">Lote FECHADO — valores financeiros bloqueados. Para corrigir, faça o ESTORNO do lote e recadastre.</p>
+                    </div>
+                  )}
                   <div className="space-y-4">
                     <div>
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Valor do Gado (R$)</label>
                       <input
                         type="text" inputMode="decimal"
-                        className="modern-input w-full text-xl font-black"
+                        className={`modern-input w-full text-xl font-black ${editingBatch.status === 'FECHADO' ? 'opacity-50 cursor-not-allowed bg-slate-100' : ''}`}
                         placeholder="Valor total"
                         value={editingBatch.valor_compra_total || ''}
+                        disabled={editingBatch.status === 'FECHADO'}
                         onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setEditingBatch({ ...editingBatch, valor_compra_total: parseFloat(v) || 0 }); }}
                       />
                     </div>
@@ -1205,9 +1212,10 @@ const Batches: React.FC<BatchesProps> = ({
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Frete (R$)</label>
                         <input
                           type="text" inputMode="decimal"
-                          className="modern-input w-full"
+                          className={`modern-input w-full ${editingBatch.status === 'FECHADO' ? 'opacity-50 cursor-not-allowed bg-slate-100' : ''}`}
                           placeholder="Frete"
                           value={editingBatch.frete || ''}
+                          disabled={editingBatch.status === 'FECHADO'}
                           onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setEditingBatch({ ...editingBatch, frete: parseFloat(v) || 0 }); }}
                         />
                       </div>
@@ -1215,9 +1223,10 @@ const Batches: React.FC<BatchesProps> = ({
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Extras (R$)</label>
                         <input
                           type="text" inputMode="decimal"
-                          className="modern-input w-full"
+                          className={`modern-input w-full ${editingBatch.status === 'FECHADO' ? 'opacity-50 cursor-not-allowed bg-slate-100' : ''}`}
                           placeholder="Extras"
                           value={editingBatch.gastos_extras || ''}
+                          disabled={editingBatch.status === 'FECHADO'}
                           onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setEditingBatch({ ...editingBatch, gastos_extras: parseFloat(v) || 0 }); }}
                         />
                       </div>

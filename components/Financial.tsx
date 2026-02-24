@@ -332,26 +332,13 @@ const Financial: React.FC<FinancialProps> = ({
     }, { revenue: 0, cgs: 0, ops: 0, profit: 0 });
   }, [sales, stock, closedBatches, validLoteIds]);
 
-  // DAILY WAR ROOM CALCULATIONS
-  const dailyMetrics = useMemo(() => {
-    const todaySales = sales.filter(s => s.data_venda === today);
-    const revenueToday = todaySales.reduce((acc, s) => acc + (s.peso_real_saida * s.preco_venda_kg), 0);
 
-    // Estimate daily cost from payables
-    const monthlyFixed = payables
-      .filter(p => !p.descricao.includes('COMPRA') && p.categoria !== 'COMPRA_GADO')
-      .reduce((acc, p) => acc + p.valor, 0);
-    const estimatedDailyCost = Math.max(800, monthlyFixed / 30); // At least 800/day
-    const breakEvenProgress = Math.min(100, (revenueToday / estimatedDailyCost) * 100);
-
-    return { revenueToday, estimatedDailyCost, breakEvenProgress };
-  }, [sales, payables, today]);
 
   // CLIENT RANKING (CURVA ABC)
   const clientRanking = useMemo(() => {
     const clientStats = new Map<string, { revenue: number, profit: number, volume: number }>();
 
-    sales.forEach(sale => {
+    sales.filter(s => s.status_pagamento !== 'ESTORNADO').forEach(sale => {
       const details = getSaleDetails(sale);
       const name = sale.nome_cliente || 'Direto';
       if (!clientStats.has(name)) clientStats.set(name, { revenue: 0, profit: 0, volume: 0 });
@@ -368,8 +355,9 @@ const Financial: React.FC<FinancialProps> = ({
 
   // INDUSTRIAL ANALYTICS CALCULATIONS
   const industrialAnalytics = useMemo(() => {
-    const totalRevenue = sales.reduce((acc, s) => acc + (s.peso_real_saida * s.preco_venda_kg), 0);
-    const totalPaid = sales.reduce((acc, s) => acc + ((s as any).valor_pago || 0), 0);
+    const activeSales = sales.filter(s => s.status_pagamento !== 'ESTORNADO');
+    const totalRevenue = activeSales.reduce((acc, s) => acc + (s.peso_real_saida * s.preco_venda_kg), 0);
+    const totalPaid = activeSales.reduce((acc, s) => acc + ((s as any).valor_pago || 0), 0);
     const efficacy = totalRevenue > 0 ? (totalPaid / totalRevenue) * 100 : 100;
 
     const cgs = profitTotals.cgs;
@@ -445,74 +433,17 @@ const Financial: React.FC<FinancialProps> = ({
             ))}
           </div>
 
-          <div className="bg-slate-900 rounded-[48px] p-12 text-white relative overflow-hidden shadow-2xl shadow-blue-900/10">
-            <div className="absolute top-[-10%] right-[-5%] opacity-5 pointer-events-none transform rotate-12">
-              <BarChartIcon size={300} />
+          {/* RESUMO PATRIMÔNIO */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="premium-card p-8 bg-emerald-50 border-emerald-100 group hover:-translate-y-1 transition-all">
+              <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Total Ativos</p>
+              <p className="text-3xl font-black text-emerald-700 tracking-tight">+{formatCurrency(totalBalanceGlobal + totalReceivable + inventoryValue)}</p>
+              <p className="text-[9px] font-bold text-emerald-500 mt-2">Caixa + A Receber + Estoque</p>
             </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 relative z-10">
-              <div className="lg:col-span-7">
-                <div className="flex items-center gap-3 mb-8">
-                  <div className="p-2 bg-blue-500 rounded-lg"><Target size={18} className="text-white" /></div>
-                  <h2 className="text-2xl font-black uppercase tracking-tight italic">Ponto de Equilíbrio <span className="text-blue-500">Hoje</span></h2>
-                </div>
-
-                <div className="space-y-6">
-                  <div className="flex justify-between items-end">
-                    <div>
-                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Faturamento Real (Hoje)</p>
-                      <p className="text-4xl font-black text-white">{formatCurrency(dailyMetrics.revenueToday)}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Custo Op. Estimado (Dia)</p>
-                      <p className="text-xl font-black text-slate-300">{formatCurrency(dailyMetrics.estimatedDailyCost)}</p>
-                    </div>
-                  </div>
-
-                  <div className="relative h-4 bg-white/5 rounded-full overflow-hidden border border-white/10 p-0.5">
-                    <div
-                      className={`h-full rounded-full transition-all duration-1000 ${dailyMetrics.breakEvenProgress >= 100 ? 'bg-emerald-500 rounded-r-lg shadow-[0_0_20px_rgba(16,185,129,0.5)]' : 'bg-blue-600 rounded-r-lg shadow-[0_0_20px_rgba(37,99,235,0.3)]'}`}
-                      style={{ width: `${dailyMetrics.breakEvenProgress}%` }}
-                    />
-                  </div>
-
-                  <div className="flex justify-between font-mono text-[9px] font-black uppercase tracking-[0.2em]">
-                    <span className="text-slate-600">0% Início</span>
-                    {dailyMetrics.breakEvenProgress >= 100 ? (
-                      <span className="text-emerald-500 flex items-center gap-2 group cursor-help">
-                        LUCRO LÍQUIDO ATIVADO <Flame size={12} className="animate-bounce" />
-                      </span>
-                    ) : (
-                      <span className="text-blue-500">Faltam {formatCurrency(Math.max(0, dailyMetrics.estimatedDailyCost - dailyMetrics.revenueToday))} p/ Ponto de Equilíbrio</span>
-                    )}
-                    <span className="text-slate-600">Alvo: {formatCurrency(dailyMetrics.estimatedDailyCost)}</span>
-                  </div>
-                </div>
-
-                <div className="mt-12 flex flex-wrap gap-8 border-t border-white/5 pt-10">
-                  <div className="bg-white/5 p-6 rounded-3xl border border-white/5 group hover:bg-white/10 transition-all cursor-default">
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Total Ativos</p>
-                    <p className="text-2xl font-black text-emerald-400 group-hover:scale-105 transition-transform">+{formatCurrency(totalBalanceGlobal + totalReceivable + inventoryValue)}</p>
-                  </div>
-                  <div className="bg-white/5 p-6 rounded-3xl border border-white/5 group hover:bg-white/10 transition-all cursor-default">
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Total Passivos</p>
-                    <p className="text-2xl font-black text-rose-400 group-hover:scale-105 transition-transform">-{formatCurrency(totalPayable)}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="lg:col-span-5 flex flex-col justify-between">
-                <div className="bg-blue-600/10 backdrop-blur-3xl rounded-[40px] p-8 border border-blue-400/10 text-center mb-8 h-full flex flex-col justify-center">
-                  <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-blue-600/20">
-                    <ShieldCheck size={32} />
-                  </div>
-                  <h4 className="text-xl font-black mb-2 uppercase tracking-tighter italic">Status Fiscal CORE</h4>
-                  <p className="text-[10px] font-bold text-blue-300 uppercase tracking-widest mb-6">Integridade de Dados Verificada</p>
-                  <div className="bg-white/5 rounded-2xl p-4 text-[9px] font-mono text-blue-200/50 uppercase tracking-widest">
-                    SYNC_TOKEN: {Math.random().toString(36).substring(7).toUpperCase()}
-                  </div>
-                </div>
-              </div>
+            <div className="premium-card p-8 bg-rose-50 border-rose-100 group hover:-translate-y-1 transition-all">
+              <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest mb-2">Total Passivos</p>
+              <p className="text-3xl font-black text-rose-700 tracking-tight">-{formatCurrency(totalPayable)}</p>
+              <p className="text-[9px] font-bold text-rose-500 mt-2">Contas a Pagar</p>
             </div>
           </div>
 
@@ -579,11 +510,7 @@ const Financial: React.FC<FinancialProps> = ({
                   </div>
                 </div>
 
-                <div className="mt-10 p-6 bg-slate-900 rounded-3xl text-center relative overflow-hidden group hover:scale-[1.02] transition-transform cursor-pointer">
-                  <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-125 transition-transform"><Flame size={48} /></div>
-                  <p className="text-[9px] font-black text-blue-400 uppercase tracking-[0.4em] mb-2">Ponto de Alavancagem</p>
-                  <p className="text-white text-[11px] font-bold text-center leading-relaxed">Reduza o custo operacional em 5% para antecipar o Ponto de Equilíbrio em 45 minutos diários.</p>
-                </div>
+
               </div>
             </div>
           </div>
@@ -961,6 +888,7 @@ const Financial: React.FC<FinancialProps> = ({
                 </thead>
                 <tbody>
                   {payables.filter(p => {
+                    if (p.status === 'ESTORNADO' || p.status === 'CANCELADO') return false;
                     if (payableLoteFilter && p.id_lote !== payableLoteFilter && !(p.descricao && p.descricao.includes(payableLoteFilter))) return false;
                     if (payableSupplierFilter && !(p.descricao && p.descricao.includes(payableSupplierFilter))) return false;
                     if (payableDateStart && p.data_vencimento < payableDateStart) return false;
@@ -1054,7 +982,7 @@ const Financial: React.FC<FinancialProps> = ({
         // Agrupar pagamentos por fornecedor usando payables + transações
         const supplierPayments = new Map<string, Array<{ descricao: string, lote: string, valor: number, valorPago: number, dataPagamento: string, dataVencimento: string, status: string }>>();
 
-        payables.filter(p => p.categoria === 'COMPRA_GADO').forEach(p => {
+        payables.filter(p => p.categoria === 'COMPRA_GADO' && p.status !== 'ESTORNADO' && p.status !== 'CANCELADO').forEach(p => {
           let fornecedor = p.fornecedor_id || '';
           if (!fornecedor && p.descricao) {
             const parts = p.descricao.split(' - ');
@@ -1075,7 +1003,7 @@ const Financial: React.FC<FinancialProps> = ({
         });
 
         // Também incluir transações diretas (VISTA)
-        transactions.filter(t => t.tipo === 'SAIDA' && t.categoria === 'COMPRA_GADO' && !t.id.startsWith('TR-PAY-')).forEach(t => {
+        transactions.filter(t => t.tipo === 'SAIDA' && t.categoria === 'COMPRA_GADO' && !t.id.startsWith('TR-PAY-') && !t.id.startsWith('TR-ESTORNO-') && t.categoria !== 'ESTORNO').forEach(t => {
           let fornecedor = '';
           if (t.descricao) {
             const parts = t.descricao.split(' - ');
