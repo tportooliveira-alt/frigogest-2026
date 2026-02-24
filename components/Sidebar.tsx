@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Users, Package, Truck, Scale, Beef, DollarSign, Wand2, LogOut, FileText, ChevronRight, Zap, Calendar, Bot, Database, ShieldCheck, Sheet, Sparkles } from 'lucide-react';
+import { LayoutDashboard, Users, Package, Truck, Scale, Beef, DollarSign, LogOut, FileText, Zap, Calendar, Bot, Database, ShieldCheck, Sheet } from 'lucide-react';
 import { APP_VERSION_SHORT, APP_BUILD_DATE } from '../constants';
 
 interface SidebarProps {
@@ -21,12 +21,9 @@ const Sidebar: React.FC<SidebarProps> = ({ setView, onLogout, onSyncSheets, shee
     { id: 'financial', label: 'Financeiro', description: 'Fluxo de Caixa', icon: DollarSign, color: 'text-emerald-600', bg: 'bg-emerald-50', glow: 'group-hover:shadow-lg' },
     { id: 'scheduled_orders', label: 'Agendamentos', description: 'Pedidos Futuros', icon: Calendar, color: 'text-indigo-600', bg: 'bg-indigo-50', glow: 'group-hover:shadow-lg' },
     { id: 'heifers', label: 'Gestão Abate', description: 'Novilhas Diárias', icon: Beef, color: 'text-emerald-700', bg: 'bg-emerald-100', glow: 'group-hover:shadow-lg' },
-    { id: 'carnaval', label: 'Campanha 🎭', description: 'Carnaval 2026', icon: Sparkles, color: 'text-orange-600', bg: 'bg-orange-50', glow: 'group-hover:shadow-lg group-hover:shadow-orange-200' },
-    { id: 'carnaval_cards', label: 'Cartões 🎨', description: 'Baixar Imagens', icon: Sheet, color: 'text-pink-600', bg: 'bg-pink-50', glow: 'group-hover:shadow-lg' },
     { id: 'sales_agent', label: 'Agente IA', description: 'Robô de Vendas', icon: Bot, color: 'text-purple-600', bg: 'bg-purple-100', glow: 'group-hover:shadow-lg' },
     { id: 'report', label: 'Relatório', description: 'Resumo Diário', icon: FileText, color: 'text-emerald-600', bg: 'bg-emerald-50', glow: 'group-hover:shadow-lg' },
     { id: 'audit', label: 'Auditoria', description: 'Quem Fez O Quê', icon: ShieldCheck, color: 'text-rose-600', bg: 'bg-rose-50', glow: 'group-hover:shadow-lg' },
-    { id: 'aistudio', label: 'AI Studio', description: 'Processamento IA', icon: Wand2, color: 'text-fuchsia-600', bg: 'bg-fuchsia-50', glow: 'group-hover:shadow-lg' },
   ];
 
   return (

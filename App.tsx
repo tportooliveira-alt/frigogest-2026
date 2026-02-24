@@ -7,7 +7,7 @@ import Stock from './components/Stock';
 import Expedition from './components/Expedition';
 import Financial from './components/Financial';
 import SalesHistory from './components/SalesHistory';
-import AIEditor from './components/AIEditor';
+
 import ScheduledOrders from './components/ScheduledOrders';
 import Login from './components/Login';
 import SystemReset from './components/SystemReset';
@@ -24,8 +24,7 @@ import CollaboratorReport from './components/CollaboratorReport';
 import HeiferManager from './components/HeiferManager';
 import SalesAgent from './components/SalesAgent';
 import AuditLogView from './components/AuditLogView';
-import CarnavalCampaign from './components/CarnavalCampaign';
-import CarnavalCards from './components/CarnavalCards';
+
 
 const App: React.FC = () => {
   // MODO OFFLINE: mude para true para testar sem internet
@@ -1312,9 +1311,7 @@ const App: React.FC = () => {
           clients={data.clients}
         />
       }
-      {currentView === 'aistudio' && <AIEditor onBack={() => setCurrentView('menu')} />}
-      {currentView === 'carnaval' && <CarnavalCampaign clients={data.clients} onBack={() => setCurrentView('menu')} />}
-      {currentView === 'carnaval_cards' && <CarnavalCards clients={data.clients} onBack={() => setCurrentView('menu')} />}
+
       {currentView === 'audit' && <AuditLogView onBack={() => setCurrentView('menu')} />}
       {currentView === 'system_reset' && <SystemReset onBack={() => setCurrentView('menu')} refreshData={fetchData} />}
 
