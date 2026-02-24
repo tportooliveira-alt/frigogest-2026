@@ -29,45 +29,45 @@ interface AIAgentsProps {
 const DEFAULT_AGENTS: AgentConfig[] = [
     {
         id: 'ADMINISTRATIVO',
-        name: 'Administradora',
-        description: 'Cérebro Central — entende TUDO do sistema. Lotes, estoque, clientes, vendas, pedidos, fornecedores, financeiro, cadeia do abate, robô de vendas e auditoria.',
+        name: 'Dona Clara',
+        description: 'Administradora-Geral — enxerga TUDO: lotes, estoque, clientes, vendas, pedidos, fornecedores, financeiro e auditoria. O cérebro central do frigorífico.',
         icon: '🧠',
         color: 'blue',
         enabled: true,
-        systemPrompt: 'Agente Administrativo do FrigoGest — cérebro central com 68 regras em 10 módulos.',
+        systemPrompt: 'Você é Dona Clara, administradora-geral do FrigoGest. Cérebro central com visão total de 10 módulos.',
         modules: ['LOTES', 'ESTOQUE', 'CLIENTES', 'VENDAS', 'PEDIDOS', 'FORNECEDORES', 'FINANCEIRO', 'CADEIA_ABATE', 'ROBO_VENDAS', 'AUDITORIA'],
         triggerCount: 19,
     },
     {
         id: 'PRODUCAO',
-        name: 'Produção & Rendimento',
-        description: 'Especialista em rendimento de carcaça, raças, quebra de resfriamento e análise de fornecedores com scorecard.',
+        name: 'Seu Antônio',
+        description: 'Chefe de Produção — especialista em rendimento de carcaça, raças, quebra de resfriamento e scorecard de fornecedores. 30 anos de experiência no abate.',
         icon: '🥩',
         color: 'emerald',
         enabled: true,
-        systemPrompt: 'Agente de Produção — rendimento, raças, quebra de resfriamento, scorecard de fornecedores.',
+        systemPrompt: 'Você é Seu Antônio, chefe de produção do FrigoGest. Especialista em rendimento, raças e fornecedores.',
         modules: ['LOTES', 'ESTOQUE', 'FORNECEDORES'],
         triggerCount: 6,
     },
     {
         id: 'COMERCIAL',
-        name: 'Comercial & Vendas',
-        description: 'Focado em maximizar receita, proteger margem, controlar crédito de clientes e ranking de melhores compradores.',
+        name: 'Marcos',
+        description: 'Diretor Comercial — foco em maximizar receita, proteger margem, controlar crédito e manter o ranking dos melhores compradores atualizado.',
         icon: '💰',
         color: 'amber',
         enabled: true,
-        systemPrompt: 'Agente Comercial — margem, crédito, preço sugerido, ranking de clientes.',
+        systemPrompt: 'Você é Marcos, diretor comercial do FrigoGest. Foco em vendas, margem, crédito e ranking de clientes.',
         modules: ['VENDAS', 'CLIENTES'],
         triggerCount: 4,
     },
     {
         id: 'AUDITOR',
-        name: 'Auditor Financeiro',
-        description: 'Garante que cada centavo esteja rastreado. Detecta furos no caixa, estornos incompletos e transações órfãs.',
+        name: 'Dra. Beatriz',
+        description: 'Auditora Financeira — garante que cada centavo esteja rastreado. Detecta furos no caixa, estornos incompletos e transações órfãs. Implacável.',
         icon: '🔍',
         color: 'rose',
         enabled: true,
-        systemPrompt: 'Auditor Financeiro — regra de ouro: cada venda paga deve ter Transaction ENTRADA.',
+        systemPrompt: 'Você é Dra. Beatriz, auditora financeira do FrigoGest. Regra de ouro: cada venda paga deve ter Transaction ENTRADA.',
         modules: ['FINANCEIRO', 'VENDAS', 'LOTES'],
         triggerCount: 5,
     },
@@ -79,10 +79,11 @@ const AIAgents: React.FC<AIAgentsProps> = ({
     const [selectedAgent, setSelectedAgent] = useState<AgentType | null>(null);
     const [activeTab, setActiveTab] = useState<'overview' | 'alerts' | 'config'>('overview');
     const [agents] = useState<AgentConfig[]>(DEFAULT_AGENTS);
-    const [auditResponse, setAuditResponse] = useState<string | null>(null);
-    const [auditLoading, setAuditLoading] = useState(false);
-    const [auditError, setAuditError] = useState<string | null>(null);
-    const auditResultRef = useRef<HTMLDivElement>(null);
+    const [agentResponse, setAgentResponse] = useState<string | null>(null);
+    const [agentLoading, setAgentLoading] = useState(false);
+    const [agentError, setAgentError] = useState<string | null>(null);
+    const [consultingAgent, setConsultingAgent] = useState<AgentType | null>(null);
+    const agentResultRef = useRef<HTMLDivElement>(null);
 
     // ═══ LIVE AUDIT: Generate real alerts from actual data ═══
     const liveAlerts = useMemo<AgentAlert[]>(() => {
@@ -314,17 +315,17 @@ const AIAgents: React.FC<AIAgentsProps> = ({
         ? liveAlerts.filter(a => a.agent === selectedAgent)
         : liveAlerts;
 
-    // ═══ GEMINI AUDITOR — LIVE ANALYSIS ═══
-    const runGeminiAudit = async () => {
-        setAuditLoading(true);
-        setAuditError(null);
-        setAuditResponse(null);
+    // ═══ GEMINI MULTI-AGENT — CONSULTA POR AGENTE ═══
+    const runAgentConsult = async (agentType: AgentType) => {
+        setAgentLoading(true);
+        setAgentError(null);
+        setAgentResponse(null);
+        setConsultingAgent(agentType);
         try {
             const apiKey = (import.meta as any).env.VITE_AI_API_KEY;
             if (!apiKey) throw new Error('API Key não configurada. Defina VITE_AI_API_KEY no .env');
             const ai = new GoogleGenAI({ apiKey });
 
-            // Build financial snapshot
             const validTx = transactions.filter(t => t.categoria !== 'ESTORNO');
             const totalEntradas = validTx.filter(t => t.tipo === 'ENTRADA').reduce((s, t) => s + t.valor, 0);
             const totalSaidas = validTx.filter(t => t.tipo === 'SAIDA').reduce((s, t) => s + t.valor, 0);
@@ -334,75 +335,103 @@ const AIAgents: React.FC<AIAgentsProps> = ({
             const payablesPendentes = payables.filter(p => p.status === 'PENDENTE' || p.status === 'PARCIAL');
             const payablesVencidos = payablesPendentes.filter(p => new Date(p.data_vencimento) < new Date());
             const estoqueDisp = stock.filter(s => s.status === 'DISPONIVEL');
+            const agentAlerts = liveAlerts.filter(a => a.agent === agentType);
 
-            const snapshot = `
-## SNAPSHOT FINANCEIRO — FRIGOGEST
-Data: ${new Date().toLocaleDateString('pt-BR')}
+            // ═══ DATA PACKETS PER AGENT ═══
+            const dataPackets: Record<AgentType, string> = {
+                ADMINISTRATIVO: `
+## SNAPSHOT GERAL — FRIGOGEST (${new Date().toLocaleDateString('pt-BR')})
+Caixa: Entradas R$${totalEntradas.toFixed(2)} | Saídas R$${totalSaidas.toFixed(2)} | Saldo R$${(totalEntradas - totalSaidas).toFixed(2)}
+Vendas: ${vendasPagas.length} pagas, ${vendasPendentes.length} pendentes, ${vendasEstornadas.length} estornadas
+Contas a Pagar: ${payablesPendentes.length} pendentes (R$${payablesPendentes.reduce((s, p) => s + p.valor, 0).toFixed(2)}), ${payablesVencidos.length} vencidas
+Estoque: ${estoqueDisp.length} peças, ${estoqueDisp.reduce((s, e) => s + e.peso_entrada, 0).toFixed(1)}kg
+Lotes: ${batches.length} total (${batches.filter(b => b.status === 'ABERTO').length} abertos, ${batches.filter(b => b.status === 'FECHADO').length} fechados)
+Clientes: ${clients.length} total, ${clients.filter(c => c.saldo_devedor > 0).length} com saldo devedor
+Fornecedores: ${suppliers.length} cadastrados
+Pedidos: ${scheduledOrders.filter(o => o.status === 'ABERTO').length} abertos
+Alertas: ${liveAlerts.length} ativos
+${liveAlerts.slice(0, 10).map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}`.trim(),
 
-### CAIXA
-- Entradas totais: R$ ${totalEntradas.toFixed(2)}
-- Saídas totais: R$ ${totalSaidas.toFixed(2)}
-- Saldo: R$ ${(totalEntradas - totalSaidas).toFixed(2)}
-- Total transações: ${transactions.length}
+                PRODUCAO: `
+## SNAPSHOT PRODUÇÃO — FRIGOGEST (${new Date().toLocaleDateString('pt-BR')})
+Lotes: ${batches.length} total
+${batches.filter(b => b.status !== 'ESTORNADO').slice(-10).map(b => {
+                    const pecas = stock.filter(s => s.id_lote === b.id_lote);
+                    const pesoTotal = pecas.reduce((s, p) => s + p.peso_entrada, 0);
+                    const rend = b.peso_total_romaneio > 0 ? ((pesoTotal / b.peso_total_romaneio) * 100).toFixed(1) : 'N/A';
+                    return `- Lote ${b.id_lote} | Forn: ${b.fornecedor} | Raça: ${(b as any).raca || 'N/I'} | Cab: ${(b as any).qtd_cabecas || 'N/I'} | Romaneio: ${b.peso_total_romaneio}kg | Pesado: ${pesoTotal.toFixed(1)}kg | Rend: ${rend}% | Toalete: ${(b as any).toalete_kg || 'N/I'}kg | Peças: ${pecas.length}`;
+                }).join('\n')}
+Estoque: ${estoqueDisp.length} peças, ${estoqueDisp.reduce((s, e) => s + e.peso_entrada, 0).toFixed(1)}kg disponível
+Fornecedores: ${suppliers.length}
+Alertas Produção: ${agentAlerts.length}
+${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}`.trim(),
 
-### VENDAS
-- Pagas: ${vendasPagas.length} (R$ ${vendasPagas.reduce((s, v) => s + v.peso_real_saida * v.preco_venda_kg, 0).toFixed(2)})
-- Pendentes: ${vendasPendentes.length} (R$ ${vendasPendentes.reduce((s, v) => s + v.peso_real_saida * v.preco_venda_kg, 0).toFixed(2)})
-- Estornadas: ${vendasEstornadas.length}
+                COMERCIAL: `
+## SNAPSHOT COMERCIAL — FRIGOGEST (${new Date().toLocaleDateString('pt-BR')})
+Vendas Pagas: ${vendasPagas.length} (R$${vendasPagas.reduce((s, v) => s + v.peso_real_saida * v.preco_venda_kg, 0).toFixed(2)})
+Vendas Pendentes: ${vendasPendentes.length} (R$${vendasPendentes.reduce((s, v) => s + v.peso_real_saida * v.preco_venda_kg, 0).toFixed(2)})
+Vendas Estornadas: ${vendasEstornadas.length}
+Preço Médio Venda/kg: R$${vendasPagas.length > 0 ? (vendasPagas.reduce((s, v) => s + v.preco_venda_kg, 0) / vendasPagas.length).toFixed(2) : '0.00'}
+Clientes: ${clients.length} total
+${clients.filter(c => c.saldo_devedor > 0).slice(0, 10).map(c => `- ${c.nome_social}: Devendo R$${c.saldo_devedor.toFixed(2)} | Limite R$${c.limite_credito.toFixed(2)}`).join('\n')}
+Top vendas pendentes:
+${vendasPendentes.slice(0, 8).map(v => `- ${v.nome_cliente || v.id_cliente}: ${v.peso_real_saida}kg × R$${v.preco_venda_kg}/kg = R$${(v.peso_real_saida * v.preco_venda_kg).toFixed(2)} | Venc: ${v.data_vencimento}`).join('\n')}
+Alertas Comercial: ${agentAlerts.length}
+${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}`.trim(),
 
-### CONTAS A PAGAR
-- Pendentes: ${payablesPendentes.length} (R$ ${payablesPendentes.reduce((s, p) => s + p.valor, 0).toFixed(2)})
-- Vencidas: ${payablesVencidos.length} (R$ ${payablesVencidos.reduce((s, p) => s + p.valor, 0).toFixed(2)})
+                AUDITOR: `
+## SNAPSHOT FINANCEIRO — FRIGOGEST (${new Date().toLocaleDateString('pt-BR')})
+Caixa: Entradas R$${totalEntradas.toFixed(2)} | Saídas R$${totalSaidas.toFixed(2)} | Saldo R$${(totalEntradas - totalSaidas).toFixed(2)}
+Transações: ${transactions.length} total
+Vendas PAGAS sem Transaction ENTRADA: ${vendasPagas.filter(v => !transactions.some(t => t.referencia_id === v.id_venda && t.tipo === 'ENTRADA' && t.categoria !== 'ESTORNO')).length}
+Lotes sem saída financeira: ${batches.filter(b => b.status !== 'ESTORNADO' && !payables.some(p => p.id_lote === b.id_lote) && !transactions.some(t => t.referencia_id === b.id_lote && t.tipo === 'SAIDA')).length}
+Contas vencidas: ${payablesVencidos.length} (R$${payablesVencidos.reduce((s, p) => s + p.valor, 0).toFixed(2)})
+Estornos: ${vendasEstornadas.length} vendas, ${transactions.filter(t => t.categoria === 'ESTORNO').length} transações
+Alertas Auditor: ${agentAlerts.length}
+${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}`.trim(),
+            };
 
-### ESTOQUE
-- Peças disponíveis: ${estoqueDisp.length}
-- Peso total: ${estoqueDisp.reduce((s, e) => s + e.peso_entrada, 0).toFixed(1)} kg
+            // ═══ PROMPTS PER AGENT ═══
+            const prompts: Record<AgentType, string> = {
+                ADMINISTRATIVO: `Você é a ADMINISTRADORA do FrigoGest — cérebro central do frigorífico.
+Analise o snapshot e dê uma visão geral da saúde do negócio.
+Foque em: fluxo de caixa, estoque parado, pedidos pendentes, e ações urgentes.
+Organize em: DIAGNÓSTICO GERAL, PONTOS DE ATENÇÃO, AÇÕES PRIORITÁRIAS.`,
 
-### LOTES
-- Total: ${batches.length}
-- Abertos: ${batches.filter(b => b.status === 'ABERTO').length}
-- Fechados: ${batches.filter(b => b.status === 'FECHADO').length}
+                PRODUCAO: `Você é o AGENTE DE PRODUÇÃO do FrigoGest — especialista em rendimento de carcaça.
+Analise os lotes e identifique: rendimentos fora do esperado, fornecedores problemáticos, toalete excessiva.
+Referência EMBRAPA: Nelore 48-62%, Angus×Nelore 50-55%, Senepol 53-57%.
+Quebre frio normal: 1.5-2.5%. Toalete normal: ~15kg, alerta se >20kg.
+Organize em: ANÁLISE DE RENDIMENTO, FORNECEDORES, RECOMENDAÇÕES.`,
 
-### ALERTAS DETECTADOS (${liveAlerts.length})
-${liveAlerts.slice(0, 15).map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}
+                COMERCIAL: `Você é o AGENTE COMERCIAL do FrigoGest — foco em maximizar receita e proteger margem.
+Analise: vendas pendentes de cobrança, clientes acima do limite, ranking de melhores clientes, preço médio praticado.
+Organize em: SAÚDE COMERCIAL, COBRANÇAS URGENTES, OPORTUNIDADES.`,
 
-### CLIENTES
-- Total: ${clients.length}
-- Com saldo devedor: ${clients.filter(c => c.saldo_devedor > 0).length}
-            `.trim();
+                AUDITOR: `Você é o AUDITOR FINANCEIRO do FrigoGest — cada centavo deve ser rastreado.
+Regra de ouro: toda venda PAGA deve ter Transaction ENTRADA. Todo lote deve ter Payable.
+Identifique: furos no caixa, estornos incompletos, transações órfãs, dívidas vencidas.
+Organize em: DIAGNÓSTICO, RISCOS, RECOMENDAÇÕES.`,
+            };
 
-            const systemPrompt = `Você é o AUDITOR FINANCEIRO do FrigoGest — sistema de gestão de frigorífico.
-
-Sua função:
-1. Analisar o snapshot financeiro abaixo
-2. Identificar RISCOS, FUROS e OPORTUNIDADES
-3. Dar recomendações CONCRETAS e ACIONÁVEIS
-
-Regras:
-- Responda SEMPRE em português brasileiro
-- Seja DIRETO e OBJETIVO
-- Use emojis para destacar prioridade: 🔴 crítico, 🟡 atenção, 🟢 ok
-- Cite valores e números específicos
-- Se não tiver dados suficientes, diga claramente
-- Máximo 500 palavras
-- Organize em seções: DIAGNÓSTICO, RISCOS, RECOMENDAÇÕES`;
+            const baseRules = `\nRegras gerais:\n- Responda SEMPRE em português brasileiro\n- Seja DIRETO e OBJETIVO\n- Use emojis: \ud83d\udd34 crítico, \ud83d\udfe1 atenção, \ud83d\udfe2 ok\n- Cite valores e números específicos\n- Máximo 500 palavras`;
 
             const res = await ai.models.generateContent({
                 model: 'gemini-2.0-flash',
-                contents: { parts: [{ text: `${systemPrompt}\n\n${snapshot}` }] },
+                contents: { parts: [{ text: `${prompts[agentType]}${baseRules}\n\n${dataPackets[agentType]}` }] },
             });
 
             const text = res.candidates?.[0]?.content?.parts?.[0]?.text;
             if (text) {
-                setAuditResponse(text);
-                setTimeout(() => auditResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+                setAgentResponse(text);
+                setTimeout(() => agentResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
             } else {
-                setAuditError('A IA não retornou resposta. Tente novamente.');
+                setAgentError('A IA não retornou resposta. Tente novamente.');
             }
         } catch (err: any) {
-            setAuditError(err.message || 'Erro ao consultar a IA.');
+            setAgentError(err.message || 'Erro ao consultar a IA.');
         } finally {
-            setAuditLoading(false);
+            setAgentLoading(false);
         }
     };
 
@@ -430,16 +459,16 @@ Regras:
                     </div>
                 </div>
                 {/* TABS */}
-                <nav className="flex p-1 bg-white rounded-2xl border border-slate-100 shadow-sm">
+                <nav className="flex p-1 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
                     {[
                         { id: 'overview' as const, icon: Activity, label: 'Visão Geral' },
                         { id: 'alerts' as const, icon: Bell, label: `Alertas (${liveAlerts.length})` },
-                        { id: 'config' as const, icon: Settings, label: 'Configuração' },
+                        { id: 'config' as const, icon: Settings, label: 'Config' },
                     ].map(t => (
                         <button
                             key={t.id}
                             onClick={() => setActiveTab(t.id)}
-                            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === t.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'}`}
+                            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === t.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'}`}
                         >
                             <t.icon size={14} /> {t.label}
                         </button>
@@ -470,49 +499,60 @@ Regras:
                             ))}
                         </div>
 
-                        {/* AGENT CARDS */}
+                        {/* AGENT CARDS WITH CONSULT BUTTONS */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                             {agents.map(agent => {
                                 const stats = agentStats[agent.id];
                                 const colors = colorMap[agent.color];
+                                const isThisLoading = agentLoading && consultingAgent === agent.id;
                                 return (
-                                    <button
-                                        key={agent.id}
-                                        onClick={() => { setSelectedAgent(agent.id); setActiveTab('alerts'); }}
-                                        className={`premium-card p-6 bg-white text-left group hover:${colors.border} transition-all hover:shadow-xl ${colors.glow}`}
-                                    >
-                                        <div className="flex items-start justify-between mb-5">
-                                            <div className={`text-4xl`}>{agent.icon}</div>
-                                            <div className="flex items-center gap-1">
-                                                {stats.bloqueios > 0 && (
-                                                    <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[9px] font-black">{stats.bloqueios} BLOQ</span>
-                                                )}
-                                                {stats.criticos > 0 && (
-                                                    <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-600 text-[9px] font-black">{stats.criticos} CRIT</span>
-                                                )}
-                                                {stats.total > 0 && stats.criticos === 0 && stats.bloqueios === 0 && (
-                                                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-600 text-[9px] font-black">{stats.total}</span>
-                                                )}
-                                                {stats.total === 0 && (
-                                                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-600 text-[9px] font-black">OK</span>
+                                    <div key={agent.id} className={`premium-card p-6 bg-white group hover:${colors.border} transition-all hover:shadow-xl ${colors.glow}`}>
+                                        <button
+                                            onClick={() => { setSelectedAgent(agent.id); setActiveTab('alerts'); }}
+                                            className="w-full text-left"
+                                        >
+                                            <div className="flex items-start justify-between mb-5">
+                                                <div className={`text-4xl`}>{agent.icon}</div>
+                                                <div className="flex items-center gap-1">
+                                                    {stats.bloqueios > 0 && (
+                                                        <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[9px] font-black">{stats.bloqueios} BLOQ</span>
+                                                    )}
+                                                    {stats.criticos > 0 && (
+                                                        <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-600 text-[9px] font-black">{stats.criticos} CRIT</span>
+                                                    )}
+                                                    {stats.total > 0 && stats.criticos === 0 && stats.bloqueios === 0 && (
+                                                        <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-600 text-[9px] font-black">{stats.total}</span>
+                                                    )}
+                                                    {stats.total === 0 && (
+                                                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-600 text-[9px] font-black">OK</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight mb-1">{agent.name}</h3>
+                                            <p className="text-[11px] text-slate-400 leading-relaxed mb-4">{agent.description}</p>
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {agent.modules.slice(0, 4).map(m => (
+                                                    <span key={m} className={`px-2 py-0.5 rounded-md ${colors.bg} ${colors.text} text-[8px] font-black uppercase`}>{m}</span>
+                                                ))}
+                                                {agent.modules.length > 4 && (
+                                                    <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-400 text-[8px] font-black">+{agent.modules.length - 4}</span>
                                                 )}
                                             </div>
+                                        </button>
+                                        <div className="mt-4 pt-4 border-t border-slate-50">
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); runAgentConsult(agent.id); setActiveTab('alerts'); setSelectedAgent(agent.id); }}
+                                                disabled={agentLoading}
+                                                className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${isThisLoading ? 'bg-purple-100 text-purple-600' : 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700 shadow-lg shadow-purple-200/30'}`}
+                                            >
+                                                {isThisLoading ? (
+                                                    <><Loader2 size={14} className="animate-spin" /> Analisando...</>
+                                                ) : (
+                                                    <><Sparkles size={14} /> Consultar IA</>
+                                                )}
+                                            </button>
                                         </div>
-                                        <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight mb-1">{agent.name}</h3>
-                                        <p className="text-[11px] text-slate-400 leading-relaxed mb-4">{agent.description}</p>
-                                        <div className="flex flex-wrap gap-1.5">
-                                            {agent.modules.slice(0, 4).map(m => (
-                                                <span key={m} className={`px-2 py-0.5 rounded-md ${colors.bg} ${colors.text} text-[8px] font-black uppercase`}>{m}</span>
-                                            ))}
-                                            {agent.modules.length > 4 && (
-                                                <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-400 text-[8px] font-black">+{agent.modules.length - 4}</span>
-                                            )}
-                                        </div>
-                                        <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center">
-                                            <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">{agent.triggerCount} gatilhos</span>
-                                            <ChevronRight size={16} className="text-slate-300 group-hover:text-slate-600 transition-colors" />
-                                        </div>
-                                    </button>
+                                    </div>
                                 );
                             })}
                         </div>
@@ -623,44 +663,46 @@ Regras:
                             )}
                         </div>
 
-                        {/* ═══ GEMINI AUDITOR BUTTON ═══ */}
+                        {/* ═══ GEMINI AGENT BUTTON (CONTEXT-AWARE) ═══ */}
                         <div className="mt-8">
                             <button
-                                onClick={runGeminiAudit}
-                                disabled={auditLoading}
+                                onClick={() => runAgentConsult(selectedAgent || 'ADMINISTRATIVO')}
+                                disabled={agentLoading}
                                 className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white py-5 px-6 rounded-2xl font-black text-xs uppercase tracking-[0.2em] flex items-center justify-center gap-3 shadow-xl shadow-purple-200/50 transition-all disabled:opacity-50"
                             >
-                                {auditLoading ? (
-                                    <><Loader2 size={18} className="animate-spin" /> Analisando dados com Gemini...</>
+                                {agentLoading ? (
+                                    <><Loader2 size={18} className="animate-spin" /> Analisando com Gemini...</>
                                 ) : (
-                                    <><Sparkles size={18} /> Consultar Auditor IA</>
+                                    <><Sparkles size={18} /> Consultar {selectedAgent ? agents.find(a => a.id === selectedAgent)?.name : 'Agente IA'}</>
                                 )}
                             </button>
-                            {auditError && (
+                            {agentError && (
                                 <div className="mt-3 p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-600 text-xs font-bold">
-                                    ⚠️ {auditError}
+                                    ⚠️ {agentError}
                                 </div>
                             )}
-                            {auditResponse && (
-                                <div ref={auditResultRef} className="mt-6 bg-slate-900 rounded-3xl p-8 shadow-2xl animate-reveal">
+                            {agentResponse && (
+                                <div ref={agentResultRef} className="mt-6 bg-slate-900 rounded-3xl p-8 shadow-2xl animate-reveal">
                                     <div className="flex items-center gap-3 mb-6">
                                         <div className="bg-purple-500/20 p-2 rounded-xl">
                                             <Sparkles size={20} className="text-purple-400" />
                                         </div>
                                         <div>
-                                            <h4 className="text-sm font-black text-white uppercase tracking-widest">Parecer do Auditor IA</h4>
+                                            <h4 className="text-sm font-black text-white uppercase tracking-widest">
+                                                {consultingAgent ? `${agents.find(a => a.id === consultingAgent)?.icon} Parecer: ${agents.find(a => a.id === consultingAgent)?.name}` : 'Parecer IA'}
+                                            </h4>
                                             <p className="text-[10px] text-slate-500 font-bold">Gemini 2.0 Flash · Análise em tempo real</p>
                                         </div>
                                     </div>
                                     <div className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap font-medium">
-                                        {auditResponse}
+                                        {agentResponse}
                                     </div>
                                     <div className="mt-6 pt-4 border-t border-slate-700/50 flex justify-between items-center">
                                         <span className="text-[9px] text-slate-600 font-black uppercase tracking-widest">
                                             {new Date().toLocaleString('pt-BR')}
                                         </span>
-                                        <button onClick={runGeminiAudit} className="text-[10px] font-black text-purple-400 uppercase tracking-widest hover:text-purple-300 flex items-center gap-1">
-                                            <Zap size={12} /> Atualizar Análise
+                                        <button onClick={() => runAgentConsult(consultingAgent || 'ADMINISTRATIVO')} className="text-[10px] font-black text-purple-400 uppercase tracking-widest hover:text-purple-300 flex items-center gap-1">
+                                            <Zap size={12} /> Atualizar
                                         </button>
                                     </div>
                                 </div>
