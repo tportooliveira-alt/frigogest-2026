@@ -1003,7 +1003,7 @@ const Financial: React.FC<FinancialProps> = ({
         });
 
         // Também incluir transações diretas (VISTA)
-        transactions.filter(t => t.tipo === 'SAIDA' && t.categoria === 'COMPRA_GADO' && !t.id.startsWith('TR-PAY-') && !t.id.startsWith('TR-ESTORNO-') && t.categoria !== 'ESTORNO').forEach(t => {
+        transactions.filter(t => t.tipo === 'SAIDA' && t.categoria === 'COMPRA_GADO' && !t.id.startsWith('TR-PAY-') && !t.id.startsWith('TR-ESTORNO-')).forEach(t => {
           let fornecedor = '';
           if (t.descricao) {
             const parts = t.descricao.split(' - ');
