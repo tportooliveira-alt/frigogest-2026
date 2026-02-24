@@ -160,3 +160,72 @@ export interface Payable {
   observacoes?: string;
   recorrente?: boolean;
 }
+
+// ═══ MULTI-AGENT AI SYSTEM ═══
+
+export type AgentType = 'ADMINISTRATIVO' | 'PRODUCAO' | 'COMERCIAL' | 'AUDITOR';
+export type AlertSeverity = 'INFO' | 'ALERTA' | 'CRITICO' | 'BLOQUEIO';
+export type AlertStatus = 'NOVO' | 'VISTO' | 'RESOLVIDO' | 'IGNORADO';
+
+export interface AgentConfig {
+  id: AgentType;
+  name: string;
+  description: string;
+  icon: string; // emoji
+  color: string;
+  enabled: boolean;
+  systemPrompt: string;
+  modules: string[]; // Módulos que este agente monitora
+  triggerCount: number; // Quantos gatilhos configurados
+  lastRun?: string; // ISO timestamp
+  alertCount?: number; // Alertas pendentes
+}
+
+export interface AgentAlert {
+  id: string;
+  agent: AgentType;
+  severity: AlertSeverity;
+  module: string; // LOTES, ESTOQUE, CLIENTES, etc.
+  title: string;
+  message: string;
+  data?: any; // Dados adicionais (IDs, valores)
+  timestamp: string;
+  status: AlertStatus;
+  actionTaken?: string;
+  resolvedBy?: string;
+  resolvedAt?: string;
+}
+
+export interface AgentAction {
+  id: string;
+  agent: AgentType;
+  action: string;
+  input: string;
+  output: string;
+  timestamp: string;
+  success: boolean;
+}
+
+export interface BreedReference {
+  raca: string;
+  rendimento_min: number;
+  rendimento_max: number;
+  quebra_resfriamento_min: number;
+  quebra_resfriamento_max: number;
+  peso_medio_min: number;
+  peso_medio_max: number;
+  observacoes: string;
+}
+
+export interface SupplierScore {
+  fornecedor_id: string;
+  nome: string;
+  total_lotes: number;
+  media_rendimento: number;
+  media_custo_kg: number;
+  total_lucro: number;
+  tier: 'A' | 'B' | 'C' | 'F';
+  score: number;
+  tendencia: 'subindo' | 'estavel' | 'caindo';
+  ultimo_lote?: string;
+}
