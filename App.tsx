@@ -25,6 +25,7 @@ import HeiferManager from './components/HeiferManager';
 import SalesAgent from './components/SalesAgent';
 import AuditLogView from './components/AuditLogView';
 import AIAgents from './components/AIAgents';
+import AIChat from './components/AIChat';
 
 
 const App: React.FC = () => {
@@ -1315,6 +1316,17 @@ const App: React.FC = () => {
 
       {currentView === 'audit' && <AuditLogView onBack={() => setCurrentView('menu')} />}
       {currentView === 'ai_agents' && <AIAgents
+        onBack={() => setCurrentView('menu')}
+        batches={data.batches}
+        stock={data.stock}
+        sales={data.sales}
+        clients={data.clients}
+        transactions={data.transactions}
+        suppliers={data.suppliers}
+        payables={data.payables}
+        scheduledOrders={data.scheduledOrders}
+      />}
+      {currentView === 'ai_chat' && <AIChat
         onBack={() => setCurrentView('menu')}
         batches={data.batches}
         stock={data.stock}
