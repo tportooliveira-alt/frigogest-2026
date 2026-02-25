@@ -8,6 +8,86 @@ import {
     Loader2, Send, Sparkles
 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
+
+// ═══ AI CASCADE — Gemini → Groq → Cerebras ═══
+interface CascadeProvider {
+    name: string;
+    call: (prompt: string) => Promise<string>;
+}
+
+const buildCascadeProviders = (): CascadeProvider[] => {
+    const providers: CascadeProvider[] = [];
+    const env = (import.meta as any).env;
+
+    // 1. GEMINI (primário)
+    if (env.VITE_AI_API_KEY) {
+        providers.push({
+            name: 'Gemini',
+            call: async (prompt: string) => {
+                const ai = new GoogleGenAI({ apiKey: env.VITE_AI_API_KEY });
+                const res = await ai.models.generateContent({
+                    model: 'gemini-2.0-flash',
+                    contents: { parts: [{ text: prompt }] },
+                });
+                const text = res.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!text) throw new Error('Gemini sem resposta');
+                return text;
+            },
+        });
+    }
+
+    // 2. GROQ (fallback 1 — Llama 3.3 70B)
+    if (env.VITE_GROQ_API_KEY) {
+        providers.push({
+            name: 'Groq',
+            call: async (prompt: string) => {
+                const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.VITE_GROQ_API_KEY}` },
+                    body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 2048 }),
+                });
+                if (!res.ok) throw new Error(`Groq ${res.status}`);
+                const data = await res.json();
+                return data.choices?.[0]?.message?.content || '';
+            },
+        });
+    }
+
+    // 3. CEREBRAS (fallback 2 — Llama 3.3 70B)
+    if (env.VITE_CEREBRAS_API_KEY) {
+        providers.push({
+            name: 'Cerebras',
+            call: async (prompt: string) => {
+                const res = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.VITE_CEREBRAS_API_KEY}` },
+                    body: JSON.stringify({ model: 'llama-3.3-70b', messages: [{ role: 'user', content: prompt }], max_tokens: 2048 }),
+                });
+                if (!res.ok) throw new Error(`Cerebras ${res.status}`);
+                const data = await res.json();
+                return data.choices?.[0]?.message?.content || '';
+            },
+        });
+    }
+
+    return providers;
+};
+
+const runCascade = async (prompt: string): Promise<{ text: string; provider: string }> => {
+    const providers = buildCascadeProviders();
+    if (providers.length === 0) throw new Error('Nenhuma API Key configurada (VITE_AI_API_KEY, VITE_GROQ_API_KEY, VITE_CEREBRAS_API_KEY)');
+    const errors: string[] = [];
+    for (const provider of providers) {
+        try {
+            const text = await provider.call(prompt);
+            if (text) return { text, provider: provider.name };
+        } catch (err: any) {
+            errors.push(`${provider.name}: ${err.message}`);
+            console.warn(`[CASCADE] ${provider.name} falhou:`, err.message);
+        }
+    }
+    throw new Error(`Todas as IAs falharam:\n${errors.join('\n')}`);
+};
 import {
     AgentType, AgentConfig, AgentAlert, AlertSeverity,
     Batch, StockItem, Sale, Client, Transaction, Supplier, Payable, ScheduledOrder
@@ -459,9 +539,7 @@ const AIAgents: React.FC<AIAgentsProps> = ({
         setAgentResponse(null);
         setConsultingAgent(agentType);
         try {
-            const apiKey = (import.meta as any).env.VITE_AI_API_KEY;
-            if (!apiKey) throw new Error('API Key não configurada. Defina VITE_AI_API_KEY no .env');
-            const ai = new GoogleGenAI({ apiKey });
+            // Cascade será chamado após montar prompt e data
 
             const validTx = transactions.filter(t => t.categoria !== 'ESTORNO');
             const totalEntradas = validTx.filter(t => t.tipo === 'ENTRADA').reduce((s, t) => s + t.valor, 0);
@@ -809,20 +887,163 @@ Organize em: 📞 CLIENTES PARA LIGAR HOJE, 🏆 TOP COMPRADORES (VIPs), 🔴 RE
 
             const baseRules = `\nRegras gerais:\n- Responda SEMPRE em português brasileiro\n- Seja DIRETO, PRÁTICO e ACIONÁVEL — fale como gerente de frigorífico, não como robô\n- Use emojis: 🔴 crítico, 🟡 atenção, 🟢 ok\n- Cite NÚMEROS ESPECÍFICOS do snapshot — nunca invente dados\n- Se não tiver dados suficientes, diga claramente o que falta\n- Máximo 600 palavras\n- Termine SEMPRE com 3 ações concretas numeradas: "FAÇA AGORA: 1. ... 2. ... 3. ..."`;
 
-            const res = await ai.models.generateContent({
-                model: 'gemini-2.0-flash',
-                contents: { parts: [{ text: `${prompts[agentType]}${baseRules}\n\n${dataPackets[agentType]}` }] },
-            });
-
-            const text = res.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (text) {
-                setAgentResponse(text);
-                setTimeout(() => agentResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
-            } else {
-                setAgentError('A IA não retornou resposta. Tente novamente.');
-            }
+            const fullPrompt = `${prompts[agentType]}${baseRules}\n\n${dataPackets[agentType]}`;
+            const { text, provider } = await runCascade(fullPrompt);
+            setAgentResponse(`_via ${provider}_\n\n${text}`);
+            setTimeout(() => agentResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
         } catch (err: any) {
             setAgentError(err.message || 'Erro ao consultar a IA.');
+        } finally {
+            setAgentLoading(false);
+        }
+    };
+
+    // ═══ DONA CLARA — RELATÓRIO EXECUTIVO ORQUESTRADO ═══
+    const runOrchestratedReport = async () => {
+        setAgentLoading(true);
+        setAgentError(null);
+        setAgentResponse(null);
+        setConsultingAgent('ADMINISTRATIVO');
+        setSelectedAgent('ADMINISTRATIVO');
+        setActiveTab('alerts');
+        try {
+            // Cascade será chamado após montar snapshot e prompt
+
+            const validTx = transactions.filter(t => t.categoria !== 'ESTORNO');
+            const totalEntradas = validTx.filter(t => t.tipo === 'ENTRADA').reduce((s, t) => s + t.valor, 0);
+            const totalSaidas = validTx.filter(t => t.tipo === 'SAIDA').reduce((s, t) => s + t.valor, 0);
+            const vendasPagas = sales.filter(s => s.status_pagamento === 'PAGO');
+            const vendasPendentes = sales.filter(s => s.status_pagamento === 'PENDENTE');
+            const vendasEstornadas = sales.filter(s => s.status_pagamento === 'ESTORNADO');
+            const payablesPendentes = payables.filter(p => p.status === 'PENDENTE' || p.status === 'PARCIAL');
+            const payablesVencidos = payablesPendentes.filter(p => new Date(p.data_vencimento) < new Date());
+            const estoqueDisp = stock.filter(s => s.status === 'DISPONIVEL');
+            const now = new Date();
+
+            // ═══ MEGA SNAPSHOT — ALL DATA FROM ALL SECTORS ═══
+            const megaSnapshot = `
+## 📋 RELATÓRIO EXECUTIVO ORQUESTRADO — FRIGOGEST
+## Data: ${now.toLocaleDateString('pt-BR')} às ${now.toLocaleTimeString('pt-BR')}
+
+═══════════════════════════════════════════════
+🏦 SETOR FINANCEIRO (Dra. Beatriz)
+═══════════════════════════════════════════════
+Caixa: Entradas R$${totalEntradas.toFixed(2)} | Saídas R$${totalSaidas.toFixed(2)} | Saldo R$${(totalEntradas - totalSaidas).toFixed(2)}
+Transações totais: ${transactions.length}
+Vendas: ${vendasPagas.length} pagas (R$${vendasPagas.reduce((s, v) => s + v.peso_real_saida * v.preco_venda_kg, 0).toFixed(2)}) | ${vendasPendentes.length} pendentes (R$${vendasPendentes.reduce((s, v) => s + v.peso_real_saida * v.preco_venda_kg, 0).toFixed(2)}) | ${vendasEstornadas.length} estornadas
+Contas a Pagar: ${payablesPendentes.length} pendentes (R$${payablesPendentes.reduce((s, p) => s + p.valor, 0).toFixed(2)}) | ${payablesVencidos.length} vencidas (R$${payablesVencidos.reduce((s, p) => s + p.valor, 0).toFixed(2)})
+Vendas PAGAS sem Transaction ENTRADA: ${vendasPagas.filter(v => !transactions.some(t => t.referencia_id === v.id_venda && t.tipo === 'ENTRADA' && t.categoria !== 'ESTORNO')).length}
+
+═══════════════════════════════════════════════
+🥩 SETOR PRODUÇÃO (Seu Antônio)
+═══════════════════════════════════════════════
+Lotes total: ${batches.length} (${batches.filter(b => b.status === 'ABERTO').length} abertos, ${batches.filter(b => b.status === 'FECHADO').length} fechados)
+Últimos lotes:
+${batches.filter(b => b.status !== 'ESTORNADO').slice(-8).map(b => {
+                const pecas = stock.filter(s => s.id_lote === b.id_lote);
+                const pesoTotal = pecas.reduce((s, p) => s + p.peso_entrada, 0);
+                const rend = b.peso_total_romaneio > 0 ? ((pesoTotal / b.peso_total_romaneio) * 100).toFixed(1) : 'N/A';
+                return `- ${b.id_lote} | Forn: ${b.fornecedor} | Raça: ${(b as any).raca || 'N/I'} | Rom: ${b.peso_total_romaneio}kg | Real: ${pesoTotal.toFixed(1)}kg | Rend: ${rend}% | Custo: R$${b.custo_real_kg.toFixed(2)}/kg`;
+            }).join('\n')}
+
+═══════════════════════════════════════════════
+📦 SETOR ESTOQUE (Joaquim)
+═══════════════════════════════════════════════
+Peças disponíveis: ${estoqueDisp.length} | Peso total: ${estoqueDisp.reduce((s, e) => s + e.peso_entrada, 0).toFixed(1)}kg
+Peças >30 dias: ${estoqueDisp.filter(s => Math.floor((now.getTime() - new Date(s.data_entrada).getTime()) / 86400000) > 30).length}
+Peças >60 dias: ${estoqueDisp.filter(s => Math.floor((now.getTime() - new Date(s.data_entrada).getTime()) / 86400000) > 60).length}
+Giro médio: ${estoqueDisp.length > 0 ? (estoqueDisp.reduce((s, e) => s + Math.floor((now.getTime() - new Date(e.data_entrada).getTime()) / 86400000), 0) / estoqueDisp.length).toFixed(0) : '0'} dias
+
+═══════════════════════════════════════════════
+💰 SETOR COMERCIAL (Marcos)
+═══════════════════════════════════════════════
+Clientes: ${clients.length} total | ${clients.filter(c => c.saldo_devedor > 0).length} com saldo devedor
+Vendas últimos 30 dias: ${sales.filter(s => Math.floor((now.getTime() - new Date(s.data_venda).getTime()) / 86400000) < 30 && s.status_pagamento !== 'ESTORNADO').length}
+Preço médio venda: R$${vendasPagas.length > 0 ? (vendasPagas.reduce((s, v) => s + v.preco_venda_kg, 0) / vendasPagas.length).toFixed(2) : '0.00'}/kg
+Ticket médio: R$${vendasPagas.length > 0 ? (vendasPagas.reduce((s, v) => s + v.peso_real_saida * v.preco_venda_kg, 0) / vendasPagas.length).toFixed(2) : '0.00'}
+Top devedores:
+${vendasPendentes.slice(0, 5).map(v => `- ${v.nome_cliente || v.id_cliente}: R$${(v.peso_real_saida * v.preco_venda_kg).toFixed(2)} venc: ${v.data_vencimento}`).join('\n')}
+
+═══════════════════════════════════════════════
+🚛 SETOR COMPRAS (Roberto)
+═══════════════════════════════════════════════
+Fornecedores: ${suppliers.length} cadastrados
+${suppliers.slice(0, 8).map(s => {
+                const lotes = batches.filter(b => b.fornecedor === s.nome_fantasia && b.status !== 'ESTORNADO');
+                const totalKg = lotes.reduce((sum, b) => sum + b.peso_total_romaneio, 0);
+                const lotePecas = lotes.flatMap(b => stock.filter(st => st.id_lote === b.id_lote));
+                const pesoReal = lotePecas.reduce((sum, p) => sum + p.peso_entrada, 0);
+                const rendMedio = totalKg > 0 ? ((pesoReal / totalKg) * 100).toFixed(1) : 'N/A';
+                return `- ${s.nome_fantasia} | ${lotes.length} lotes | ${totalKg.toFixed(0)}kg rom | Rend: ${rendMedio}% | PIX: ${s.dados_bancarios ? 'SIM' : 'NÃO'}`;
+            }).join('\n')}
+Custo médio/kg: R$${batches.length > 0 ? (batches.filter(b => b.status !== 'ESTORNADO').reduce((s, b) => s + b.custo_real_kg, 0) / batches.filter(b => b.status !== 'ESTORNADO').length).toFixed(2) : '0.00'}
+
+═══════════════════════════════════════════════
+📊 SETOR MERCADO (Ana)
+═══════════════════════════════════════════════
+Preço médio compra: R$${batches.length > 0 ? (batches.filter(b => b.status !== 'ESTORNADO').reduce((s, b) => s + b.custo_real_kg, 0) / batches.filter(b => b.status !== 'ESTORNADO').length).toFixed(2) : '0.00'}/kg
+Preço médio venda: R$${vendasPagas.length > 0 ? (vendasPagas.reduce((s, v) => s + v.preco_venda_kg, 0) / vendasPagas.length).toFixed(2) : '0.00'}/kg
+Margem bruta: ${vendasPagas.length > 0 && batches.length > 0 ? (((vendasPagas.reduce((s, v) => s + v.preco_venda_kg, 0) / vendasPagas.length) / (batches.filter(b => b.status !== 'ESTORNADO').reduce((s, b) => s + b.custo_real_kg, 0) / batches.filter(b => b.status !== 'ESTORNADO').length) - 1) * 100).toFixed(1) : 'N/A'}%
+Mês atual: ${now.toLocaleDateString('pt-BR', { month: 'long' })} (${now.getMonth() >= 1 && now.getMonth() <= 5 ? 'SAFRA — preços tendendo a cair' : now.getMonth() >= 6 && now.getMonth() <= 10 ? 'ENTRESSAFRA — preços tendendo a subir' : 'PICO FESTAS — demanda alta'})
+Região: Vitória da Conquista - BA (Sudoeste Baiano)
+
+═══════════════════════════════════════════════
+🤖 SETOR VENDAS/CRM (Lucas)
+═══════════════════════════════════════════════
+Clientes ativos (compra <30d): ${clients.filter(c => sales.some(s => s.id_cliente === c.id_ferro && s.status_pagamento !== 'ESTORNADO' && Math.floor((now.getTime() - new Date(s.data_venda).getTime()) / 86400000) < 30)).length}
+Clientes esfriando (30-60d): ${clients.filter(c => { const ls = sales.filter(s => s.id_cliente === c.id_ferro && s.status_pagamento !== 'ESTORNADO').sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())[0]; if (!ls) return false; const d = Math.floor((now.getTime() - new Date(ls.data_venda).getTime()) / 86400000); return d >= 30 && d <= 60; }).length}
+Clientes inativos (>60d): ${clients.filter(c => { const ls = sales.filter(s => s.id_cliente === c.id_ferro && s.status_pagamento !== 'ESTORNADO').sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())[0]; return ls && Math.floor((now.getTime() - new Date(ls.data_venda).getTime()) / 86400000) > 60; }).length}
+Pedidos abertos: ${scheduledOrders.filter(o => o.status === 'ABERTO').length}
+
+═══════════════════════════════════════════════
+⚠️ TODOS OS ALERTAS ATIVOS (${liveAlerts.length})
+═══════════════════════════════════════════════
+${liveAlerts.slice(0, 15).map(a => `- [${a.severity}] ${a.agent}: ${a.title} — ${a.message}`).join('\n')}
+`.trim();
+
+            const orchestrationPrompt = `Você é DONA CLARA, administradora-geral do FrigoGest.
+Você acabou de receber os RELATÓRIOS DE TODOS OS 7 SETORES do seu frigorífico.
+Analise como uma CHEFE que consulta cada gerente e monta um relatório para o dono.
+
+SUA MISSÃO: Montar um RELATÓRIO EXECUTIVO unificado, cruzando dados entre setores.
+
+ESTRUTURA OBRIGATÓRIA:
+
+🏢 RESUMO EXECUTIVO (2-3 linhas com a saúde geral do negócio)
+
+🔴 EMERGÊNCIAS (o que precisa ser resolvido nas próximas 24 horas)
+- Liste ações urgentes de QUALQUER setor
+
+📊 PAINEL POR SETOR:
+1. 🥩 PRODUÇÃO (Seu Antônio reporta): rendimento, problemas
+2. 📦 ESTOQUE (Joaquim reporta): câmara fria, peças em risco
+3. 💰 COMERCIAL (Marcos reporta): vendas, cobranças
+4. 🔍 AUDITORIA (Dra. Beatriz reporta): furos, divergências
+5. 🚛 COMPRAS (Roberto reporta): fornecedores, custos
+6. 📊 MERCADO (Ana reporta): preços, margem, timing
+7. 🤖 CRM (Lucas reporta): clientes, reativações
+
+🔗 ANÁLISE CRUZADA (sua expertise — o que NENHUM gerente vê sozinho):
+- Correlações entre setores (ex: rendimento baixo + fornecedor caro = trocar)
+- Riscos sistêmicos (ex: estoque parado + clientes sumindo = problema de preço)
+- Oportunidades escondidas (ex: margem boa + clientes inativos = promoção)
+
+📋 PLANO DE AÇÃO (próximas 48 horas):
+Numere de 1 a 5 as ações mais importantes, com responsável (nome do agente).
+
+Regras:
+- Português brasileiro, direto e prático
+- Cite números específicos do relatório
+- Se algum setor está saudável, diga "✅ OK" e não gaste mais de 1 linha
+- Foque nos problemas e oportunidades
+- Máximo 800 palavras`;
+
+            const fullPrompt = `${orchestrationPrompt}\n\n${megaSnapshot}`;
+            const { text, provider } = await runCascade(fullPrompt);
+            setAgentResponse(`_📋 Relatório Executivo via ${provider}_\n\n${text}`);
+            setTimeout(() => agentResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+        } catch (err: any) {
+            setAgentError(err.message || 'Erro ao gerar relatório.');
         } finally {
             setAgentLoading(false);
         }
@@ -932,7 +1153,7 @@ Organize em: 📞 CLIENTES PARA LIGAR HOJE, 🏆 TOP COMPRADORES (VIPs), 🔴 RE
                                                 )}
                                             </div>
                                         </button>
-                                        <div className="mt-4 pt-4 border-t border-slate-50">
+                                        <div className="mt-4 pt-4 border-t border-slate-50 space-y-2">
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); runAgentConsult(agent.id); setActiveTab('alerts'); setSelectedAgent(agent.id); }}
                                                 disabled={agentLoading}
@@ -944,6 +1165,19 @@ Organize em: 📞 CLIENTES PARA LIGAR HOJE, 🏆 TOP COMPRADORES (VIPs), 🔴 RE
                                                     <><Sparkles size={14} /> Consultar IA</>
                                                 )}
                                             </button>
+                                            {agent.id === 'ADMINISTRATIVO' && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); runOrchestratedReport(); }}
+                                                    disabled={agentLoading}
+                                                    className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${isThisLoading ? 'bg-amber-100 text-amber-700' : 'bg-gradient-to-r from-amber-500 to-orange-600 text-white hover:from-amber-600 hover:to-orange-700 shadow-lg shadow-amber-200/30'}`}
+                                                >
+                                                    {isThisLoading ? (
+                                                        <><Loader2 size={14} className="animate-spin" /> Orquestrando 7 agentes...</>
+                                                    ) : (
+                                                        <><Brain size={14} /> 📋 Relatório Executivo</>
+                                                    )}
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 );
