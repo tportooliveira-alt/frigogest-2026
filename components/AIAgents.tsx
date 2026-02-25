@@ -71,6 +71,50 @@ const DEFAULT_AGENTS: AgentConfig[] = [
         modules: ['FINANCEIRO', 'VENDAS', 'LOTES'],
         triggerCount: 5,
     },
+    {
+        id: 'ESTOQUE',
+        name: 'Joaquim',
+        description: 'Estoquista-Chefe — controla a câmara fria com mão de ferro. Rotação FIFO, validade das peças e giro do estoque. Nada estraga no turno dele.',
+        icon: '📦',
+        color: 'cyan',
+        enabled: true,
+        systemPrompt: 'Você é Joaquim, estoquista-chefe do FrigoGest. FIFO é lei: peça mais velha sai primeiro.',
+        modules: ['ESTOQUE', 'LOTES'],
+        triggerCount: 4,
+    },
+    {
+        id: 'COMPRAS',
+        name: 'Roberto',
+        description: 'Comprador — negocia com fornecedores, analisa fretes, compara preços e garante o melhor custo de aquisição. Olho nos centavos.',
+        icon: '🚛',
+        color: 'orange',
+        enabled: true,
+        systemPrompt: 'Você é Roberto, comprador do FrigoGest. Foco em custo de aquisição, frete e negociação com fornecedores.',
+        modules: ['FORNECEDORES', 'LOTES', 'FINANCEIRO'],
+        triggerCount: 4,
+    },
+    {
+        id: 'MERCADO',
+        name: 'Ana',
+        description: 'Analista de Mercado — acompanha cotações CEPEA, tendências de preço, safra/entressafra e oportunidades de compra e venda.',
+        icon: '📊',
+        color: 'violet',
+        enabled: true,
+        systemPrompt: 'Você é Ana, analista de mercado do FrigoGest. Especialista em CEPEA, tendências e inteligência regional.',
+        modules: ['MERCADO', 'LOTES'],
+        triggerCount: 3,
+    },
+    {
+        id: 'ROBO_VENDAS',
+        name: 'Lucas',
+        description: 'Robô de Vendas — prospecta clientes inativos, sugere follow-up, identifica oportunidades de recompra e mantém o pipeline aquecido.',
+        icon: '🤖',
+        color: 'teal',
+        enabled: true,
+        systemPrompt: 'Você é Lucas, robô de vendas do FrigoGest. Foco em reativação, prospecção e pipeline.',
+        modules: ['CLIENTES', 'VENDAS', 'PEDIDOS'],
+        triggerCount: 4,
+    },
 ];
 
 const AIAgents: React.FC<AIAgentsProps> = ({
@@ -259,6 +303,91 @@ const AIAgents: React.FC<AIAgentsProps> = ({
             }
         });
 
+        // ── JOAQUIM (ESTOQUE): Peças velhas na câmara fria ──
+        stock.filter(s => s.status === 'DISPONIVEL').forEach(s => {
+            const dias = Math.floor((now.getTime() - new Date(s.data_entrada).getTime()) / 86400000);
+            if (dias > 60) {
+                alerts.push({
+                    id: `EST-VELHO-${s.id_completo}`, agent: 'ESTOQUE', severity: 'CRITICO',
+                    module: 'ESTOQUE', title: `⚠️ Peça ${s.id_completo} — ${dias} dias!`,
+                    message: `No frio há ${dias} dias. Peso: ${s.peso_entrada}kg. RISCO DE PERDA. Vender com desconto ou reprocessar URGENTE.`,
+                    timestamp: now.toISOString(), status: 'NOVO',
+                    data: { dias, peso: s.peso_entrada }
+                });
+            } else if (dias > 30) {
+                alerts.push({
+                    id: `EST-MED-${s.id_completo}`, agent: 'ESTOQUE', severity: 'ALERTA',
+                    module: 'ESTOQUE', title: `Peça ${s.id_completo} — ${dias} dias`,
+                    message: `No frio há ${dias} dias. Peso: ${s.peso_entrada}kg. Priorizar saída (FIFO).`,
+                    timestamp: now.toISOString(), status: 'NOVO'
+                });
+            }
+        });
+
+        // ── ROBERTO (COMPRAS): Fornecedores com problemas ──
+        suppliers.forEach(s => {
+            if (!s.dados_bancarios) {
+                alerts.push({
+                    id: `COMP-BANK-${s.id}`, agent: 'COMPRAS', severity: 'ALERTA',
+                    module: 'FORNECEDORES', title: `${s.nome_fantasia} sem PIX/Banco`,
+                    message: `Fornecedor sem dados bancários. Pode atrasar pagamentos.`,
+                    timestamp: now.toISOString(), status: 'NOVO'
+                });
+            }
+            const lastBatch = batches.filter(b => b.fornecedor === s.nome_fantasia)
+                .sort((a, b) => new Date(b.data_recebimento).getTime() - new Date(a.data_recebimento).getTime())[0];
+            if (lastBatch) {
+                const dias = Math.floor((now.getTime() - new Date(lastBatch.data_recebimento).getTime()) / 86400000);
+                if (dias > 90) {
+                    alerts.push({
+                        id: `COMP-INATIVO-${s.id}`, agent: 'COMPRAS', severity: 'INFO',
+                        module: 'FORNECEDORES', title: `${s.nome_fantasia} inativo`,
+                        message: `Sem lote há ${dias} dias. Renegociar ou buscar alternativa.`,
+                        timestamp: now.toISOString(), status: 'NOVO'
+                    });
+                }
+            }
+        });
+
+        // ── ROBERTO: Payables vencidos a fornecedores ──
+        payables.filter(p => p.status === 'PENDENTE' || p.status === 'PARCIAL').forEach(p => {
+            const venc = new Date(p.data_vencimento);
+            const diasAtraso = Math.floor((now.getTime() - venc.getTime()) / 86400000);
+            if (diasAtraso > 0) {
+                alerts.push({
+                    id: `COMP-PAY-${p.id}`, agent: 'COMPRAS', severity: 'CRITICO',
+                    module: 'FINANCEIRO', title: `Dívida vencida: ${p.descricao}`,
+                    message: `Venceu há ${diasAtraso} dias. Valor: R$${p.valor.toFixed(2)}. Pagar para não perder fornecedor.`,
+                    timestamp: now.toISOString(), status: 'NOVO',
+                    data: { valor: p.valor, dias_atraso: diasAtraso }
+                });
+            }
+        });
+
+        // ── LUCAS (ROBÔ VENDAS): Clientes para reativar ──
+        clients.forEach(c => {
+            const lastSale = sales.filter(s => s.id_cliente === c.id_ferro && s.status_pagamento !== 'ESTORNADO')
+                .sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())[0];
+            if (lastSale) {
+                const dias = Math.floor((now.getTime() - new Date(lastSale.data_venda).getTime()) / 86400000);
+                if (dias > 60) {
+                    alerts.push({
+                        id: `ROBO-REATIV-${c.id_ferro}`, agent: 'ROBO_VENDAS', severity: 'ALERTA',
+                        module: 'CLIENTES', title: `Reativar: ${c.nome_social}`,
+                        message: `Sem compra há ${dias} dias. Ligar e oferecer promoção ou condição especial.`,
+                        timestamp: now.toISOString(), status: 'NOVO'
+                    });
+                } else if (dias > 30) {
+                    alerts.push({
+                        id: `ROBO-FOLLOW-${c.id_ferro}`, agent: 'ROBO_VENDAS', severity: 'INFO',
+                        module: 'CLIENTES', title: `Follow-up: ${c.nome_social}`,
+                        message: `Última compra há ${dias} dias. Mandar mensagem de acompanhamento.`,
+                        timestamp: now.toISOString(), status: 'NOVO'
+                    });
+                }
+            }
+        });
+
         return alerts.sort((a, b) => {
             const severityOrder: Record<AlertSeverity, number> = { BLOQUEIO: 0, CRITICO: 1, ALERTA: 2, INFO: 3 };
             return severityOrder[a.severity] - severityOrder[b.severity];
@@ -272,6 +401,10 @@ const AIAgents: React.FC<AIAgentsProps> = ({
             PRODUCAO: { total: 0, criticos: 0, bloqueios: 0 },
             COMERCIAL: { total: 0, criticos: 0, bloqueios: 0 },
             AUDITOR: { total: 0, criticos: 0, bloqueios: 0 },
+            ESTOQUE: { total: 0, criticos: 0, bloqueios: 0 },
+            COMPRAS: { total: 0, criticos: 0, bloqueios: 0 },
+            MERCADO: { total: 0, criticos: 0, bloqueios: 0 },
+            ROBO_VENDAS: { total: 0, criticos: 0, bloqueios: 0 },
         };
         liveAlerts.forEach(a => {
             stats[a.agent].total++;
@@ -301,6 +434,10 @@ const AIAgents: React.FC<AIAgentsProps> = ({
         emerald: { bg: 'bg-emerald-50', text: 'text-emerald-600', border: 'border-emerald-200', glow: 'shadow-emerald-200/50' },
         amber: { bg: 'bg-amber-50', text: 'text-amber-600', border: 'border-amber-200', glow: 'shadow-amber-200/50' },
         rose: { bg: 'bg-rose-50', text: 'text-rose-600', border: 'border-rose-200', glow: 'shadow-rose-200/50' },
+        cyan: { bg: 'bg-cyan-50', text: 'text-cyan-600', border: 'border-cyan-200', glow: 'shadow-cyan-200/50' },
+        orange: { bg: 'bg-orange-50', text: 'text-orange-600', border: 'border-orange-200', glow: 'shadow-orange-200/50' },
+        violet: { bg: 'bg-violet-50', text: 'text-violet-600', border: 'border-violet-200', glow: 'shadow-violet-200/50' },
+        teal: { bg: 'bg-teal-50', text: 'text-teal-600', border: 'border-teal-200', glow: 'shadow-teal-200/50' },
     };
 
     const severityConfig: Record<AlertSeverity, { icon: React.ReactNode; color: string; bg: string; border: string }> = {
@@ -389,6 +526,58 @@ Contas vencidas: ${payablesVencidos.length} (R$${payablesVencidos.reduce((s, p) 
 Estornos: ${vendasEstornadas.length} vendas, ${transactions.filter(t => t.categoria === 'ESTORNO').length} transações
 Alertas Auditor: ${agentAlerts.length}
 ${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}`.trim(),
+
+                ESTOQUE: `
+## SNAPSHOT ESTOQUE — FRIGOGEST (${new Date().toLocaleDateString('pt-BR')})
+Peças disponíveis: ${estoqueDisp.length}
+Peso total: ${estoqueDisp.reduce((s, e) => s + e.peso_entrada, 0).toFixed(1)}kg
+Peças >30 dias: ${estoqueDisp.filter(s => Math.floor((new Date().getTime() - new Date(s.data_entrada).getTime()) / 86400000) > 30).length}
+Peças >60 dias: ${estoqueDisp.filter(s => Math.floor((new Date().getTime() - new Date(s.data_entrada).getTime()) / 86400000) > 60).length}
+Detalhamento:
+${estoqueDisp.slice(0, 15).map(s => {
+                    const dias = Math.floor((new Date().getTime() - new Date(s.data_entrada).getTime()) / 86400000);
+                    return `- ${s.id_completo} | ${s.peso_entrada}kg | ${dias} dias | Lote: ${s.id_lote}`;
+                }).join('\n')}
+Alertas Estoque: ${agentAlerts.length}
+${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}`.trim(),
+
+                COMPRAS: `
+## SNAPSHOT COMPRAS — FRIGOGEST (${new Date().toLocaleDateString('pt-BR')})
+Fornecedores: ${suppliers.length} cadastrados
+${suppliers.slice(0, 10).map(s => {
+                    const lotes = batches.filter(b => b.fornecedor === s.nome_fantasia);
+                    const totalKg = lotes.reduce((sum, b) => sum + b.peso_total_romaneio, 0);
+                    const totalR = lotes.reduce((sum, b) => sum + b.valor_compra_total, 0);
+                    return `- ${s.nome_fantasia} | Raça: ${s.raca_predominante || 'N/I'} | ${lotes.length} lotes | ${totalKg.toFixed(0)}kg | R$${totalR.toFixed(2)} | Banco: ${s.dados_bancarios ? 'SIM' : 'NÃO'}`;
+                }).join('\n')}
+Contas a Pagar: ${payablesPendentes.length} (R$${payablesPendentes.reduce((s, p) => s + p.valor, 0).toFixed(2)})
+Vencidas: ${payablesVencidos.length} (R$${payablesVencidos.reduce((s, p) => s + p.valor, 0).toFixed(2)})
+Custo médio/kg: R$${batches.length > 0 ? (batches.reduce((s, b) => s + b.custo_real_kg, 0) / batches.length).toFixed(2) : '0.00'}
+Alertas Compras: ${agentAlerts.length}
+${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}`.trim(),
+
+                MERCADO: `
+## SNAPSHOT MERCADO — FRIGOGEST (${new Date().toLocaleDateString('pt-BR')})
+Preço médio compra/kg: R$${batches.length > 0 ? (batches.reduce((s, b) => s + b.custo_real_kg, 0) / batches.length).toFixed(2) : '0.00'}
+Preço médio venda/kg: R$${vendasPagas.length > 0 ? (vendasPagas.reduce((s, v) => s + v.preco_venda_kg, 0) / vendasPagas.length).toFixed(2) : '0.00'}
+Margem bruta estimada: ${vendasPagas.length > 0 && batches.length > 0 ? (((vendasPagas.reduce((s, v) => s + v.preco_venda_kg, 0) / vendasPagas.length) / (batches.reduce((s, b) => s + b.custo_real_kg, 0) / batches.length) - 1) * 100).toFixed(1) : 'N/A'}%
+Lotes recentes (10):
+${batches.slice(-10).map(b => `- ${b.id_lote}: ${b.peso_total_romaneio}kg a R$${b.custo_real_kg.toFixed(2)}/kg | Forn: ${b.fornecedor}`).join('\n')}
+Região: Vitória da Conquista - BA
+Alertas Mercado: ${agentAlerts.length}
+${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}`.trim(),
+
+                ROBO_VENDAS: `
+## SNAPSHOT VENDAS — FRIGOGEST (${new Date().toLocaleDateString('pt-BR')})
+Clientes total: ${clients.length}
+Clientes com compra no mês: ${clients.filter(c => sales.some(s => s.id_cliente === c.id_ferro && Math.floor((new Date().getTime() - new Date(s.data_venda).getTime()) / 86400000) < 30)).length}
+Clientes inativos (>30d): ${clients.filter(c => { const ls = sales.filter(s => s.id_cliente === c.id_ferro).sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())[0]; return ls && Math.floor((new Date().getTime() - new Date(ls.data_venda).getTime()) / 86400000) > 30; }).length}
+Clientes inativos (>60d): ${clients.filter(c => { const ls = sales.filter(s => s.id_cliente === c.id_ferro).sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())[0]; return ls && Math.floor((new Date().getTime() - new Date(ls.data_venda).getTime()) / 86400000) > 60; }).length}
+Top clientes por volume:
+${clients.sort((a, b) => { const va = sales.filter(s => s.id_cliente === a.id_ferro).reduce((s, v) => s + v.peso_real_saida, 0); const vb = sales.filter(s => s.id_cliente === b.id_ferro).reduce((s, v) => s + v.peso_real_saida, 0); return vb - va; }).slice(0, 8).map(c => { const cv = sales.filter(s => s.id_cliente === c.id_ferro); const kg = cv.reduce((s, v) => s + v.peso_real_saida, 0); return `- ${c.nome_social}: ${cv.length} compras, ${kg.toFixed(1)}kg`; }).join('\n')}
+Pedidos abertos: ${scheduledOrders.filter(o => o.status === 'ABERTO').length}
+Alertas Robô: ${agentAlerts.length}
+${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}`.trim(),
             };
 
             // ═══ PROMPTS PER AGENT ═══
@@ -408,10 +597,31 @@ Organize em: ANÁLISE DE RENDIMENTO, FORNECEDORES, RECOMENDAÇÕES.`,
 Analise: vendas pendentes de cobrança, clientes acima do limite, ranking de melhores clientes, preço médio praticado.
 Organize em: SAÚDE COMERCIAL, COBRANÇAS URGENTES, OPORTUNIDADES.`,
 
-                AUDITOR: `Você é o AUDITOR FINANCEIRO do FrigoGest — cada centavo deve ser rastreado.
+                AUDITOR: `Você é Dra. Beatriz, auditora financeira do FrigoGest — cada centavo deve ser rastreado.
 Regra de ouro: toda venda PAGA deve ter Transaction ENTRADA. Todo lote deve ter Payable.
 Identifique: furos no caixa, estornos incompletos, transações órfãs, dívidas vencidas.
 Organize em: DIAGNÓSTICO, RISCOS, RECOMENDAÇÕES.`,
+
+                ESTOQUE: `Você é Joaquim, estoquista-chefe do FrigoGest — câmara fria é seu território.
+FIFO é lei: peça mais velha sai primeiro. Analise tempo de estoque, rotação, risco de perda.
+Alerte sobre peças paradas >30 dias. Sugira promoções para desovar estoque antigo.
+Organize em: SITUAÇÃO DA CÂMARA, PEÇAS EM RISCO, AÇÕES.`,
+
+                COMPRAS: `Você é Roberto, comprador do FrigoGest — olho nos centavos.
+Analise fornecedores: quem entrega melhor rendimento, custo, pontualidade.
+Identifique dívidas vencidas com fornecedores, falta de dados bancários.
+Sugira renegociações e novos fornecedores.
+Organize em: ANÁLISE DE FORNECEDORES, PAGAMENTOS, RECOMENDAÇÕES.`,
+
+                MERCADO: `Você é Ana, analista de mercado do FrigoGest — especialista em CEPEA e tendências.
+Analise preços de compra vs venda, margem bruta, oportunidades sazonais.
+Região: Vitória da Conquista - BA. Compare com praças vizinhas.
+Organize em: PANORAMA DE MERCADO, MARGENS, OPORTUNIDADES.`,
+
+                ROBO_VENDAS: `Você é Lucas, robô de vendas do FrigoGest — pipeline sempre aquecido.
+Identifique clientes inativos para reativação, sugira abordagens personalizadas.
+Rankeie clientes por volume e frequência. Sugira campanhas.
+Organize em: CLIENTES PARA REATIVAR, TOP COMPRADORES, CAMPANHAS.`,
             };
 
             const baseRules = `\nRegras gerais:\n- Responda SEMPRE em português brasileiro\n- Seja DIRETO e OBJETIVO\n- Use emojis: \ud83d\udd34 crítico, \ud83d\udfe1 atenção, \ud83d\udfe2 ok\n- Cite valores e números específicos\n- Máximo 500 palavras`;

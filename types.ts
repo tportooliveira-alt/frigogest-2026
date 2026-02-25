@@ -173,7 +173,7 @@ export interface Payable {
 
 // ═══ MULTI-AGENT AI SYSTEM ═══
 
-export type AgentType = 'ADMINISTRATIVO' | 'PRODUCAO' | 'COMERCIAL' | 'AUDITOR';
+export type AgentType = 'ADMINISTRATIVO' | 'PRODUCAO' | 'COMERCIAL' | 'AUDITOR' | 'ESTOQUE' | 'COMPRAS' | 'MERCADO' | 'ROBO_VENDAS';
 export type AlertSeverity = 'INFO' | 'ALERTA' | 'CRITICO' | 'BLOQUEIO';
 export type AlertStatus = 'NOVO' | 'VISTO' | 'RESOLVIDO' | 'IGNORADO';
 
