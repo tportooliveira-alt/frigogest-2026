@@ -17,14 +17,19 @@ interface CascadeProvider {
 
 const buildCascadeProviders = (): CascadeProvider[] => {
     const providers: CascadeProvider[] = [];
-    const env = (import.meta as any).env;
+
+    // Vite replaces import.meta.env.VITE_* statically at build time
+    // Must access EACH key directly — cannot use dynamic property access
+    const geminiKey = (import.meta as any).env.VITE_AI_API_KEY as string || '';
+    const groqKey = (import.meta as any).env.VITE_GROQ_API_KEY as string || '';
+    const cerebrasKey = (import.meta as any).env.VITE_CEREBRAS_API_KEY as string || '';
 
     // 1. GEMINI (primário)
-    if (env.VITE_AI_API_KEY) {
+    if (geminiKey) {
         providers.push({
             name: 'Gemini',
             call: async (prompt: string) => {
-                const ai = new GoogleGenAI({ apiKey: env.VITE_AI_API_KEY });
+                const ai = new GoogleGenAI({ apiKey: geminiKey });
                 const res = await ai.models.generateContent({
                     model: 'gemini-2.0-flash',
                     contents: { parts: [{ text: prompt }] },
@@ -37,13 +42,13 @@ const buildCascadeProviders = (): CascadeProvider[] => {
     }
 
     // 2. GROQ (fallback 1 — Llama 3.3 70B)
-    if (env.VITE_GROQ_API_KEY) {
+    if (groqKey) {
         providers.push({
             name: 'Groq',
             call: async (prompt: string) => {
                 const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.VITE_GROQ_API_KEY}` },
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${groqKey}` },
                     body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 2048 }),
                 });
                 if (!res.ok) throw new Error(`Groq ${res.status}`);
@@ -54,13 +59,13 @@ const buildCascadeProviders = (): CascadeProvider[] => {
     }
 
     // 3. CEREBRAS (fallback 2 — Llama 3.3 70B)
-    if (env.VITE_CEREBRAS_API_KEY) {
+    if (cerebrasKey) {
         providers.push({
             name: 'Cerebras',
             call: async (prompt: string) => {
                 const res = await fetch('https://api.cerebras.ai/v1/chat/completions', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.VITE_CEREBRAS_API_KEY}` },
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cerebrasKey}` },
                     body: JSON.stringify({ model: 'llama-3.3-70b', messages: [{ role: 'user', content: prompt }], max_tokens: 2048 }),
                 });
                 if (!res.ok) throw new Error(`Cerebras ${res.status}`);
