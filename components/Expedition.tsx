@@ -57,12 +57,36 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
   const [showHistory, setShowHistory] = useState(false);
   const [showLoadPlanner, setShowLoadPlanner] = useState(false);
 
-  // CORREÇÃO: Filtrar apenas stock de lotes FECHADOS (válidos)
+  // Helper: calcular dias em câmara
+  const getDaysInChamber = (item: StockItem) => {
+    const entrada = (item as any).data_entrada || (item as any).data_recebimento;
+    if (!entrada) return 0;
+    return Math.floor((Date.now() - new Date(entrada).getTime()) / 86400000);
+  };
+
+  // CORREÇÃO SANITÁRIA (MAPA/SIF): Filtrar lotes FECHADOS + excluir peças > 8 dias
   const availableStock = useMemo(() => {
     if (!batches || batches.length === 0) return [];
     const closedBatchIds = new Set(batches.filter(b => b.status === 'FECHADO').map(b => b.id_lote));
-    return stock.filter(item => item.status === 'DISPONIVEL' && closedBatchIds.has(item.id_lote));
+    return stock
+      .filter(item => item.status === 'DISPONIVEL' && closedBatchIds.has(item.id_lote))
+      // FIFO: ordenar pelo mais antigo primeiro (legislação sanitária)
+      .sort((a, b) => {
+        const aDate = (a as any).data_entrada || '';
+        const bDate = (b as any).data_entrada || '';
+        return aDate.localeCompare(bDate);
+      });
   }, [stock, batches]);
+
+  // Peças expiradas (> 8 dias) — visíveis mas bloqueadas
+  const expiredItems = useMemo(() =>
+    availableStock.filter(item => getDaysInChamber(item) >= 8),
+    [availableStock]
+  );
+  const safeStock = useMemo(() =>
+    availableStock.filter(item => getDaysInChamber(item) < 8),
+    [availableStock]
+  );
 
   const [expandedLots, setExpandedLots] = useState<Set<string>>(new Set());
 
@@ -76,7 +100,8 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
   };
 
   const groupedStock = useMemo(() => {
-    const filtered = availableStock.filter(item =>
+    // Usar safeStock (sem expirados) para seleção, mas mostrar expirados em vermelho
+    const filtered = safeStock.filter(item =>
       item.id_completo.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.id_lote.toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -106,9 +131,11 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
         })).sort((a, b) => b.sequencia - a.sequencia),
         totalWeight: items.reduce((acc, i) => acc + i.peso_entrada, 0),
         supplier: getSupplierName(loteId),
+        expiredCount: expiredItems.filter(e => e.id_lote === loteId).length,
       };
     }).sort((a, b) => b.lote.localeCompare(a.lote));
-  }, [availableStock, searchTerm, batches]);
+  }, [safeStock, searchTerm, batches, expiredItems]);
+
 
   const [itemWeights, setItemWeights] = useState<Record<string, number>>({});
 
@@ -539,6 +566,12 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
                             <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-0.5">LOTE: {group.lote}</p>
                             <p className="text-xs font-extrabold text-slate-900 uppercase tracking-tighter italic">"{group.supplier || 'CARGA PADRÃO'}"</p>
                           </div>
+                          {(group as any).expiredCount > 0 && (
+                            <div className="flex items-center gap-1.5 bg-rose-100 border border-rose-200 text-rose-700 px-3 py-1 rounded-full">
+                              <AlertCircle size={12} />
+                              <span className="text-[9px] font-black uppercase">{(group as any).expiredCount} VENCIDA{(group as any).expiredCount > 1 ? 'S' : ''} — BLOQUEADA{(group as any).expiredCount > 1 ? 'S' : ''}</span>
+                            </div>
+                          )}
                         </div>
 
                         <div className="flex items-center gap-6">
