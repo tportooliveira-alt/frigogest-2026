@@ -348,6 +348,9 @@ const AIAgents: React.FC<AIAgentsProps> = ({
     const [bulkRunning, setBulkRunning] = useState(false);
     const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number; currentAgent: string }>({ current: 0, total: 0, currentAgent: '' });
     const [autoRunDone, setAutoRunDone] = useState(false);
+    // FASE 4: Multi-Agent Debate
+    const [debateSynthesis, setDebateSynthesis] = useState<{ text: string; provider: string; timestamp: Date } | null>(null);
+    const [debateRunning, setDebateRunning] = useState(false);
     const [expandedDiagnostic, setExpandedDiagnostic] = useState<string | null>(null);
     const [marketNews, setMarketNews] = useState<NewsItem[]>([]);
     const [newsLoading, setNewsLoading] = useState(false);
@@ -583,7 +586,7 @@ const AIAgents: React.FC<AIAgentsProps> = ({
         const estoqueDisp = stock.filter(s => s.status === 'DISPONIVEL');
         estoqueDisp.forEach(s => {
             const dias = Math.floor((now.getTime() - new Date(s.data_entrada).getTime()) / 86400000);
-            if (dias > 5) { // Referência do prompt: perda de 0.3-0.5%/dia
+            if (dias > 6) { // Câmara fria: perde com 8 dias. Alerta com 7 para dar tempo de agir
                 const pesoOriginal = s.peso_entrada;
                 const perdaEst = pesoOriginal * (dias * 0.004); // 0.4% ao dia
                 if (perdaEst > 2) {
@@ -684,12 +687,12 @@ const AIAgents: React.FC<AIAgentsProps> = ({
         });
         
         // Escassez: Estoque velho = campanha urgente
-        const estoqueVelho = stock.filter(s => s.status === 'DISPONIVEL' && Math.floor((now.getTime() - new Date(s.data_entrada).getTime()) / msDay) > 4);
+        const estoqueVelho = stock.filter(s => s.status === 'DISPONIVEL' && Math.floor((now.getTime() - new Date(s.data_entrada).getTime()) / msDay) > 6);
         if (estoqueVelho.length > 2) {
             alerts.push({
                 id: `MKT-ESCASSEZ-${now.toISOString().split('T')[0]}`, agent: 'MARKETING', severity: 'ALERTA',
                 module: 'ESTOQUE', title: `📦 Campanha Relâmpago: ${estoqueVelho.length} peças`,
-                message: `${estoqueVelho.length} peças com >4 dias. Montar combo Decoy Effect e disparar via WhatsApp para lista VIP. Peso total: ${estoqueVelho.reduce((s, e) => s + e.peso_entrada, 0).toFixed(0)}kg.`,
+                message: `${estoqueVelho.length} peças com >6 dias (PERDE com 8!). Montar combo Decoy Effect e disparar via WhatsApp para lista VIP. Peso total: ${estoqueVelho.reduce((s, e) => s + e.peso_entrada, 0).toFixed(0)}kg.`,
                 timestamp: now.toISOString(), status: 'NOVO'
             });
         }
@@ -1094,7 +1097,7 @@ ${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}
                     const nuncaComprou = clientRFM.filter(c => c.segmento === 'NUNCA_COMPROU');
                     
                     // ESTOQUE PARA CAMPANHAS DE ESCASSEZ
-                    const estoqueVelho = estoqueDisp.filter(s => Math.floor((now.getTime() - new Date(s.data_entrada).getTime()) / msDay) > 4);
+                    const estoqueVelho = estoqueDisp.filter(s => Math.floor((now.getTime() - new Date(s.data_entrada).getTime()) / msDay) > 6);
                     const dianteirosDisp = estoqueDisp.filter(s => s.tipo === 2);
                     const traseirosDisp = estoqueDisp.filter(s => s.tipo === 3);
                     const inteirosDisp = estoqueDisp.filter(s => s.tipo === 1);
@@ -1126,7 +1129,7 @@ PERFIS PSICOGRÁFICOS (para Decoy Effect e Anchoring):
 ${clientRFM.filter(c => c.perfil_compra || c.padrao_gordura || c.objecoes_frequentes).slice(0, 8).map(c => `- ${c.nome_social}: Prefere ${c.perfil_compra || '?'} | Gordura ${c.padrao_gordura || '?'} | Objeção: "${c.objecoes_frequentes || 'nenhuma'}" | Mimo: ${c.mimo_recebido_data || 'nunca'}`).join('\\n')}
 
 ═══ 📦 GATILHOS DE ESCASSEZ (Campanhas Urgentes) ═══
-Estoque >4 dias (perda iminente): ${estoqueVelho.length} peças — PROMO RELÂMPAGO
+Estoque >6 dias (PERDE COM 8!): ${estoqueVelho.length} peças — PROMO RELÂMPAGO URGENTE
 Dianteiros disponíveis: ${dianteirosDisp.length} (${dianteirosDisp.reduce((s, e) => s + e.peso_entrada, 0).toFixed(0)}kg)
 Traseiros disponíveis: ${traseirosDisp.length} (${traseirosDisp.reduce((s, e) => s + e.peso_entrada, 0).toFixed(0)}kg)
 Inteiros disponíveis: ${inteirosDisp.length} (${inteirosDisp.reduce((s, e) => s + e.peso_entrada, 0).toFixed(0)}kg)
@@ -1660,6 +1663,9 @@ ${vendasNoPrejuizo.slice(0, 3).map(v => `  → ${v.id_completo}: vendeu R$${v.pr
         // ═══ NOTÍCIAS EM TEMPO REAL ═══
         const newsContext = marketNews.length > 0 ? formatNewsForAgent(marketNews) : '';
 
+        // Acumulador local para debate (evitar stale state)
+        const localDiags: Record<string, { text: string; provider: string }> = {};
+
         for (let i = 0; i < agents.length; i++) {
             const agent = agents[i];
             setBulkProgress({ current: i + 1, total: agents.length, currentAgent: agent.name });
@@ -1707,7 +1713,7 @@ REGRAS DE AUDITORIA que você DEVE verificar:
 ═══ SAÚDE DO NEGÓCIO ═══
 8. Margem bruta < 20 % = alerta amarelo, < 10 % = alerta vermelho, negativa = CRÍTICO
 9. Contas vencidas > 7 dias = urgência de cobrança
-10. Estoque > 45 dias = risco de perda de qualidade(carne congelada)
+10. Estoque > 8 dias = CARNE VENCENDO, vender com desconto urgente (vida útil MAX 8 dias refrigerado)
 11. Clientes inativos > 60 dias com saldo devedor = risco de calote
 12. Vendas ABAIXO do custo = prejuízo direto(preço venda < custo real / kg)
 13. Fornecedores cadastrados sem lotes = cadastro sujo, organizar
@@ -1738,6 +1744,7 @@ Responda em português BR, direto e prático.Use emojis.Cite números específic
 
                 const { text, provider } = await runCascade(promptWithMemory);
                 setAgentDiagnostics(prev => ({ ...prev, [agent.id]: { text, provider, timestamp: new Date() } }));
+                localDiags[agent.id] = { text, provider };
 
                 // 🧠 SALVAR MEMÓRIA do diagnóstico bulk
                 try {
@@ -1751,7 +1758,82 @@ Responda em português BR, direto e prático.Use emojis.Cite números específic
         }
         setBulkRunning(false);
         setAutoRunDone(true);
-    }, [agents, batches, stock, sales, clients, transactions, suppliers, payables, liveAlerts, bulkRunning, agentLoading, marketNews]);
+
+        // ═══ 🤝 FASE 4: MULTI-AGENT DEBATE — Dona Clara sintetiza tudo ═══
+        try {
+            setDebateRunning(true);
+            setBulkProgress({ current: 0, total: 1, currentAgent: 'Dona Clara (Síntese Executiva)' });
+
+            // Coletar diagnósticos do acumulador local
+            const allDiags: string[] = [];
+            agents.forEach(agent => {
+                const d = localDiags[agent.id];
+                if (d && d.provider !== 'erro') {
+                    allDiags.push(`═══ ${agent.icon} ${agent.name} ═══\n${d.text.substring(0, 500)}`);
+                }
+            });
+
+            if (allDiags.length >= 3) {
+                const predBlock = formatPredictionsForPrompt(predictions);
+                const debatePrompt = `Você é a MODERADORA de uma REUNIÃO DE DIRETORIA do FrigoGest.
+${allDiags.length} diretores acabaram de apresentar seus relatórios.
+
+SUA MISSÃO: Simular uma CONVERSA REAL entre os diretores onde:
+- Cada diretor DEFENDE seu ponto de vista com dados
+- Quando discordam, DEBATEM até chegar a um consenso
+- Votam nas decisões (✅ concordam / ❌ discordam)
+- Chegam a um PLANO DE AÇÃO UNIFICADO
+
+REGRAS DO FRIGORÍFICO que DEVEM guiar as decisões:
+- Carne resfriada = MAX 8 DIAS. Peças >6 dias = desconto urgente. FIFO obrigatório.
+- Margem saudável: 25-35%. Giro ideal: 3-5 dias.
+- Prazo de pagamento ao fornecedor DEVE ser maior que prazo de recebimento do cliente
+- Rendimento carcaça ideal: 52-56%
+
+${predBlock}
+
+═══ RELATÓRIOS APRESENTADOS ═══
+${allDiags.join('\n\n')}
+
+═══ FORMATO OBRIGATÓRIO ═══
+
+🗣️ DEBATE DOS DIRETORES:
+[Simule 3-4 trocas onde diretores DISCUTEM entre si. Use os nomes reais. Ex:]
+👩‍💼 Dona Clara: "Roberto, vi que você quer comprar lote, mas o caixa..."
+👨‍💼 Roberto: "Se não comprarmos, estoque acaba em 5 dias..."
+📊 Joaquim: "Concordo com Roberto. Temos peças vencendo."
+
+🤝 CONSENSO FINAL:
+[O que TODOS concordaram]
+
+🗳️ PLANO DE AÇÃO VOTADO:
+1. [ação] — ✅ X/10 votos — RESPONSÁVEL: [diretor]
+2. ...
+3. ...
+4. ...
+5. ...
+
+📋 DECISÃO FINAL DA DONA CLARA:
+[3 frases decidindo]
+
+Responda em português BR. Máximo 500 palavras.`;
+
+                const { text, provider } = await runCascade(debatePrompt);
+                setDebateSynthesis({ text, provider, timestamp: new Date() });
+
+                // Salvar memória da síntese
+                try {
+                    const memData = extractInsightsFromResponse(text, 'ADMINISTRATIVO', provider, liveAlerts.length, 'REUNIAO');
+                    memData.summary = 'REUNIÃO DE DIRETORIA - Debate entre ' + allDiags.length + ' diretores com votação';
+                    await saveAgentMemory(memData);
+                } catch(e) {}
+            }
+        } catch(e) {
+            console.warn('[Debate] Falha na síntese:', e);
+        } finally {
+            setDebateRunning(false);
+        }
+    }, [agents, batches, stock, sales, clients, transactions, suppliers, payables, liveAlerts, bulkRunning, agentLoading, marketNews, predictions]);
 
     // Auto-run on mount (once)
     useEffect(() => {
@@ -2083,6 +2165,44 @@ Regras:
                                 <p className="text-xs text-slate-500 mt-2 text-center font-bold">
                                     ⏳ {bulkProgress.currentAgent} está analisando...
                                 </p>
+                            </div>
+                        )}
+
+                        {/* ═══ 🤝 SÍNTESE EXECUTIVA — MULTI-AGENT DEBATE (FASE 4) ═══ */}
+                        {debateRunning && (
+                            <div className="bg-gradient-to-r from-amber-50 to-yellow-50 rounded-3xl border border-amber-200 p-6 shadow-sm">
+                                <div className="flex items-center gap-3">
+                                    <Loader2 size={20} className="animate-spin text-amber-500" />
+                                    <span className="text-sm font-black text-amber-700 uppercase tracking-widest">🤝 Dona Clara está sintetizando os relatórios de todos os diretores...</span>
+                                </div>
+                            </div>
+                        )}
+                        {debateSynthesis && !bulkRunning && !debateRunning && (
+                            <div className="bg-gradient-to-br from-amber-900 via-yellow-900 to-orange-900 rounded-3xl shadow-2xl overflow-hidden border border-amber-700/30">
+                                <div className="p-6 border-b border-amber-700/30 flex justify-between items-center">
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-yellow-500/20 p-2.5 rounded-xl">
+                                            <Users size={20} className="text-yellow-400" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-sm font-black text-yellow-300 uppercase tracking-widest">🤝 Síntese Executiva — Multi-Agent Debate</h3>
+                                            <p className="text-[9px] font-bold text-amber-500">
+                                                Dona Clara analisou {Object.keys(agentDiagnostics).length} relatórios • via {debateSynthesis.provider} • {debateSynthesis.timestamp.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'})}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => { navigator.clipboard.writeText(debateSynthesis.text); alert('📋 Síntese copiada!'); }}
+                                        className="px-4 py-2 rounded-xl bg-yellow-500/20 text-yellow-300 text-[9px] font-black uppercase tracking-widest hover:bg-yellow-500/30 transition-all"
+                                    >
+                                        📋 Copiar
+                                    </button>
+                                </div>
+                                <div className="p-6">
+                                    <div className="text-sm text-amber-100 leading-relaxed whitespace-pre-wrap font-medium">
+                                        {debateSynthesis.text}
+                                    </div>
+                                </div>
                             </div>
                         )}
 
