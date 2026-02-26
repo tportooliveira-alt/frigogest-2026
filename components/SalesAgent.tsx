@@ -50,289 +50,389 @@ import { sendWhatsAppMessage, sendWhatsAppMedia, checkWhatsAppAPIStatus, sendBul
 interface SalesAgentProps {
     onBack?: () => void;
     clients: Client[];
+    sales?: Sale[];
+    stock?: StockItem[];
+    batches?: Batch[];
 }
 
-const SalesAgent: React.FC<SalesAgentProps> = ({ onBack, clients }) => {
-    const [activeTab, setActiveTab] = useState<'config' | 'test' | 'voice' | 'campaign'>('config');
+type SegmentFilter = 'TODOS' | 'VIP' | 'ESFRIANDO' | 'DEVEDOR' | 'NOVO' | 'INATIVO';
+type ScriptType = 'OFERTA' | 'COBRANCA' | 'REATIVACAO' | 'VIP_MIMO' | 'PROMO_RELAMPAGO' | 'SAC';
 
-    // Campaign State
+const SalesAgent: React.FC<SalesAgentProps> = ({ onBack, clients, sales = [], stock = [], batches = [] }) => {
+    const [activeTab, setActiveTab] = useState<'disparo' | 'campaign' | 'config' | 'test'>('disparo');
+    const [segmentFilter, setSegmentFilter] = useState<SegmentFilter>('TODOS');
+    const [scriptType, setScriptType] = useState<ScriptType>('OFERTA');
     const [selectedClients, setSelectedClients] = useState<string[]>([]);
     const [isCampaignRunning, setIsCampaignRunning] = useState(false);
-    const [currentCampaignIndex, setCurrentCampaignIndex] = useState(0);
+    const [campaignProgress, setCampaignProgress] = useState({ sent: 0, total: 0, current: '' });
     const [preparedMessages, setPreparedMessages] = useState<any[]>([]);
-    const [viewMode, setViewMode] = useState<'selection' | 'review'>('selection');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [copiedId, setCopiedId] = useState<string | null>(null);
 
-    // Intelligent Agents State
-    const [agents] = useState([
-        { id: 'vendas', name: 'BOIADEIRO_DIGITAL', prompt: 'Você é o "Boiadeiro Digital", focado em vendas de gado. Seu tom é rústico e negociador. Use gírias do campo.' },
-        { id: 'cobranca', name: 'AGENTE_COBRANÇA', prompt: 'Você é um assistente financeiro educado, mas firme. Seu objetivo é lembrar o cliente sobre pagamentos pendentes, oferecendo opções de PIX.' },
-        { id: 'sac', name: 'SUPORTE_FG_CORE', prompt: 'Você é o suporte ao cliente. Tire dúvidas sobre entregas e notas fiscais com muita paciência e educação.' }
-    ]);
+    // Config State
     const [activeAgentId, setActiveAgentId] = useState('vendas');
-    const [knowledgeBase, setKnowledgeBase] = useState({ price: 'R$ 210,00', stock: '500 cabeças', delivery: '3 DIAS ÚTEIS', payment: 'À VISTA / 30 DIAS' });
-    const [deliveryMode, setDeliveryMode] = useState<'manual' | 'auto'>('manual');
-    const [aiPersona, setAiPersona] = useState(agents[0].prompt);
-
-    useEffect(() => {
-        setAiPersona(agents.find(a => a.id === activeAgentId)?.prompt || '');
-    }, [activeAgentId, agents]);
-
-    // Media & Voice State
-    const [mediaUrl, setMediaUrl] = useState('');
-    const [isUploading, setIsUploading] = useState(false);
-    const [audioBlobs, setAudioBlobs] = useState<Record<string, string>>({});
-    const [isRecording, setIsRecording] = useState<string | null>(null);
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    const chunksRef = useRef<Blob[]>([]);
-
-    // Chat Sim State
     const [chatHistory, setChatHistory] = useState<any[]>([]);
     const [userSimInput, setUserSimInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
-    const [apiInstance] = useState('6728'); // Simulated
-    const [apiToken] = useState('TOKEN_B838'); // Simulated
 
-    const gerarMensagemIA = (nomeCliente: string) => {
-        if (activeAgentId === 'vendas') {
-            const templates = [
-                `Olá *${nomeCliente}*! 👋\n\n🥩 *OFERTA ESPECIAL DO DIA*\n\nEstoque fresco, gado premium:\n💰 Preço: *${knowledgeBase.price}*\n📦 Disponível: ${knowledgeBase.stock}\n🚚 Entrega: ${knowledgeBase.delivery}\n\nGaranta já! Estoque limitado. 🔥`,
+    // ═══ INTELIGÊNCIA DE DADOS REAIS ═══
+    const now = new Date();
+    const msDay = 86400000;
+    const validSales = useMemo(() => sales.filter(s => s.status_pagamento !== 'ESTORNADO'), [sales]);
+    const estoqueDisp = useMemo(() => stock.filter(s => s.status === 'DISPONIVEL'), [stock]);
 
-                `Boa tarde, *${nomeCliente}*! 🐂\n\n*Acabou de chegar:*\nLote premium com acabamento perfeito\n\n✅ Qualidade garantida\n💵 Condições especiais: ${knowledgeBase.payment}\n📍 Entrega em ${knowledgeBase.delivery}\n\nInteresse? Responda aqui! 📱`,
+    // Segmentação RFM dos clientes
+    const clientSegments = useMemo(() => {
+        return clients.map(c => {
+            const cs = validSales.filter(s => s.id_cliente === c.id_ferro);
+            const sortedSales = [...cs].sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime());
+            const lastSale = sortedSales[0];
+            const diasSemCompra = lastSale ? Math.floor((now.getTime() - new Date(lastSale.data_venda).getTime()) / msDay) : 999;
+            const kgTotal = cs.reduce((sum, s) => sum + s.peso_real_saida, 0);
+            const faturado = cs.reduce((sum, s) => sum + (s.peso_real_saida * s.preco_venda_kg), 0);
+            const pago = cs.reduce((sum, s) => sum + ((s as any).valor_pago || 0), 0);
+            const divida = faturado - pago;
+            const frequencia = cs.length;
 
-                `*${nomeCliente}*, oportunidade! 🎯\n\n🥩 Carne de primeira\n💰 *${knowledgeBase.price}* /kg\n📦 Lote de ${knowledgeBase.stock}\n\nPreço para CLIENTE VIP!\nReservo para você? 🤝`
-            ];
-            const template = templates[Math.floor(Math.random() * templates.length)];
-            return template;
-        } else if (activeAgentId === 'cobranca') {
-            return `Olá *${nomeCliente}*! 👋\n\n📋 *Lembrete Amigável*\n\nIdentificamos um pagamento pendente em nossa base.\n\n💡 *Formas de pagamento:*\n• PIX (instantâneo)\n• Transferência bancária\n• Boleto\n\nPrecisa de ajuda? Estamos à disposição! 🤝\n\nAtenciosamente,\nEquipe FrigoGest`;
-        } else {
-            return `Olá *${nomeCliente}*! 👋\n\nComo podemos ajudar hoje?\n\n📞 Suporte FrigoGest\n⏰ Atendimento: Seg-Sex, 8h-18h`;
+            let segmento: SegmentFilter = 'TODOS';
+            if (frequencia === 0) segmento = 'NOVO';
+            else if (divida > 50) segmento = 'DEVEDOR';
+            else if (diasSemCompra <= 15 && frequencia >= 3) segmento = 'VIP';
+            else if (diasSemCompra > 60) segmento = 'INATIVO';
+            else if (diasSemCompra > 30) segmento = 'ESFRIANDO';
+
+            return { ...c, diasSemCompra, kgTotal, divida, frequencia, segmento, faturado, pago };
+        });
+    }, [clients, validSales, now]);
+
+    // Filtrar clientes
+    const filteredClients = useMemo(() => {
+        let result = clientSegments;
+        if (segmentFilter !== 'TODOS') result = result.filter(c => c.segmento === segmentFilter);
+        if (searchTerm) result = result.filter(c =>
+            c.nome_social.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            c.whatsapp?.includes(searchTerm)
+        );
+        return result;
+    }, [clientSegments, segmentFilter, searchTerm]);
+
+    // KPIs Dinâmicos
+    const kpis = useMemo(() => {
+        const total = clientSegments.length;
+        const vips = clientSegments.filter(c => c.segmento === 'VIP').length;
+        const esfriando = clientSegments.filter(c => c.segmento === 'ESFRIANDO').length;
+        const devedores = clientSegments.filter(c => c.segmento === 'DEVEDOR').length;
+        const inativos = clientSegments.filter(c => c.segmento === 'INATIVO').length;
+        const novos = clientSegments.filter(c => c.segmento === 'NOVO').length;
+        const dividaTotal = clientSegments.reduce((sum, c) => sum + Math.max(0, c.divida), 0);
+        const estoqueKg = estoqueDisp.reduce((sum, s) => sum + s.peso_entrada, 0);
+        const estoqueVelho = estoqueDisp.filter(s => Math.floor((now.getTime() - new Date(s.data_entrada).getTime()) / msDay) > 6).length;
+        return { total, vips, esfriando, devedores, inativos, novos, dividaTotal, estoqueKg, estoqueVelho };
+    }, [clientSegments, estoqueDisp, now]);
+
+    // ═══ GERADOR DE SCRIPTS INTELIGENTES ═══
+    const gerarScript = (client: any, tipo: ScriptType): string => {
+        const nome = client.nome_social || 'Cliente';
+        const diasLabel = client.diasSemCompra < 999 ? `${client.diasSemCompra} dias` : 'muito tempo';
+        const dianteiros = estoqueDisp.filter(s => s.tipo === 2);
+        const traseiros = estoqueDisp.filter(s => s.tipo === 3);
+
+        switch (tipo) {
+            case 'OFERTA':
+                return `Olá *${nome}*! 👋🥩\n\n*ESTOQUE FRESCO CHEGOU!*\n\n📦 Disponível agora:\n🔸 ${traseiros.length} Traseiros (${traseiros.reduce((s, e) => s + e.peso_entrada, 0).toFixed(0)}kg)\n🔸 ${dianteiros.length} Dianteiros (${dianteiros.reduce((s, e) => s + e.peso_entrada, 0).toFixed(0)}kg)\n\n✅ Acabamento premium\n🚚 Entrega em 24h\n💰 Condição especial pra você!\n\nQuer reservar? Me chama aqui! 📱`;
+
+            case 'COBRANCA':
+                if ((client.divida || 0) <= 0) return `Olá *${nome}*! Tudo certo por aqui, sem pendências. 😊`;
+                return `Olá *${nome}*, tudo bem? 🤝\n\n📋 *Lembrete Amigável*\n\nIdentifiquei um saldo pendente de *R$ ${(client.divida || 0).toFixed(2)}* em nossa base.\n\n💡 *Formas de pagamento:*\n• PIX (mais rápido ⚡)\n• Transferência bancária\n• Dinheiro na entrega\n\n🎁 Quitando hoje, você garante *condição especial* no próximo pedido!\n\nPrecisa de ajuda? Estou aqui! 🤝\n\n_Equipe FrigoGest_`;
+
+            case 'REATIVACAO':
+                return `*${nome}*, sentimos sua falta! 😢\n\nFaz *${diasLabel}* que não te abastecemos.\n\n🔥 *Oferta de Reativação:*\n✅ Primeiro pedido de volta com *desconto especial*\n🚚 Frete cortesia na primeira entrega\n📦 Estoque fresco: ${estoqueDisp.length} peças disponíveis (${estoqueDisp.reduce((s, e) => s + e.peso_entrada, 0).toFixed(0)}kg)\n\n*O que rolou?* Se foi preço, qualidade ou entrega, me conta que resolvo na hora! 💪\n\nBora voltar a fazer negócio? 🤝`;
+
+            case 'VIP_MIMO':
+                return `*${nome}*, você é ESPECIAL pra nós! 👑\n\n🏆 *Cliente VIP FrigoGest*\n${(client.kgTotal || 0).toFixed(0)}kg comprados | ${client.frequencia || 0} pedidos\n\n🎁 *Benefício Exclusivo VIP:*\n• Acesso antecipado aos melhores lotes\n• Condição de pagamento diferenciada\n• Entrega prioritária\n\n📦 *Novidade da semana:*\nLote premium disponível, reservei um corte especial pra você!\n\nQuer que eu separe? 🥩`;
+
+            case 'PROMO_RELAMPAGO': {
+                const velhos = estoqueDisp.filter(s => Math.floor((now.getTime() - new Date(s.data_entrada).getTime()) / msDay) > 6);
+                return `⚡ *PROMO RELÂMPAGO* ⚡\n\nOlá *${nome}*!\n\n🔥 *Só hoje - Estoque com preço especial:*\n${velhos.length > 0 ? velhos.slice(0, 3).map(s => `• ${s.tipo === 2 ? 'Dianteiro' : s.tipo === 3 ? 'Traseiro' : 'Inteiro'} - ${s.peso_entrada.toFixed(1)}kg`).join('\n') : '• Peças selecionadas com desconto'}\n\n💰 *Desconto de até 10%* pra quem fechar AGORA\n⏰ Válido só hoje!\n🚚 Entrega imediata\n\nInteressou? Responde aqui! 📱`;
+            }
+
+            case 'SAC':
+                return `Olá *${nome}*! 👋\n\nComo foi sua última compra conosco?\n\n📋 Queremos saber:\n✅ A qualidade estava boa?\n✅ A entrega foi no prazo?\n✅ Alguma sugestão?\n\nSua opinião é muito importante! 🙏\n\n_Equipe FrigoGest_`;
+
+            default:
+                return `Olá *${nome}*! 👋\nTemos novidades pra você! Entre em contato. 📱`;
         }
     };
 
-    const handleManualSend = async (phone: string, message: string) => {
-        // Se tiver mídia (foto/vídeo), envia com mídia
-        if (mediaUrl) {
-            const mediaType = mediaUrl.includes('.mp4') || mediaUrl.includes('video') ? 'video' : 'image';
-            const result = await sendWhatsAppMedia({
-                phone,
-                message,
-                mediaUrl,
-                mediaType
-            });
+    // ═══ DISPARO EM MASSA ═══
+    const handleBulkSend = async () => {
+        if (preparedMessages.length === 0) return;
+        setIsCampaignRunning(true);
+        setCampaignProgress({ sent: 0, total: preparedMessages.length, current: '' });
 
-            if (result.success) {
-                alert('✅ Mensagem com mídia enviada!');
-                return true;
-            } else {
-                alert('⚠️ Erro ao enviar: ' + result.error);
-                return false;
+        for (let i = 0; i < preparedMessages.length; i++) {
+            const msg = preparedMessages[i];
+            if (msg.status === 'sent' || !msg.client?.whatsapp) continue;
+
+            setCampaignProgress({ sent: i, total: preparedMessages.length, current: msg.client.nome_social });
+
+            await handleManualSend(msg.client.whatsapp, msg.message);
+
+            const nm = [...preparedMessages];
+            nm[i].status = 'sent';
+            setPreparedMessages(nm);
+
+            // Delay entre mensagens (3 segundos pra não ser banido)
+            if (i < preparedMessages.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 3000));
             }
         }
 
-        // Senão, envia só texto
-        const result = await sendWhatsAppMessage(phone, message);
+        setCampaignProgress({ sent: preparedMessages.length, total: preparedMessages.length, current: 'Concluído!' });
+        setIsCampaignRunning(false);
+    };
 
-        if (result.success) {
-            return true;
-        } else {
-            // Se a API falhar, abre WhatsApp Web como backup
-            console.warn('Usando fallback: WhatsApp Web');
-            window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
-            return true;
+    // ═══ ENVIAR INDIVIDUAL ═══
+    const handleManualSend = async (phone: string, message: string) => {
+        const result = await sendWhatsAppMessage(phone, message);
+        if (result.success) return true;
+        console.warn('Usando fallback: WhatsApp Web');
+        window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
+        return true;
+    };
+
+    const openWhatsApp = (phone: string, message: string) => {
+        const clean = phone.replace(/\D/g, '');
+        const num = clean.startsWith('55') ? clean : `55${clean}`;
+        window.open(`https://wa.me/${num}?text=${encodeURIComponent(message)}`, '_blank');
+    };
+
+    const copyToClipboard = (text: string, id: string) => {
+        navigator.clipboard.writeText(text);
+        setCopiedId(id);
+        setTimeout(() => setCopiedId(null), 2000);
+    };
+
+    // Preparar mensagens para campanha
+    const prepareMessages = () => {
+        const msgs = filteredClients
+            .filter(c => selectedClients.includes(c.id_ferro) && c.whatsapp)
+            .map(c => ({
+                clientId: c.id_ferro,
+                client: c,
+                status: 'pending',
+                message: gerarScript(c, scriptType)
+            }));
+        setPreparedMessages(msgs);
+        setActiveTab('campaign');
+    };
+
+    // Segment badges
+    const getSegmentColor = (seg: string) => {
+        switch (seg) {
+            case 'VIP': return 'bg-purple-100 text-purple-700 border-purple-200';
+            case 'ESFRIANDO': return 'bg-amber-100 text-amber-700 border-amber-200';
+            case 'DEVEDOR': return 'bg-red-100 text-red-700 border-red-200';
+            case 'NOVO': return 'bg-blue-100 text-blue-700 border-blue-200';
+            case 'INATIVO': return 'bg-gray-100 text-gray-500 border-gray-200';
+            default: return 'bg-slate-100 text-slate-600 border-slate-200';
+        }
+    };
+    const getSegmentIcon = (seg: string) => {
+        switch (seg) {
+            case 'VIP': return <Crown size={12} />;
+            case 'ESFRIANDO': return <Clock size={12} />;
+            case 'DEVEDOR': return <AlertTriangle size={12} />;
+            case 'NOVO': return <Sparkles size={12} />;
+            case 'INATIVO': return <X size={12} />;
+            default: return <Users size={12} />;
         }
     };
 
-    const startRecording = async (type: string) => {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const mr = new MediaRecorder(stream);
-        mediaRecorderRef.current = mr; chunksRef.current = [];
-        mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-        mr.onstop = () => setAudioBlobs(prev => ({ ...prev, [type]: URL.createObjectURL(new Blob(chunksRef.current, { type: 'audio/mp3' })) }));
-        mr.start(); setIsRecording(type);
-    };
-
-    const stopRecording = () => {
-        if (mediaRecorderRef.current) { mediaRecorderRef.current.stop(); mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop()); setIsRecording(null); }
-    };
-
     return (
-        <div className="p-4 md:p-10 min-h-screen bg-[#f8fafc] technical-grid animate-reveal pb-20 font-sans">
-
-            {/* PREMIUM HEADER - AI EDITION */}
-            <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
-                <div className="flex flex-col gap-4">
-                    <button onClick={onBack} className="group self-start flex items-center gap-2 px-4 py-1.5 bg-white border border-gray-200 rounded-full text-xs font-bold text-gray-500 hover:text-blue-700 hover:border-blue-100 transition-all shadow-sm">
-                        <ArrowLeft size={14} /> Voltar ao Início
+        <div className="p-4 md:p-8 min-h-screen bg-[#f8fafc] animate-reveal pb-20 font-sans">
+            {/* HEADER */}
+            <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+                <div className="flex flex-col gap-3">
+                    <button onClick={onBack} className="group self-start flex items-center gap-2 px-4 py-1.5 bg-white border border-gray-200 rounded-full text-xs font-bold text-gray-500 hover:text-emerald-700 hover:border-emerald-100 transition-all shadow-sm">
+                        <ArrowLeft size={14} /> Voltar
                     </button>
-                    <div className="flex items-center gap-5">
-                        <div className="bg-slate-900 p-3 rounded-2xl text-blue-400 shadow-xl shadow-blue-900/40 relative group">
-                            <Bot size={28} />
-                            <div className="absolute inset-0 bg-blue-400/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <div className="flex items-center gap-4">
+                        <div className="bg-emerald-600 p-3 rounded-2xl text-white shadow-xl relative">
+                            <Zap size={28} />
                         </div>
                         <div>
-                            <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">
-                                Agente <span className="text-blue-600">Cognitivo</span>
+                            <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-gray-900">
+                                Robô de <span className="text-emerald-600">Vendas</span>
                             </h1>
-                            <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mt-1">
-                                Automação e Inteligência de Vendas / ID-AI
+                            <p className="text-[10px] font-medium text-gray-400 uppercase tracking-widest mt-0.5">
+                                WhatsApp Inteligente · {kpis.total} Clientes · {estoqueDisp.length} Peças
                             </p>
                         </div>
                     </div>
                 </div>
 
-                <div className="flex flex-wrap gap-4 items-center">
-                    <nav className="flex p-1 bg-white rounded-2xl border border-slate-100 shadow-sm">
-                        {[
-                            { id: 'config', icon: Settings, label: 'Parâmetros' },
-                            { id: 'campaign', icon: Target, label: 'Campanha' },
-                            { id: 'voice', icon: Waves, label: 'Voz/Media' },
-                            { id: 'test', icon: MessageCircle, label: 'Simular' }
-                        ].map(t => (
-                            <button
-                                key={t.id}
-                                onClick={() => setActiveTab(t.id as any)}
-                                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === t.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'}`}
-                            >
-                                <t.icon size={14} /> {t.label}
-                            </button>
-                        ))}
-                    </nav>
-                </div>
+                <nav className="flex p-1 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
+                    {[
+                        { id: 'disparo', icon: Rocket, label: 'Disparo' },
+                        { id: 'campaign', icon: Target, label: 'Campanha' },
+                        { id: 'config', icon: Settings, label: 'Config' },
+                        { id: 'test', icon: MessageCircle, label: 'Simular' }
+                    ].map(t => (
+                        <button key={t.id} onClick={() => setActiveTab(t.id as any)}
+                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === t.id ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'}`}>
+                            <t.icon size={14} /> {t.label}
+                        </button>
+                    ))}
+                </nav>
             </div>
 
-            {/* MAIN INTERFACE */}
             <div className="max-w-7xl mx-auto">
-                {activeTab === 'config' && (
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-reveal">
-                        <div className="lg:col-span-7 space-y-8">
-                            <div className="premium-card p-10 bg-white">
-                                <div className="flex items-center justify-between mb-8 pb-6 border-b border-slate-50">
-                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                        <Cpu size={16} className="text-blue-600" /> Núcleo de Personalidade
-                                    </h3>
-                                    <div className="flex gap-1.5">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                                        <div className="w-1.5 h-1.5 rounded-full bg-slate-200" />
-                                        <div className="w-1.5 h-1.5 rounded-full bg-slate-200" />
+                {/* ═══ TAB: DISPARO INTELIGENTE ═══ */}
+                {activeTab === 'disparo' && (
+                    <div className="animate-reveal space-y-6">
+                        {/* KPIs */}
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                            {[
+                                { label: 'VIPs', value: kpis.vips, icon: Crown, color: 'text-purple-600 bg-purple-50 border-purple-100', filter: 'VIP' as SegmentFilter },
+                                { label: 'Esfriando', value: kpis.esfriando, icon: Clock, color: 'text-amber-600 bg-amber-50 border-amber-100', filter: 'ESFRIANDO' as SegmentFilter },
+                                { label: 'Devedores', value: kpis.devedores, icon: AlertTriangle, color: 'text-red-600 bg-red-50 border-red-100', filter: 'DEVEDOR' as SegmentFilter },
+                                { label: 'Novos', value: kpis.novos, icon: Sparkles, color: 'text-blue-600 bg-blue-50 border-blue-100', filter: 'NOVO' as SegmentFilter },
+                                { label: 'Inativos', value: kpis.inativos, icon: X, color: 'text-gray-500 bg-gray-50 border-gray-100', filter: 'INATIVO' as SegmentFilter },
+                            ].map(kpi => (
+                                <button key={kpi.label} onClick={() => setSegmentFilter(segmentFilter === kpi.filter ? 'TODOS' : kpi.filter)}
+                                    className={`p-4 rounded-2xl border-2 transition-all text-left ${segmentFilter === kpi.filter ? 'ring-2 ring-emerald-400 scale-[1.02]' : ''} ${kpi.color}`}>
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <kpi.icon size={14} />
+                                        <span className="text-[10px] font-black uppercase tracking-widest">{kpi.label}</span>
                                     </div>
-                                </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
-                                    {agents.map(a => (
-                                        <button
-                                            key={a.id}
-                                            onClick={() => setActiveAgentId(a.id)}
-                                            className={`p-5 rounded-[24px] border-2 transition-all flex flex-col gap-3 text-left ${activeAgentId === a.id ? 'border-blue-600 bg-blue-50/30' : 'border-slate-50 bg-slate-50/20 hover:border-slate-200'}`}
-                                        >
-                                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${activeAgentId === a.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'bg-slate-200 text-slate-400'}`}>
-                                                {a.id === 'vendas' ? <Zap size={16} /> : a.id === 'cobranca' ? <DollarSign size={16} /> : <Activity size={16} />}
-                                            </div>
-                                            <div>
-                                                <h4 className={`font-black text-[10px] uppercase tracking-tighter ${activeAgentId === a.id ? 'text-blue-600' : 'text-slate-400'}`}>{a.id}</h4>
-                                                <p className={`font-bold text-xs ${activeAgentId === a.id ? 'text-slate-900' : 'text-slate-400'}`}>{a.name}</p>
-                                            </div>
-                                        </button>
-                                    ))}
-                                </div>
-                                <div className="space-y-4">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Instruções de Sistema (Prompt)</label>
-                                    <div className="relative">
-                                        <div className="absolute top-4 left-4 text-blue-500 opacity-20"><Terminal size={20} /></div>
-                                        <textarea
-                                            value={aiPersona}
-                                            onChange={e => setAiPersona(e.target.value)}
-                                            className="w-full h-40 modern-input p-10 font-medium text-slate-700 bg-slate-50/50"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
+                                    <p className="text-2xl font-black">{kpi.value}</p>
+                                </button>
+                            ))}
+                        </div>
 
-                            <div className="premium-card p-10 bg-white">
-                                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-2">
-                                    <Globe size={16} className="text-blue-600" /> Protocolo de Conexão
-                                </h3>
-                                <div className="flex p-1 bg-slate-50 rounded-2xl border border-slate-100 mb-8">
-                                    <button
-                                        onClick={() => setDeliveryMode('manual')}
-                                        className={`flex-1 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${deliveryMode === 'manual' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-100'}`}
-                                    >
-                                        Disparo Individual (WA)
-                                    </button>
-                                    <button
-                                        onClick={() => setDeliveryMode('auto')}
-                                        className={`flex-1 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${deliveryMode === 'auto' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-100'}`}
-                                    >
-                                        Z-API Automático
-                                    </button>
+                        {/* Dívida Total + Estoque */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div className="bg-red-50 border-2 border-red-100 rounded-2xl p-4 flex items-center gap-4">
+                                <DollarSign size={24} className="text-red-600 shrink-0" />
+                                <div className="min-w-0">
+                                    <p className="text-[10px] font-black text-red-400 uppercase tracking-widest">Dívida Total Carteira</p>
+                                    <p className="text-xl font-black text-red-700">R$ {kpis.dividaTotal.toFixed(2)}</p>
                                 </div>
-                                <div className="grid grid-cols-2 gap-6">
-                                    <div className="space-y-3">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block px-1">Instância ID</label>
-                                        <input type="text" placeholder="i.e. 6728" className="modern-input h-12 text-sm bg-slate-50/30" />
-                                    </div>
-                                    <div className="space-y-3">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block px-1">Token de Acesso</label>
-                                        <input type="password" placeholder="••••••••••••" className="modern-input h-12 text-sm bg-slate-50/30" />
-                                    </div>
+                                <button onClick={() => { setSegmentFilter('DEVEDOR'); setScriptType('COBRANCA'); }}
+                                    className="ml-auto px-4 py-2 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-red-700 transition-all shrink-0">
+                                    Cobrar
+                                </button>
+                            </div>
+                            <div className="bg-emerald-50 border-2 border-emerald-100 rounded-2xl p-4 flex items-center gap-4">
+                                <Package size={24} className="text-emerald-600 shrink-0" />
+                                <div className="min-w-0">
+                                    <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Estoque Disponível</p>
+                                    <p className="text-xl font-black text-emerald-700">{estoqueDisp.length} peças · {kpis.estoqueKg.toFixed(0)}kg</p>
                                 </div>
+                                {kpis.estoqueVelho > 0 && (
+                                    <button onClick={() => { setSegmentFilter('TODOS'); setScriptType('PROMO_RELAMPAGO'); }}
+                                        className="ml-auto px-4 py-2 bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase hover:bg-amber-600 transition-all animate-pulse shrink-0">
+                                        ⚡ {kpis.estoqueVelho} Urgentes
+                                    </button>
+                                )}
                             </div>
                         </div>
 
-                        <div className="lg:col-span-5 space-y-8">
-                            <div className="bg-slate-900 rounded-[40px] p-10 text-white relative shadow-2xl overflow-hidden group">
-                                <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:scale-110 transition-transform"><Sparkles size={120} /></div>
-                                <h3 className="text-[10px] font-black text-blue-400 uppercase tracking-[0.4em] mb-10">Base de Conhecimento Dinâmica</h3>
-                                <div className="space-y-8 relative z-10">
-                                    {[
-                                        { l: 'Preço de Referência (Arroba)', v: knowledgeBase.price, k: 'price', icon: DollarSign },
-                                        { l: 'Capacidade em Estoque', v: knowledgeBase.stock, k: 'stock', icon: Package },
-                                        { l: 'Prazo Logístico Médio', v: knowledgeBase.delivery, k: 'delivery', icon: Calendar },
-                                        { l: 'Flexibilidade de Pagamento', v: knowledgeBase.payment, k: 'payment', icon: Activity }
-                                    ].map(kb => (
-                                        <div key={kb.k} className="group/item">
-                                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-2 px-1 flex items-center gap-2">
-                                                <kb.icon size={10} className="text-blue-500" /> {kb.l}
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={kb.v}
-                                                onChange={e => setKnowledgeBase({ ...knowledgeBase, [kb.k]: e.target.value })}
-                                                className="bg-white/5 border-none w-full px-4 py-3 rounded-xl font-black text-blue-400 uppercase italic tracking-tighter outline-none focus:bg-white/10 transition-all border border-white/5"
-                                            />
-                                        </div>
-                                    ))}
+                        {/* Script Type Selector */}
+                        <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Tipo de Script</p>
+                            <div className="flex flex-wrap gap-2">
+                                {[
+                                    { id: 'OFERTA' as ScriptType, label: '🥩 Oferta', desc: 'Venda ativa' },
+                                    { id: 'COBRANCA' as ScriptType, label: '💰 Cobrança', desc: 'Dívida pendente' },
+                                    { id: 'REATIVACAO' as ScriptType, label: '🔄 Reativação', desc: 'Cliente sumiu' },
+                                    { id: 'VIP_MIMO' as ScriptType, label: '👑 VIP Mimo', desc: 'Fidelizar VIP' },
+                                    { id: 'PROMO_RELAMPAGO' as ScriptType, label: '⚡ Promo Flash', desc: 'Estoque urgente' },
+                                    { id: 'SAC' as ScriptType, label: '📋 Pós-Venda', desc: 'Feedback' },
+                                ].map(st => (
+                                    <button key={st.id} onClick={() => setScriptType(st.id)}
+                                        className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all border ${scriptType === st.id ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg' : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'}`}>
+                                        {st.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Search */}
+                        <div className="relative">
+                            <Filter size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                                placeholder="Buscar cliente por nome ou WhatsApp..."
+                                className="w-full h-12 pl-12 pr-4 rounded-xl border border-slate-200 text-sm font-medium focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 outline-none transition-all" />
+                        </div>
+
+                        {/* Client List */}
+                        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                            <div className="bg-slate-900 p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                                <div className="flex items-center gap-3">
+                                    <input type="checkbox" className="w-5 h-5 rounded accent-emerald-600"
+                                        onChange={e => setSelectedClients(e.target.checked ? filteredClients.map(c => c.id_ferro) : [])}
+                                        checked={selectedClients.length === filteredClients.length && filteredClients.length > 0} />
+                                    <span className="text-white text-xs font-bold">{filteredClients.length} clientes · {selectedClients.length} selecionados</span>
                                 </div>
+                                <button disabled={selectedClients.length === 0}
+                                    onClick={prepareMessages}
+                                    className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-500 disabled:opacity-30 transition-all flex items-center gap-2 shadow-lg">
+                                    <Send size={14} /> Preparar Disparo ({selectedClients.length})
+                                </button>
                             </div>
 
-                            <div className="premium-card p-10 bg-white">
-                                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-2">
-                                    <ImageIcon size={16} className="text-blue-600" /> Ativos Visuais (Mídia)
-                                </h3>
-                                <div className="border-2 border-dashed border-slate-100 rounded-[32px] p-12 text-center relative group hover:border-blue-600 transition-all bg-slate-50/30">
-                                    <input
-                                        type="file"
-                                        onChange={e => {
-                                            if (e.target.files) {
-                                                setIsUploading(true);
-                                                setTimeout(() => { setMediaUrl('https://fg-media.cloud/temp_001.mp4'); setIsUploading(false); }, 1500);
-                                            }
-                                        }}
-                                        className="absolute inset-0 opacity-0 cursor-pointer"
-                                    />
-                                    <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center mx-auto mb-6 text-slate-400 group-hover:scale-110 group-hover:text-blue-600 transition-all">
-                                        <Upload size={28} />
-                                    </div>
-                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{isUploading ? 'Processando arquivo...' : 'Arraste uma foto ou vídeo para a campanha'}</p>
-                                </div>
-                                {mediaUrl && (
-                                    <div className="mt-6 bg-blue-50 rounded-2xl p-4 flex justify-between items-center border border-blue-100">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white"><ImageIcon size={14} /></div>
-                                            <span className="text-[10px] font-black text-blue-700 truncate max-w-[200px]">{mediaUrl}</span>
+                            <div className="divide-y divide-slate-50 max-h-[500px] overflow-y-auto">
+                                {filteredClients.map(c => (
+                                    <div key={c.id_ferro}
+                                        className={`flex items-center gap-3 p-4 hover:bg-slate-50 transition-colors cursor-pointer ${selectedClients.includes(c.id_ferro) ? 'bg-emerald-50/30' : ''}`}
+                                        onClick={() => {
+                                            const ns = new Set(selectedClients);
+                                            if (ns.has(c.id_ferro)) ns.delete(c.id_ferro);
+                                            else ns.add(c.id_ferro);
+                                            setSelectedClients(Array.from(ns));
+                                        }}>
+                                        <input type="checkbox" checked={selectedClients.includes(c.id_ferro)} readOnly
+                                            className="w-4 h-4 rounded accent-emerald-600 shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <span className="font-bold text-sm text-slate-900 truncate">{c.nome_social}</span>
+                                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold border ${getSegmentColor(c.segmento)}`}>
+                                                    {getSegmentIcon(c.segmento)} {c.segmento}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-3 mt-0.5 text-[10px] text-slate-400 font-medium flex-wrap">
+                                                <span>{c.kgTotal.toFixed(0)}kg</span>
+                                                <span>·</span>
+                                                <span>{c.diasSemCompra < 999 ? `${c.diasSemCompra}d atrás` : 'Nunca'}</span>
+                                                {c.divida > 0 && <><span>·</span><span className="text-red-500 font-bold">R${c.divida.toFixed(2)}</span></>}
+                                            </div>
                                         </div>
-                                        <button onClick={() => setMediaUrl('')} className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center hover:bg-blue-600 hover:text-white transition-all">
-                                            <X size={14} />
-                                        </button>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            {c.whatsapp ? (
+                                                <>
+                                                    <button onClick={e => { e.stopPropagation(); copyToClipboard(gerarScript(c, scriptType), c.id_ferro); }}
+                                                        className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-blue-100 hover:text-blue-600 transition-all"
+                                                        title="Copiar Script">
+                                                        {copiedId === c.id_ferro ? <CheckCircle size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                                                    </button>
+                                                    <button onClick={e => { e.stopPropagation(); openWhatsApp(c.whatsapp, gerarScript(c, scriptType)); }}
+                                                        className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center hover:bg-emerald-600 hover:text-white transition-all"
+                                                        title="Abrir WhatsApp">
+                                                        <ExternalLink size={14} />
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <span className="text-[9px] font-bold text-slate-300 uppercase">Sem WA</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                                {filteredClients.length === 0 && (
+                                    <div className="p-12 text-center text-slate-400">
+                                        <Users size={32} className="mx-auto mb-2 opacity-30" />
+                                        <p className="text-sm font-medium">Nenhum cliente neste segmento</p>
                                     </div>
                                 )}
                             </div>
@@ -340,266 +440,217 @@ const SalesAgent: React.FC<SalesAgentProps> = ({ onBack, clients }) => {
                     </div>
                 )}
 
+                {/* ═══ TAB: CAMPANHA (REVIEW/SEND) ═══ */}
                 {activeTab === 'campaign' && (
-                    <div className="animate-reveal max-w-7xl mx-auto">
-                        {viewMode === 'selection' ? (
-                            <div className="premium-card p-0 overflow-hidden bg-white">
-                                <div className="bg-slate-900 p-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                    <div className="animate-reveal space-y-6">
+                        {preparedMessages.length === 0 ? (
+                            <div className="bg-white rounded-2xl border border-slate-100 p-16 text-center shadow-sm">
+                                <Target size={48} className="mx-auto text-slate-300 mb-4" />
+                                <h3 className="text-lg font-bold text-slate-600 mb-2">Nenhuma Campanha Preparada</h3>
+                                <p className="text-sm text-slate-400 mb-6">Vá para <b>Disparo</b>, selecione clientes e clique em "Preparar Disparo".</p>
+                                <button onClick={() => setActiveTab('disparo')} className="px-6 py-3 bg-emerald-600 text-white rounded-xl font-bold text-sm hover:bg-emerald-500 transition-all">
+                                    Ir para Disparo
+                                </button>
+                            </div>
+                        ) : (
+                            <>
+                                {/* Campaign Header */}
+                                <div className="bg-slate-900 rounded-2xl p-6 text-white flex flex-col md:flex-row justify-between items-center gap-4">
                                     <div>
-                                        <h3 className="text-xl font-black text-white uppercase tracking-tight">Seleção de Alvos Ativos</h3>
-                                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">Sincronizando com Base CRM ({clients.length} entidades detectadas)</p>
+                                        <h3 className="text-lg font-black uppercase tracking-tight">Campanha Pronta</h3>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                                            {preparedMessages.filter(m => m.status === 'sent').length} / {preparedMessages.length} enviadas
+                                        </p>
                                     </div>
-                                    <div className="flex items-center gap-6">
-                                        <div className="text-right">
-                                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Entidades Selecionadas</p>
-                                            <p className="text-2xl font-black text-blue-400 leading-none">{selectedClients.length}</p>
-                                        </div>
-                                        <button
-                                            disabled={selectedClients.length === 0}
-                                            onClick={() => {
-                                                setPreparedMessages(selectedClients.map(id => ({
-                                                    clientId: id,
-                                                    client: clients.find(c => c.id_ferro === id),
-                                                    status: 'pending',
-                                                    message: gerarMensagemIA(clients.find(c => c.id_ferro === id)?.nome_social || 'NONE')
-                                                })));
-                                                setViewMode('review');
-                                            }}
-                                            className="btn-modern bg-blue-600 text-white px-8 py-4 rounded-2xl hover:bg-blue-500 gap-3 shadow-xl shadow-blue-900/40 disabled:opacity-20 transition-all font-black text-xs uppercase tracking-widest"
-                                        >
-                                            Iniciar Campanha <ChevronRight size={18} />
+                                    <div className="flex gap-3 flex-wrap">
+                                        <button onClick={() => { setPreparedMessages([]); setActiveTab('disparo'); }}
+                                            className="px-4 py-2.5 bg-white/10 text-white rounded-xl text-[10px] font-black uppercase hover:bg-white/20 transition-all flex items-center gap-1">
+                                            <ArrowLeft size={14} /> Voltar
+                                        </button>
+                                        <button disabled={isCampaignRunning || preparedMessages.every(m => m.status === 'sent')}
+                                            onClick={handleBulkSend}
+                                            className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-emerald-500 disabled:opacity-30 transition-all flex items-center gap-2 shadow-lg">
+                                            {isCampaignRunning ? <><RefreshCw size={14} className="animate-spin" /> Enviando... {campaignProgress.sent}/{campaignProgress.total}</> :
+                                                <><Rocket size={14} /> Disparar TODOS</>}
                                         </button>
                                     </div>
                                 </div>
-                                <div className="overflow-x-auto">
-                                    <table className="technical-table">
-                                        <thead>
-                                            <tr>
-                                                <th className="w-16 text-center">
-                                                    <input
-                                                        type="checkbox"
-                                                        className="w-5 h-5 rounded-lg accent-blue-600"
-                                                        onChange={e => setSelectedClients(e.target.checked ? clients.map(c => c.id_ferro) : [])}
-                                                        checked={selectedClients.length === clients.length && clients.length > 0}
-                                                    />
-                                                </th>
-                                                <th>Parceiro de Negócios</th>
-                                                <th>Protocolo ID</th>
-                                                <th>Contato Digital</th>
-                                                <th className="text-center">Vínculo</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {clients.map(c => (
-                                                <tr
-                                                    key={c.id_ferro}
-                                                    onClick={() => {
-                                                        const ns = new Set(selectedClients);
-                                                        if (ns.has(c.id_ferro)) ns.delete(c.id_ferro);
-                                                        else ns.add(c.id_ferro);
-                                                        setSelectedClients(Array.from(ns));
-                                                    }}
-                                                    className={`cursor-pointer transition-colors ${selectedClients.includes(c.id_ferro) ? 'bg-blue-50/30' : 'hover:bg-slate-50'}`}
-                                                >
-                                                    <td className="text-center">
-                                                        <div className={`w-6 h-6 mx-auto rounded-lg border-2 flex items-center justify-center transition-all ${selectedClients.includes(c.id_ferro) ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-white border-slate-200'}`}>
-                                                            {selectedClients.includes(c.id_ferro) && <CheckCircle size={14} />}
-                                                        </div>
-                                                    </td>
-                                                    <td className="font-extrabold text-slate-900 uppercase text-xs">{c.nome_social}</td>
-                                                    <td className="font-mono text-[10px] text-slate-400"># {c.id_ferro}</td>
-                                                    <td className="font-black text-slate-900 text-[11px]">{c.whatsapp || 'SEM_DADO'}</td>
-                                                    <td className="text-center">
-                                                        <span className={`inline-flex px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${c.whatsapp ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-slate-50 text-slate-300 border-slate-100'}`}>
-                                                            {c.whatsapp ? 'Online' : 'Offline'}
-                                                        </span>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="space-y-8 max-w-5xl mx-auto">
-                                <div className="bg-slate-900 rounded-[40px] p-8 text-white flex flex-col md:flex-row justify-between items-center shadow-2xl relative overflow-hidden">
-                                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-emerald-500 to-rose-500 animate-gradient-x" />
-                                    <button onClick={() => setViewMode('selection')} className="flex items-center gap-2 text-[10px] font-black uppercase text-slate-500 hover:text-white transition-colors mb-4 md:mb-0">
-                                        <ArrowLeft size={14} /> Voltar à Seleção
-                                    </button>
-                                    <h3 className="text-xl font-black uppercase tracking-tight">Revisão do Manifesto IA</h3>
-                                    <div className="flex items-center gap-2 bg-white/5 px-4 py-2 rounded-full border border-white/10">
-                                        <span className="text-[10px] font-black text-blue-400">{preparedMessages.filter(m => m.status === 'sent').length} / {preparedMessages.length} ENTREGUES</span>
+
+                                {isCampaignRunning && (
+                                    <div className="bg-emerald-50 border-2 border-emerald-100 rounded-2xl p-4">
+                                        <div className="flex items-center gap-3 mb-2">
+                                            <RefreshCw size={16} className="text-emerald-600 animate-spin" />
+                                            <span className="text-sm font-bold text-emerald-700">Enviando para: {campaignProgress.current}</span>
+                                        </div>
+                                        <div className="w-full bg-emerald-200 h-2 rounded-full overflow-hidden">
+                                            <div className="h-full bg-emerald-600 transition-all rounded-full" style={{ width: `${(campaignProgress.sent / campaignProgress.total) * 100}%` }} />
+                                        </div>
                                     </div>
-                                </div>
-                                <div className="grid grid-cols-1 gap-6">
+                                )}
+
+                                {/* Message Cards */}
+                                <div className="space-y-4">
                                     {preparedMessages.map((msg, i) => (
-                                        <div key={i} className={`premium-card p-8 group transition-all ${msg.status === 'sent' ? 'opacity-50 grayscale bg-slate-50/50 cursor-default' : 'bg-white hover:border-blue-200'}`}>
-                                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
-                                                <div className="flex items-center gap-4">
-                                                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-lg ${msg.status === 'sent' ? 'bg-emerald-600 text-white' : 'bg-blue-600 text-white shadow-lg shadow-blue-900/30'}`}>
-                                                        {msg.status === 'sent' ? <CheckCircle size={24} /> : msg.client?.nome_social.charAt(0)}
+                                        <div key={i} className={`bg-white rounded-2xl border p-5 transition-all ${msg.status === 'sent' ? 'opacity-50 border-emerald-200 bg-emerald-50/30' : 'border-slate-100 hover:border-emerald-200'}`}>
+                                            <div className="flex justify-between items-center mb-3">
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white ${msg.status === 'sent' ? 'bg-emerald-600' : 'bg-slate-900'}`}>
+                                                        {msg.status === 'sent' ? <CheckCircle size={20} /> : (msg.client?.nome_social || '?').charAt(0)}
                                                     </div>
                                                     <div>
-                                                        <h4 className="text-lg font-black text-slate-900 uppercase tracking-tight">{msg.client?.nome_social}</h4>
-                                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{msg.client?.whatsapp || 'PEND_CONNECTION'}</p>
+                                                        <h4 className="font-bold text-sm text-slate-900">{msg.client?.nome_social}</h4>
+                                                        <p className="text-[10px] text-slate-400 font-medium">{msg.client?.whatsapp}</p>
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-4 w-full md:w-auto">
-                                                    <button onClick={() => { const nm = [...preparedMessages]; nm[i].message = gerarMensagemIA(msg.client?.nome_social || ''); setPreparedMessages(nm); }} className="w-12 h-12 rounded-2xl bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center shrink-0 shadow-sm"><RefreshCw size={18} /></button>
-                                                    <button
-                                                        disabled={msg.status === 'sent'}
-                                                        onClick={() => { handleManualSend(msg.client?.whatsapp || '', msg.message); const nm = [...preparedMessages]; nm[i].status = 'sent'; setPreparedMessages(nm); }}
-                                                        className="flex-1 md:flex-none btn-modern bg-slate-900 text-white px-8 py-3.5 rounded-2xl hover:bg-emerald-600 shadow-xl gap-3 text-xs"
-                                                    >
-                                                        {msg.status === 'sent' ? 'Mensagem Entregue' : <><Send size={16} /> Enviar agora</>}
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => { const nm = [...preparedMessages]; nm[i].message = gerarScript(msg.client, scriptType); setPreparedMessages(nm); }}
+                                                        className="w-9 h-9 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-blue-100 hover:text-blue-600 transition-all">
+                                                        <RefreshCw size={14} />
+                                                    </button>
+                                                    <button disabled={msg.status === 'sent'}
+                                                        onClick={() => { openWhatsApp(msg.client?.whatsapp || '', msg.message); const nm = [...preparedMessages]; nm[i].status = 'sent'; setPreparedMessages(nm); }}
+                                                        className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-[10px] font-bold hover:bg-emerald-500 disabled:opacity-30 transition-all flex items-center gap-1.5">
+                                                        {msg.status === 'sent' ? <>✅ Enviado</> : <><Send size={12} /> Enviar</>}
                                                     </button>
                                                 </div>
                                             </div>
-                                            <div className="relative">
-                                                <div className="absolute top-4 left-4 text-blue-500/20"><MessageCircle size={18} /></div>
-                                                <textarea
-                                                    disabled={msg.status === 'sent'}
-                                                    value={msg.message}
-                                                    onChange={e => { const nm = [...preparedMessages]; nm[i].message = e.target.value; setPreparedMessages(nm); }}
-                                                    className="w-full h-32 modern-input p-10 font-medium text-slate-700 bg-slate-50/30"
-                                                />
-                                            </div>
+                                            <textarea disabled={msg.status === 'sent'} value={msg.message}
+                                                onChange={e => { const nm = [...preparedMessages]; nm[i].message = e.target.value; setPreparedMessages(nm); }}
+                                                className="w-full h-32 p-4 rounded-xl border border-slate-100 text-sm font-medium text-slate-700 bg-slate-50/50 resize-none focus:border-emerald-300 focus:ring-2 focus:ring-emerald-100 outline-none transition-all" />
                                         </div>
                                     ))}
                                 </div>
-                            </div>
+                            </>
                         )}
                     </div>
                 )}
 
-                {activeTab === 'voice' && (
-                    <div className="animate-reveal max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8">
-                        {[
-                            { id: 'saudacao', l: "Abertura / Saudação", d: "Primeiro contato cognitivo", icon: Mic },
-                            { id: 'preco', l: "Fluxo de Negociação", d: "Defesa de margens e preços", icon: DollarSign },
-                            { id: 'qualidade', l: "Engajamento Técnico", d: "Rendimento e qualidade de carcaça", icon: Activity },
-                            { id: 'fechamento', l: "Commit de Reserva", d: "Confirmação de abate/compra", icon: ShieldCheck }
-                        ].map(s => (
-                            <div key={s.id} className="premium-card p-10 group bg-white">
-                                <div className="flex justify-between items-start mb-10">
-                                    <div className="w-14 h-14 rounded-2xl bg-slate-50 text-slate-400 flex items-center justify-center transition-all group-hover:bg-blue-600 group-hover:text-white group-hover:scale-110 shadow-sm">
-                                        <s.icon size={28} />
-                                    </div>
-                                    <div className="text-right">
-                                        <h4 className="text-xl font-black text-slate-900 tracking-tight uppercase">{s.l}</h4>
-                                        <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase mt-0.5">{s.d}</p>
-                                    </div>
-                                </div>
-
-                                <div className="flex items-center gap-4">
-                                    {isRecording === s.id ? (
-                                        <button onClick={stopRecording} className="flex-1 bg-rose-600 text-white py-5 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-3 animate-pulse shadow-xl shadow-rose-900/20">Parar Gravação</button>
-                                    ) : (
-                                        <button onClick={() => startRecording(s.id)} className="flex-1 bg-white border-2 border-slate-100 text-slate-600 py-5 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:border-blue-600 hover:text-blue-600 transition-all flex items-center justify-center gap-3 shadow-sm">Iniciar Captura</button>
-                                    )}
-                                    {audioBlobs[s.id] && (
-                                        <button onClick={() => new Audio(audioBlobs[s.id]).play()} className="w-20 h-[68px] rounded-2xl bg-slate-900 text-white flex items-center justify-center hover:bg-blue-600 transition-all shadow-xl shadow-slate-900/20"><Play size={24} fill="currentColor" /></button>
-                                    )}
-                                </div>
-                                {audioBlobs[s.id] && <div className="mt-5 flex items-center gap-2"><div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" /><span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Ativo Digitalizado</span></div>}
+                {/* ═══ TAB: CONFIG ═══ */}
+                {activeTab === 'config' && (
+                    <div className="animate-reveal grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className="bg-white rounded-2xl border border-slate-100 p-8 shadow-sm">
+                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                <Cpu size={16} className="text-emerald-600" /> Agentes Disponíveis
+                            </h3>
+                            <div className="space-y-3">
+                                {[
+                                    { id: 'vendas', name: 'BOIADEIRO DIGITAL', desc: 'Vendas e ofertas', icon: Zap },
+                                    { id: 'cobranca', name: 'COBRADOR AMIGÁVEL', desc: 'Dívidas pendentes', icon: DollarSign },
+                                    { id: 'sac', name: 'SUPORTE FG', desc: 'Pós-venda e SAC', icon: Heart },
+                                ].map(a => (
+                                    <button key={a.id} onClick={() => setActiveAgentId(a.id)}
+                                        className={`w-full p-4 rounded-xl border-2 flex items-center gap-4 text-left transition-all ${activeAgentId === a.id ? 'border-emerald-600 bg-emerald-50/30' : 'border-slate-100 hover:border-slate-200'}`}>
+                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${activeAgentId === a.id ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                                            <a.icon size={20} />
+                                        </div>
+                                        <div>
+                                            <h4 className={`font-bold text-xs uppercase ${activeAgentId === a.id ? 'text-emerald-600' : 'text-slate-500'}`}>{a.name}</h4>
+                                            <p className="text-[10px] text-slate-400">{a.desc}</p>
+                                        </div>
+                                    </button>
+                                ))}
                             </div>
-                        ))}
+                        </div>
+
+                        <div className="bg-slate-900 rounded-2xl p-8 text-white shadow-xl">
+                            <h3 className="text-[10px] font-black text-emerald-400 uppercase tracking-[0.3em] mb-6">Estatísticas de Vendas</h3>
+                            <div className="space-y-6">
+                                {[
+                                    { label: 'Total em Carteira', value: `${clients.length} clientes`, color: 'text-white' },
+                                    { label: 'Com WhatsApp', value: `${clients.filter(c => c.whatsapp).length} contactáveis`, color: 'text-emerald-400' },
+                                    { label: 'Vendas Últimos 30d', value: `${validSales.filter(s => Math.floor((now.getTime() - new Date(s.data_venda).getTime()) / msDay) <= 30).length} vendas`, color: 'text-blue-400' },
+                                    { label: 'Estoque em Risco (>6 dias)', value: `${kpis.estoqueVelho} peças`, color: kpis.estoqueVelho > 0 ? 'text-red-400' : 'text-emerald-400' },
+                                    { label: 'Dívida Total', value: `R$ ${kpis.dividaTotal.toFixed(2)}`, color: kpis.dividaTotal > 0 ? 'text-red-400' : 'text-emerald-400' },
+                                ].map(stat => (
+                                    <div key={stat.label}>
+                                        <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">{stat.label}</p>
+                                        <p className={`text-xl font-black ${stat.color}`}>{stat.value}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
                     </div>
                 )}
 
+                {/* ═══ TAB: SIMULAR ═══ */}
                 {activeTab === 'test' && (
-                    <div className="animate-reveal max-w-4xl mx-auto h-[800px] flex flex-col bg-white rounded-[48px] shadow-2xl border border-slate-100 overflow-hidden relative">
-                        {/* TERMINAL HEADER */}
-                        <div className="bg-slate-900 p-8 flex justify-between items-center text-white relative">
-                            <div className="absolute top-0 left-0 w-full h-1 bg-blue-600/30" />
-                            <div className="flex items-center gap-5">
-                                <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-900/40">
-                                    <Bot size={20} />
-                                </div>
+                    <div className="animate-reveal max-w-3xl mx-auto h-[700px] flex flex-col bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden">
+                        <div className="bg-slate-900 p-6 flex justify-between items-center text-white">
+                            <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center"><Bot size={20} /></div>
                                 <div>
-                                    <h4 className="text-lg font-black uppercase tracking-tight">Debug de Simulação</h4>
-                                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Interface Terminal v2.5 / Session Active</p>
+                                    <h4 className="text-lg font-black uppercase tracking-tight">Simulador de Chat</h4>
+                                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Teste os scripts antes de enviar</p>
                                 </div>
                             </div>
-                            <div className="flex gap-1.5 px-3 py-1.5 bg-white/5 rounded-full border border-white/5">
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 rounded-full border border-white/10">
                                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                <span className="text-[9px] font-black text-emerald-500 uppercase">Live Sinc</span>
+                                <span className="text-[9px] font-black text-emerald-500 uppercase">Script: {scriptType}</span>
                             </div>
                         </div>
 
-                        {/* MESSAGES LIST */}
-                        <div className="flex-1 overflow-y-auto p-10 space-y-8 flex flex-col bg-slate-50/30 no-scrollbar">
-                            {chatHistory.length === 0 ? (
-                                <div className="h-full flex flex-col items-center justify-center opacity-05 py-32">
-                                    <Bot size={160} className="text-slate-900" />
-                                    <p className="mt-8 text-xs font-black uppercase tracking-[0.8em] text-slate-900">Aguardando Input</p>
+                        <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/50">
+                            {chatHistory.length === 0 && (
+                                <div className="h-full flex flex-col items-center justify-center opacity-10">
+                                    <Bot size={100} className="text-slate-900" />
+                                    <p className="mt-4 text-xs font-black uppercase tracking-widest text-slate-900">Envie uma mensagem</p>
                                 </div>
-                            ) : (
-                                chatHistory.map((m, i) => (
-                                    <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                        <div className={`p-6 rounded-[32px] max-w-[85%] shadow-sm ${m.role === 'user' ? 'bg-white text-slate-900 border border-slate-100 font-medium' : 'bg-slate-900 text-blue-50 font-medium shadow-xl shadow-slate-900/20'}`}>
-                                            <div className={`flex items-center gap-2 mb-3 text-[8px] font-black uppercase tracking-widest ${m.role === 'user' ? 'text-slate-400' : 'text-blue-400'}`}>
-                                                {m.role === 'user' ? <><User size={10} /> Humano</> : <><Bot size={10} /> Agente Cognitivo</>}
-                                            </div>
-                                            {m.audio ? (
-                                                <div className="flex items-center gap-4 bg-white/5 p-4 rounded-2xl border border-white/10">
-                                                    <button onClick={() => new Audio(m.audio).play()} className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center hover:scale-110 transition-all"><Play size={16} fill="currentColor" /></button>
-                                                    <div className="flex-1 h-0.5 bg-white/10 rounded-full" />
-                                                    <span className="text-[9px] font-black uppercase tracking-widest opacity-50">Stream Voz</span>
-                                                </div>
-                                            ) : (
-                                                <p className="leading-relaxed text-sm">{m.content}</p>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))
                             )}
+                            {chatHistory.map((m, i) => (
+                                <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                    <div className={`p-4 rounded-2xl max-w-[85%] ${m.role === 'user' ? 'bg-emerald-600 text-white' : 'bg-white text-slate-900 border border-slate-100 shadow-sm'}`}>
+                                        <p className="text-sm whitespace-pre-wrap leading-relaxed">{m.content}</p>
+                                    </div>
+                                </div>
+                            ))}
                             {isTyping && (
-                                <div className="flex gap-2 items-center text-blue-600 font-black text-[10px] uppercase tracking-widest animate-pulse ml-2">
-                                    <div className="flex gap-1">
-                                        <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.3s]" />
-                                        <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.15s]" />
-                                        <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" />
+                                <div className="flex gap-1 items-center text-emerald-600 font-bold text-xs animate-pulse">
+                                    <div className="flex gap-0.5">
+                                        <div className="w-1.5 h-1.5 bg-emerald-600 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                                        <div className="w-1.5 h-1.5 bg-emerald-600 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                                        <div className="w-1.5 h-1.5 bg-emerald-600 rounded-full animate-bounce" />
                                     </div>
-                                    IA Processando...
+                                    Digitando...
                                 </div>
                             )}
                         </div>
 
-                        {/* INPUT AREA */}
-                        <div className="p-10 bg-white border-t border-slate-100 flex gap-4">
-                            <div className="flex-1 relative">
-                                <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300"><Terminal size={18} /></div>
-                                <input
-                                    value={userSimInput}
-                                    onChange={e => setUserSimInput(e.target.value)}
-                                    onKeyDown={e => e.key === 'Enter' && userSimInput && (
-                                        setChatHistory([...chatHistory, { role: 'user', content: userSimInput }]),
-                                        setUserSimInput(''),
-                                        setIsTyping(true),
+                        <div className="p-4 bg-white border-t border-slate-100 flex gap-3">
+                            <input value={userSimInput} onChange={e => setUserSimInput(e.target.value)}
+                                onKeyDown={e => {
+                                    if (e.key === 'Enter' && userSimInput) {
+                                        const input = userSimInput;
+                                        setChatHistory(prev => [...prev, { role: 'user', content: input }]);
+                                        setUserSimInput('');
+                                        setIsTyping(true);
                                         setTimeout(() => {
-                                            setChatHistory(prev => [...prev, { role: 'assistant', content: gerarMensagemIA('Simulador') }]);
+                                            setChatHistory(prev => [...prev, {
+                                                role: 'assistant',
+                                                content: gerarScript({ nome_social: 'Simulador', diasSemCompra: 15, kgTotal: 500, divida: 250, frequencia: 5 }, scriptType)
+                                            }]);
                                             setIsTyping(false);
-                                        }, 1500)
-                                    )}
-                                    placeholder="Simule uma objeção ou pergunta do cliente..."
-                                    className="w-full h-16 modern-input pl-14 text-sm"
-                                />
-                            </div>
-                            <button
-                                onClick={() => userSimInput && (
-                                    setChatHistory([...chatHistory, { role: 'user', content: userSimInput }]),
-                                    setUserSimInput(''),
-                                    setIsTyping(true),
+                                        }, 1200);
+                                    }
+                                }}
+                                placeholder="Simule uma conversa de venda..."
+                                className="flex-1 h-12 px-4 rounded-xl border border-slate-200 text-sm font-medium focus:border-emerald-400 outline-none transition-all" />
+                            <button onClick={() => {
+                                if (userSimInput) {
+                                    const input = userSimInput;
+                                    setChatHistory(prev => [...prev, { role: 'user', content: input }]);
+                                    setUserSimInput('');
+                                    setIsTyping(true);
                                     setTimeout(() => {
-                                        setChatHistory(prev => [...prev, { role: 'assistant', content: gerarMensagemIA('Simulador') }]);
+                                        setChatHistory(prev => [...prev, {
+                                            role: 'assistant',
+                                            content: gerarScript({ nome_social: 'Simulador', diasSemCompra: 15, kgTotal: 500, divida: 250, frequencia: 5 }, scriptType)
+                                        }]);
                                         setIsTyping(false);
-                                    }, 1500)
-                                )}
-                                className="w-16 h-16 rounded-[24px] bg-slate-900 text-white flex items-center justify-center hover:bg-blue-600 hover:scale-105 transition-all shadow-xl shadow-slate-900/20 shrink-0"
-                            >
-                                <Send size={24} />
+                                    }, 1200);
+                                }
+                            }}
+                                className="w-12 h-12 rounded-xl bg-emerald-600 text-white flex items-center justify-center hover:bg-emerald-500 transition-all shrink-0">
+                                <Send size={20} />
                             </button>
                         </div>
                     </div>

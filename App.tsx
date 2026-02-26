@@ -1313,6 +1313,9 @@ const App: React.FC = () => {
         currentView === 'sales_agent' && <SalesAgent
           onBack={() => setCurrentView('menu')}
           clients={data.clients}
+          sales={data.sales}
+          stock={data.stock}
+          batches={data.batches}
         />
       }
 

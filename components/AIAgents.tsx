@@ -16,6 +16,7 @@ import { AgentMemory } from '../types';
 import { parseActionsFromResponse, DetectedAction, generateWhatsAppLink } from '../services/actionParserService';
 import { calculatePredictions, formatPredictionsForPrompt, PredictiveSnapshot } from '../utils/predictions';
 import { WHATSAPP_TEMPLATES, generateCatalogFromStock, suggestTemplateForClient, generateWhatsAppLinkFromTemplate, TemplateType } from '../services/whatsappCommerceService';
+import { generateDRE, formatDREText, calculateESGScore, COMPLIANCE_CHECKLIST, DREReport } from '../services/complianceService';
 
 // ═══ AI CASCADE — Gemini → Groq → Cerebras ═══
 interface CascadeProvider {
@@ -356,6 +357,8 @@ const AIAgents: React.FC<AIAgentsProps> = ({
     const [selectedWaTemplate, setSelectedWaTemplate] = useState<TemplateType | null>(null);
     const [selectedWaClient, setSelectedWaClient] = useState<string>('');  
     const [waPreview, setWaPreview] = useState<string>('');
+    // FASE 6: Compliance & DRE
+    const [drePeriodo, setDrePeriodo] = useState<'SEMANA' | 'MES' | 'TOTAL'>('MES');
     const [expandedDiagnostic, setExpandedDiagnostic] = useState<string | null>(null);
     const [marketNews, setMarketNews] = useState<NewsItem[]>([]);
     const [newsLoading, setNewsLoading] = useState(false);
@@ -792,6 +795,15 @@ const AIAgents: React.FC<AIAgentsProps> = ({
     const predictions = useMemo(() => {
         return calculatePredictions(sales, stock, batches, clients, payables, transactions);
     }, [sales, stock, batches, clients, payables, transactions]);
+
+    // ═══ 📋 DRE & ESG (FASE 6) ═══
+    const dreReport = useMemo(() => {
+        return generateDRE(sales, transactions, batches, payables, drePeriodo);
+    }, [sales, transactions, batches, payables, drePeriodo]);
+
+    const esgScore = useMemo(() => {
+        return calculateESGScore(batches, stock);
+    }, [batches, stock]);
 
     // ═══ STATS PER AGENT ═══
     const agentStats = useMemo(() => {
@@ -1439,7 +1451,8 @@ Organize em: 🤝 SAÚDE DO CLIENTE (NPS), 🥩 QUALIDADE PERCEBIDA, 🚚 FEEDBA
 
             const newsBlock = marketNews.length > 0 ? `\n\n${formatNewsForAgent(marketNews)} ` : '';
             const predictionsBlock = formatPredictionsForPrompt(predictions);
-            const fullPrompt = `${prompts[agentType]}${baseRules}${memoryBlock} \n\n${dataPackets[agentType]}${predictionsBlock}${newsBlock} \n\nINSTRUÇÃO CRÍTICA: A data de HOJE é ${new Date().toLocaleDateString('pt-BR')}.Use as NOTÍCIAS DO MERCADO acima como base para sua análise.NÃO invente notícias — cite apenas as que foram fornecidas.Se não houver notícias, diga que o feed não está disponível no momento.LEMBRE-SE: CARNE DURA NO MÁXIMO 8 DIAS NA CÂMARA. Peças com 6+ dias = VENDA URGENTE.`;
+            const dreBlock = (agentType === 'AUDITOR' || agentType === 'ADMINISTRATIVO') ? `\n\n${formatDREText(dreReport)}` : '';
+            const fullPrompt = `${prompts[agentType]}${baseRules}${memoryBlock} \n\n${dataPackets[agentType]}${predictionsBlock}${dreBlock}${newsBlock} \n\nINSTRUÇÃO CRÍTICA: A data de HOJE é ${new Date().toLocaleDateString('pt-BR')}.Use as NOTÍCIAS DO MERCADO acima como base para sua análise.NÃO invente notícias — cite apenas as que foram fornecidas.Se não houver notícias, diga que o feed não está disponível no momento.LEMBRE-SE: CARNE DURA NO MÁXIMO 8 DIAS NA CÂMARA. Peças com 6+ dias = VENDA URGENTE.`;
             const { text, provider } = await runCascade(fullPrompt);
             setAgentResponse(`_via ${provider} | 🧠 ${(memoryCounts[agentType] || 0) + 1} memórias_\n\n${text} `);
 
@@ -2172,6 +2185,96 @@ Regras:
                                 </p>
                             </div>
                         )}
+
+                        {/* ═══ 📋 DRE + ESG + COMPLIANCE (FASE 6) ═══ */}
+                        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                            <div className="p-6 border-b border-slate-50">
+                                <div className="flex items-center justify-between mb-5">
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-indigo-500/10 p-2 rounded-xl">
+                                            <Activity size={20} className="text-indigo-500" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">📋 Compliance & Relatórios</h3>
+                                            <p className="text-[9px] font-bold text-slate-400">DRE automática • ESG Score • Checklist regulatório</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-1">
+                                        {(['SEMANA', 'MES', 'TOTAL'] as const).map(p => (
+                                            <button key={p} onClick={() => setDrePeriodo(p)}
+                                                className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
+                                                    drePeriodo === p ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                                                }`}>
+                                                {p === 'SEMANA' ? '7d' : p === 'MES' ? '30d' : 'Total'}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* DRE Resumida */}
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                                    {[
+                                        { label: 'Receita Líquida', value: `R$${dreReport.receitaLiquida.toFixed(0)}`, color: 'text-emerald-600' },
+                                        { label: 'CMV', value: `R$${dreReport.cmv.toFixed(0)}`, color: 'text-rose-500' },
+                                        { label: 'Lucro Bruto', value: `R$${dreReport.lucroBruto.toFixed(0)}`, color: dreReport.lucroBruto > 0 ? 'text-emerald-600' : 'text-rose-500' },
+                                        { label: 'Margem Bruta', value: `${dreReport.margemBruta.toFixed(1)}%`, color: dreReport.margemBruta >= 25 ? 'text-emerald-600' : dreReport.margemBruta >= 15 ? 'text-amber-500' : 'text-rose-500' },
+                                    ].map((k, i) => (
+                                        <div key={i} className="bg-slate-50 rounded-xl p-3">
+                                            <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">{k.label}</p>
+                                            <p className={`text-lg font-black ${k.color}`}>{k.value}</p>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* DRE Detalhada */}
+                                <div className="bg-slate-900 rounded-xl p-4 mb-5 overflow-x-auto">
+                                    <pre className="text-[10px] text-emerald-400 font-mono leading-relaxed whitespace-pre-wrap">
+{formatDREText(dreReport)}
+                                    </pre>
+                                    <button onClick={() => { navigator.clipboard.writeText(formatDREText(dreReport)); alert('📋 DRE copiada!'); }}
+                                        className="mt-3 px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 text-[8px] font-black uppercase tracking-widest hover:bg-emerald-500/30 transition-all">
+                                        📋 Copiar DRE
+                                    </button>
+                                </div>
+
+                                {/* ESG + Compliance lado a lado */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {/* ESG Score */}
+                                    <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-2xl p-5 border border-emerald-100">
+                                        <div className="flex items-center justify-between mb-4">
+                                            <h4 className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">🌱 ESG Score</h4>
+                                            <div className={`text-3xl font-black ${esgScore.nota >= 70 ? 'text-emerald-600' : esgScore.nota >= 40 ? 'text-amber-500' : 'text-rose-500'}`}>
+                                                {esgScore.nota}/100
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            {esgScore.detalhes.map((d, i) => (
+                                                <div key={i} className="flex items-center justify-between">
+                                                    <span className="text-[9px] text-slate-600 font-bold">{d.status} {d.item}</span>
+                                                    <span className="text-[9px] font-black text-slate-500">{d.nota}%</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Compliance Checklist */}
+                                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-5 border border-blue-100">
+                                        <h4 className="text-[10px] font-black text-blue-700 uppercase tracking-widest mb-3">🏛️ Checklist Compliance ({COMPLIANCE_CHECKLIST.length} itens)</h4>
+                                        <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                                            {COMPLIANCE_CHECKLIST.map(item => (
+                                                <div key={item.id} className="flex items-center gap-2 text-[9px]">
+                                                    <span>{item.icon}</span>
+                                                    <span className="font-bold text-slate-700 flex-1">{item.item}</span>
+                                                    <span className={`text-[7px] font-black px-2 py-0.5 rounded-full ${
+                                                        item.obrigatorio ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'
+                                                    }`}>{item.obrigatorio ? 'OBRIG.' : 'REC.'}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
 
                         {/* ═══ 📱 WHATSAPP COMMERCE (FASE 5) ═══ */}
                         <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
