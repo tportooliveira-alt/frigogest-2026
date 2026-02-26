@@ -14,6 +14,7 @@ import { INDUSTRY_BENCHMARKS_2026 } from '../constants';
 import { getAgentMemories, saveAgentMemory, formatMemoriesForPrompt, extractInsightsFromResponse, countAgentMemories } from '../services/agentMemoryService';
 import { AgentMemory } from '../types';
 import { parseActionsFromResponse, DetectedAction, generateWhatsAppLink } from '../services/actionParserService';
+import { calculatePredictions, formatPredictionsForPrompt, PredictiveSnapshot } from '../utils/predictions';
 
 // ═══ AI CASCADE — Gemini → Groq → Cerebras ═══
 interface CascadeProvider {
@@ -734,11 +735,55 @@ const AIAgents: React.FC<AIAgentsProps> = ({
             }
         });
 
+        // ═══ 📈 ALERTAS PREDITIVOS (FASE 3) ═══
+        const pred = calculatePredictions(sales, stock, batches, clients, payables, transactions);
+
+        if (pred.alertaEstoqueBaixo) {
+            alerts.push({
+                id: `PRED-ESTOQUE-${now.toISOString().split('T')[0]}`, agent: 'ESTOQUE', severity: 'CRITICO',
+                module: 'ESTOQUE', title: `📈 PREVISÃO: Estoque esgota em ${pred.diasAteEsgotar}d`,
+                message: `Consumo médio: ${pred.consumoMedio7dKg.toFixed(1)}kg/dia. Estoque atual: ${pred.estoqueAtualKg.toFixed(0)}kg. Agendar novo lote em ${pred.proximaCompraIdealDias} dias!`,
+                timestamp: now.toISOString(), status: 'NOVO'
+            });
+        }
+
+        if (pred.alertaCaixaNegativo) {
+            alerts.push({
+                id: `PRED-CAIXA-${now.toISOString().split('T')[0]}`, agent: 'ADMINISTRATIVO', severity: 'CRITICO',
+                module: 'FINANCEIRO', title: `📈 PREVISÃO: Caixa fica negativo em ~${pred.diasAteCaixaNegativo}d`,
+                message: `Saldo atual: R$${pred.caixaAtual.toFixed(0)}. Após pagamentos: R$${pred.caixaProjetado30d.toFixed(0)}. Cobrar inadimplentes ou renegociar prazos!`,
+                timestamp: now.toISOString(), status: 'NOVO'
+            });
+        }
+
+        if (pred.alertaChurnAlto) {
+            alerts.push({
+                id: `PRED-CHURN-${now.toISOString().split('T')[0]}`, agent: 'COMERCIAL', severity: 'ALERTA',
+                module: 'CLIENTES', title: `📈 PREVISÃO: Churn alto (${pred.taxaChurn.toFixed(0)}%)`,
+                message: `${pred.clientesInativos30d} de ${pred.clientesAtivos30d + pred.clientesInativos30d} clientes NÃO compraram nos últimos 30d. Ativar campanhas de retenção!`,
+                timestamp: now.toISOString(), status: 'NOVO'
+            });
+        }
+
+        if (pred.tendenciaReceita === 'CAINDO') {
+            alerts.push({
+                id: `PRED-RECEITA-${now.toISOString().split('T')[0]}`, agent: 'COMERCIAL', severity: 'ALERTA',
+                module: 'VENDAS', title: `📉 PREVISÃO: Receita em queda (${pred.percentualVariacao.toFixed(1)}%)`,
+                message: `Receita 30d: R$${pred.receita30d.toFixed(0)} vs período anterior. Projeção: R$${pred.receitaProjetada30d.toFixed(0)}. Intensificar vendas!`,
+                timestamp: now.toISOString(), status: 'NOVO'
+            });
+        }
+
         return alerts.sort((a, b) => {
             const severityOrder: Record<AlertSeverity, number> = { BLOQUEIO: 0, CRITICO: 1, ALERTA: 2, INFO: 3 };
             return severityOrder[a.severity] - severityOrder[b.severity];
         });
     }, [batches, stock, sales, clients, transactions, suppliers, payables, scheduledOrders, marketNews]);
+
+    // ═══ 📈 PREDICTIONS SNAPSHOT ═══
+    const predictions = useMemo(() => {
+        return calculatePredictions(sales, stock, batches, clients, payables, transactions);
+    }, [sales, stock, batches, clients, payables, transactions]);
 
     // ═══ STATS PER AGENT ═══
     const agentStats = useMemo(() => {
@@ -1385,7 +1430,8 @@ Organize em: 🤝 SAÚDE DO CLIENTE (NPS), 🥩 QUALIDADE PERCEBIDA, 🚚 FEEDBA
             } catch (e) { console.warn('[Memory] Falha ao buscar memórias:', e); }
 
             const newsBlock = marketNews.length > 0 ? `\n\n${formatNewsForAgent(marketNews)} ` : '';
-            const fullPrompt = `${prompts[agentType]}${baseRules}${memoryBlock} \n\n${dataPackets[agentType]}${newsBlock} \n\nINSTRUÇÃO CRÍTICA: A data de HOJE é ${new Date().toLocaleDateString('pt-BR')}.Use as NOTÍCIAS DO MERCADO acima como base para sua análise.NÃO invente notícias — cite apenas as que foram fornecidas.Se não houver notícias, diga que o feed não está disponível no momento.`;
+            const predictionsBlock = formatPredictionsForPrompt(predictions);
+            const fullPrompt = `${prompts[agentType]}${baseRules}${memoryBlock} \n\n${dataPackets[agentType]}${predictionsBlock}${newsBlock} \n\nINSTRUÇÃO CRÍTICA: A data de HOJE é ${new Date().toLocaleDateString('pt-BR')}.Use as NOTÍCIAS DO MERCADO acima como base para sua análise.NÃO invente notícias — cite apenas as que foram fornecidas.Se não houver notícias, diga que o feed não está disponível no momento.LEMBRE-SE: CARNE DURA NO MÁXIMO 8 DIAS NA CÂMARA. Peças com 6+ dias = VENDA URGENTE.`;
             const { text, provider } = await runCascade(fullPrompt);
             setAgentResponse(`_via ${provider} | 🧠 ${(memoryCounts[agentType] || 0) + 1} memórias_\n\n${text} `);
 
@@ -1930,6 +1976,59 @@ Regras:
                                     <p className={`text - xl font - black ${kpi.color} `}>{kpi.value}</p>
                                 </div>
                             ))}
+                        </div>
+
+                        {/* ═══ 📈 PAINEL PREDITIVO (FASE 3) ═══ */}
+                        <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-3xl p-6 shadow-xl border border-slate-700/50">
+                            <div className="flex items-center gap-3 mb-5">
+                                <div className="bg-blue-500/20 p-2 rounded-xl">
+                                    <TrendingUp size={20} className="text-blue-400" />
+                                </div>
+                                <div>
+                                    <h3 className="text-white font-black text-sm uppercase tracking-widest">📈 Analytics Preditivo</h3>
+                                    <p className="text-slate-500 text-[9px] font-bold">Projeções baseadas em médias móveis 7d/30d • Carne dura MAX 8 dias</p>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                                {[
+                                    {
+                                        label: 'Receita 30d',
+                                        value: `R$${predictions.receitaProjetada30d.toFixed(0)}`,
+                                        sub: `${predictions.tendenciaReceita === 'SUBINDO' ? '📈' : predictions.tendenciaReceita === 'CAINDO' ? '📉' : '➡️'} ${predictions.percentualVariacao > 0 ? '+' : ''}${predictions.percentualVariacao.toFixed(0)}%`,
+                                        color: predictions.tendenciaReceita === 'CAINDO' ? 'text-rose-400' : 'text-emerald-400'
+                                    },
+                                    {
+                                        label: 'Estoque esgota',
+                                        value: predictions.diasAteEsgotar === 999 ? 'N/A' : `${predictions.diasAteEsgotar}d`,
+                                        sub: `🥩 ${predictions.pecasVencendo} vencendo`,
+                                        color: predictions.alertaEstoqueBaixo ? 'text-rose-400' : 'text-emerald-400'
+                                    },
+                                    {
+                                        label: 'Caixa projetado',
+                                        value: `R$${predictions.caixaProjetado30d.toFixed(0)}`,
+                                        sub: predictions.alertaCaixaNegativo ? '🔴 Risco!' : '✅ Saudável',
+                                        color: predictions.alertaCaixaNegativo ? 'text-rose-400' : 'text-emerald-400'
+                                    },
+                                    {
+                                        label: 'Taxa Churn',
+                                        value: `${predictions.taxaChurn.toFixed(0)}%`,
+                                        sub: `${predictions.clientesAtivos30d} ativos`,
+                                        color: predictions.alertaChurnAlto ? 'text-rose-400' : 'text-emerald-400'
+                                    },
+                                    {
+                                        label: 'Comprar em',
+                                        value: `${predictions.proximaCompraIdealDias}d`,
+                                        sub: `Custo ${predictions.tendenciaCusto === 'SUBINDO' ? '🔴↑' : predictions.tendenciaCusto === 'CAINDO' ? '🟢↓' : '🟡→'}`,
+                                        color: predictions.proximaCompraIdealDias <= 2 ? 'text-rose-400' : 'text-blue-400'
+                                    },
+                                ].map((p, i) => (
+                                    <div key={i} className="bg-white/5 rounded-xl p-4 border border-white/5">
+                                        <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">{p.label}</p>
+                                        <p className={`text-xl font-black ${p.color}`}>{p.value}</p>
+                                        <p className="text-[9px] text-slate-500 font-bold mt-1">{p.sub}</p>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
 
                         {/* ═══ BARRA DE AUTOMAÇÃO ═══ */}
