@@ -12,3 +12,9 @@ dist
 .idea
 *.swp
 *.swo
+
+# Scripts de teste e arquivos temporários (podem conter chaves)
+testar_romaneio.*
+romaneio_teste.*
+romaneio_resultado.*
+*.mjs

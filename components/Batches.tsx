@@ -547,49 +547,111 @@ const Batches: React.FC<BatchesProps> = ({
               const geminiKey = (import.meta as any).env.VITE_AI_API_KEY as string || '';
               if (!geminiKey) { alert('⚠️ Chave Gemini não configurada'); setRomaneioReading(false); return; }
 
-              const prompt = `Você é um leitor especializado de romaneios de frigorífico brasileiro.
-Analise este documento e extraia TODOS os itens de pesagem.
-Para cada animal/carcaça identifique:
-- seq: número sequencial do animal
-- tipo: BANDA_A (traseiro esquerdo / Tr.Esq), BANDA_B (traseiro direito / Tr.Dir), ou INTEIRO
-- peso: peso em kg com decimais (ex: 125.4)
+              const prompt = `Você é um sistema especializado em leitura e VALIDAÇÃO de romaneios de frigorífico brasileiro.
 
-Retorne APENAS JSON puro sem markdown:
-[{"seq":1,"tipo":"BANDA_A","peso":126.5},{"seq":1,"tipo":"BANDA_B","peso":125.9}]
+ESTRUTURA DO ROMANEIO (colunas na ordem):
+Seq | LT (código lote) | Banda 1 (BANDA_A = traseiro esquerdo) | Banda 2 (BANDA_B = traseiro direito) | Fr(-) (franquia = dedução padrão 3,00 kg) | [outras colunas] | Peso Líquido (líquido = Banda1 + Banda2 - Fr) | [outras colunas] | Total geral no rodapé
 
-Não inclua explicações. Apenas o array JSON.`;
+REGRA DE VALIDAÇÃO OBRIGATÓRIA:
+Para cada linha: Banda1 + Banda2 - Fr = Peso Líquido
+Se o cálculo NÃO BATER com o Peso Líquido impresso, você DEVE reler aquela linha com muito cuidado e corrigir.
+
+PASSOS:
+1. Extraia cada linha: seq, banda1, banda2, fr, pesoLiquido
+2. Valide: round(banda1 + banda2 - fr, 2) deve ser IGUAL ao pesoLiquido
+3. Se NÃO for igual (diferença > 0.05 kg), releia a linha e corrija os valores
+4. Ao final, some todos os pesoLiquido e compare com o TOTAL geral do rodapé
+5. Se a soma não bater com o total, flag validacaoTotal = false
+
+Retorne APENAS este JSON puro (sem markdown):
+{
+  "items": [
+    {"seq":1,"banda1":126.5,"banda2":125.9,"fr":3.0,"pesoLiquido":249.4,"validado":true},
+    {"seq":2,"banda1":118.5,"banda2":118.1,"fr":3.0,"pesoLiquido":233.6,"validado":true}
+  ],
+  "totalRomaneio": 2405.6,
+  "somaCalculada": 2405.6,
+  "qtdeAnimais": 10,
+  "validacaoTotal": true,
+  "observacoes": ""
+}
+
+Se algum item tiver discrepância que você não conseguiu resolver, marque validado:false e explique em observacoes.`;
 
               try {
                 const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: mime, data: base64 } }] }] })
+                  body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: mime, data: base64 } }] }],
+                    generationConfig: { temperature: 0.1 } // baixa temperatura = mais preciso
+                  })
                 });
                 const data = await res.json();
-                const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+                const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
 
                 const cleanText = text.replace(/```json|```/g, '').trim();
-                const items: { seq: number; tipo: string; peso: number }[] = JSON.parse(cleanText);
+                const resultado: {
+                  items: { seq: number; banda1: number; banda2: number; fr: number; pesoLiquido: number; validado: boolean }[];
+                  totalRomaneio: number;
+                  somaCalculada: number;
+                  qtdeAnimais: number;
+                  validacaoTotal: boolean;
+                  observacoes: string;
+                } = JSON.parse(cleanText);
+
+                // Processar itens — usar banda1 como BANDA_A e banda2 como BANDA_B
                 let count = 0;
-                for (const item of items) {
-                  const typeMap: Record<string, StockType> = { 'BANDA_A': StockType.BANDA_A, 'BANDA_B': StockType.BANDA_B, 'INTEIRO': StockType.INTEIRO };
-                  const tipo = typeMap[item.tipo] || StockType.BANDA_A;
-                  const typeLabel = tipo === StockType.BANDA_A ? 'BANDA_A' : tipo === StockType.BANDA_B ? 'BANDA_B' : 'INTEIRO';
-                  const id_completo = `${selectedBatchId}-${String(item.seq).padStart(3, '0')}-${typeLabel}`;
-                  const newStockItem: StockItem = {
-                    id_completo,
+                const itensSuspeitos: number[] = [];
+
+                for (const item of resultado.items) {
+                  if (!item.validado) itensSuspeitos.push(item.seq);
+
+                  // BANDA_A
+                  const idA = `${selectedBatchId}-${String(item.seq).padStart(3, '0')}-BANDA_A`;
+                  setDraftItems(prev => [...prev.filter(p => p.id_completo !== idA), {
+                    id_completo: idA,
                     id_lote: selectedBatchId,
                     sequencia: item.seq,
-                    tipo,
-                    peso_entrada: item.peso,
+                    tipo: StockType.BANDA_A,
+                    peso_entrada: item.banda1,
                     status: 'DISPONIVEL',
                     data_entrada: (draftBatch || safeBatches.find(b => b.id_lote === selectedBatchId))?.data_recebimento || new Date().toISOString().split('T')[0]
-                  };
-                  setDraftItems(prev => [...prev.filter(p => p.id_completo !== id_completo), newStockItem]);
+                  } as StockItem]);
+
+                  // BANDA_B
+                  const idB = `${selectedBatchId}-${String(item.seq).padStart(3, '0')}-BANDA_B`;
+                  setDraftItems(prev => [...prev.filter(p => p.id_completo !== idB), {
+                    id_completo: idB,
+                    id_lote: selectedBatchId,
+                    sequencia: item.seq,
+                    tipo: StockType.BANDA_B,
+                    peso_entrada: item.banda2,
+                    status: 'DISPONIVEL',
+                    data_entrada: (draftBatch || safeBatches.find(b => b.id_lote === selectedBatchId))?.data_recebimento || new Date().toISOString().split('T')[0]
+                  } as StockItem]);
+
                   count++;
                 }
-                setRomaneioResult(`✅ ${count} peça(s) lidas e cadastradas automaticamente!\n\n${text}`);
+
+                const somaReal = resultado.items.reduce((s, i) => s + (i.banda1 + i.banda2 - i.fr), 0);
+                const diffTotal = Math.abs(somaReal - resultado.totalRomaneio);
+
+                let relatorio = `✅ ${resultado.qtdeAnimais} animais / ${count * 2} peças cadastradas!\n\n`;
+                relatorio += `🐂 Peso Líquido Total (romaneio): ${resultado.totalRomaneio?.toFixed(2) || 'N/D'} kg\n`;
+                relatorio += `🔢 Soma calculada: ${somaReal.toFixed(2)} kg\n`;
+                relatorio += resultado.validacaoTotal
+                  ? `✅ TOTAL VALIDADO — bate com o romaneio!\n`
+                  : `⚠️ DIFERENÇA DE ${diffTotal.toFixed(2)} kg no total — verifique!\n`;
+
+                if (itensSuspeitos.length > 0) {
+                  relatorio += `\n⚠️ Revisar manualmente: animais ${itensSuspeitos.join(', ')}\n`;
+                }
+                if (resultado.observacoes) relatorio += `\n📝 ${resultado.observacoes}`;
+
+                setRomaneioResult(relatorio);
                 setShowRomaneioModal(true);
+
               } catch (parseErr) {
                 setRomaneioResult(`⚠️ IA leu o romaneio mas não conseguiu extrair o JSON.\n\nTente uma foto mais nítida.`);
                 setShowRomaneioModal(true);
