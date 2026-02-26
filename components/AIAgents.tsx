@@ -13,6 +13,7 @@ import { sendWhatsAppMessage } from '../utils/whatsappAPI';
 import { INDUSTRY_BENCHMARKS_2026 } from '../constants';
 import { getAgentMemories, saveAgentMemory, formatMemoriesForPrompt, extractInsightsFromResponse, countAgentMemories } from '../services/agentMemoryService';
 import { AgentMemory } from '../types';
+import { parseActionsFromResponse, DetectedAction, generateWhatsAppLink } from '../services/actionParserService';
 
 // ═══ AI CASCADE — Gemini → Groq → Cerebras ═══
 interface CascadeProvider {
@@ -320,6 +321,9 @@ const AIAgents: React.FC<AIAgentsProps> = ({
     const [activeTab, setActiveTab] = useState<'overview' | 'alerts' | 'config'>('overview');
     const [agents] = useState<AgentConfig[]>(DEFAULT_AGENTS);
     const [agentResponse, setAgentResponse] = useState<string | null>(null);
+    const [detectedActions, setDetectedActions] = useState<DetectedAction[]>([]);
+    const [actionConfirm, setActionConfirm] = useState<DetectedAction | null>(null);
+    const [actionLog, setActionLog] = useState<{ action: string; time: Date }[]>([]);
     const [agentLoading, setAgentLoading] = useState(false);
     const [agentError, setAgentError] = useState<string | null>(null);
     const [consultingAgent, setConsultingAgent] = useState<AgentType | null>(null);
@@ -1384,6 +1388,13 @@ Organize em: 🤝 SAÚDE DO CLIENTE (NPS), 🥩 QUALIDADE PERCEBIDA, 🚚 FEEDBA
             const fullPrompt = `${prompts[agentType]}${baseRules}${memoryBlock} \n\n${dataPackets[agentType]}${newsBlock} \n\nINSTRUÇÃO CRÍTICA: A data de HOJE é ${new Date().toLocaleDateString('pt-BR')}.Use as NOTÍCIAS DO MERCADO acima como base para sua análise.NÃO invente notícias — cite apenas as que foram fornecidas.Se não houver notícias, diga que o feed não está disponível no momento.`;
             const { text, provider } = await runCascade(fullPrompt);
             setAgentResponse(`_via ${provider} | 🧠 ${(memoryCounts[agentType] || 0) + 1} memórias_\n\n${text} `);
+
+            // ⚡ FAÇÃO AUTÔNOMA — Detectar ações na resposta
+            try {
+                const detected = parseActionsFromResponse(text, clients);
+                setDetectedActions(detected);
+            } catch(e) { setDetectedActions([]); }
+
             setTimeout(() => agentResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
 
             // 🧠 SALVAR MEMÓRIA — Extrair insights e persistir
@@ -2298,6 +2309,63 @@ Regras:
                                     <div className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap font-medium">
                                         {agentResponse}
                                     </div>
+
+                                    {/* ⚡ AÇÕES AUTÔNOMAS — Botões detectádos pela IA */}
+                                    {detectedActions.length > 0 && (
+                                        <div className="mt-6 p-5 bg-white/5 rounded-2xl border border-white/10">
+                                            <div className="flex items-center gap-2 mb-4">
+                                                <Zap size={16} className="text-yellow-400" />
+                                                <span className="text-[10px] font-black text-yellow-400 uppercase tracking-widest">
+                                                    ⚡ {detectedActions.length} Ações Detectádas — Clique para Executar
+                                                </span>
+                                            </div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                {detectedActions.map(action => (
+                                                    <button
+                                                        key={action.id}
+                                                        onClick={() => {
+                                                            if (action.type === 'WHATSAPP' || action.type === 'REATIVAR' || action.type === 'COBRAR') {
+                                                                if (action.clientPhone) {
+                                                                    const msg = action.type === 'COBRAR'
+                                                                        ? `Olá ${action.clientName || ''}! Tudo bem? Passando para lembrar sobre o pagamento pendente. Podemos resolver hoje? 🙏`
+                                                                        : `Olá ${action.clientName || ''}! Temos novidades incríveis para você! 🔥 Quer saber das ofertas exclusivas desta semana?`;
+                                                                    window.open(generateWhatsAppLink(action.clientPhone, msg), '_blank');
+                                                                    setActionLog(prev => [...prev, { action: `${action.icon} ${action.label}`, time: new Date() }]);
+                                                                } else {
+                                                                    navigator.clipboard.writeText(action.description);
+                                                                    alert(`📋 Script copiado! Cole no WhatsApp de ${action.clientName || 'seu cliente'}.`);
+                                                                    setActionLog(prev => [...prev, { action: `📋 Copiou: ${action.label}`, time: new Date() }]);
+                                                                }
+                                                            } else if (action.type === 'PROMO') {
+                                                                navigator.clipboard.writeText(action.description);
+                                                                alert(`📢 Campanha copiada!\n\n"${action.description}"\n\nCole no WhatsApp ou redes sociais.`);
+                                                                setActionLog(prev => [...prev, { action: `📢 Campanha criada`, time: new Date() }]);
+                                                            } else if (action.type === 'RELATORIO') {
+                                                                navigator.clipboard.writeText(agentResponse || '');
+                                                                alert('📊 Relatório copiado para área de transferência!');
+                                                                setActionLog(prev => [...prev, { action: `📊 Relatório exportado`, time: new Date() }]);
+                                                            } else {
+                                                                navigator.clipboard.writeText(action.description);
+                                                                alert(`✅ Ação registrada: ${action.label}`);
+                                                                setActionLog(prev => [...prev, { action: action.label, time: new Date() }]);
+                                                            }
+                                                        }}
+                                                        className={`px-4 py-3 rounded-xl bg-gradient-to-r ${action.color} text-white text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-[1.02] transition-all shadow-lg`}
+                                                    >
+                                                        <span>{action.icon}</span>
+                                                        <span className="flex-1 text-left">{action.label}</span>
+                                                        {action.urgency === 'ALTA' && <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-[8px]">URGENTE</span>}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            {actionLog.length > 0 && (
+                                                <div className="mt-3 pt-3 border-t border-white/5">
+                                                    <p className="text-[9px] text-slate-500 font-bold">Histórico: {actionLog.slice(-3).map(l => `${l.action} (às ${l.time.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'})})`).join(' • ')}</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
                                     <div className="mt-8 flex flex-col sm:flex-row gap-3">
                                         <button
                                             onClick={() => handleWhatsAppAction(agentResponse)}
