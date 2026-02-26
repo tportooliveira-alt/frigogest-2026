@@ -61,20 +61,25 @@ const Batches: React.FC<BatchesProps> = ({
   const safeSuppliers = suppliers || [];
   const safeStock = stock || [];
 
-  const weightInputRef = useRef<HTMLInputElement>(null);
-  const sequenceInputRef = useRef<HTMLInputElement>(null);
+  const weightInputRef = useRef<HTMLInputElement | null>(null);
+  const sequenceInputRef = useRef<HTMLInputElement | null>(null);
+  const romaneioFileRef = useRef<HTMLInputElement>(null);
 
   const [showFinalizationModal, setShowFinalizationModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingBatch, setEditingBatch] = useState<Batch | null>(null);
   const [showSupplierSuggestions, setShowSupplierSuggestions] = useState(false);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
-  // Lote em rascunho - só vai pro Firebase quando finalizar
   const [draftBatch, setDraftBatch] = useState<Batch | null>(null);
   const [visionScanning, setVisionScanning] = useState(false);
   const [visionAuditStatus, setVisionAuditStatus] = useState<'PENDENTE' | 'APROVADO' | 'REVISAO'>('PENDENTE');
-  const [esgScore, setEsgScore] = useState(85); // Padrão inicial bom
+  const [esgScore, setEsgScore] = useState(85);
 
+  // ═══ LEITOR DE ROMANEIO IA ═══
+  const [romaneioReading, setRomaneioReading] = useState(false);
+  const [romaneioResult, setRomaneioResult] = useState<string>('');
+  const [showRomaneioModal, setShowRomaneioModal] = useState(false);
+  const [pesoUnit, setPesoUnit] = useState<'KG' | 'G'>('KG'); // Toggle KG / Gramas
 
   // --- VOZ DO CURRAL STATE ---
   const [isListening, setIsListening] = useState(false);
@@ -355,7 +360,9 @@ const Batches: React.FC<BatchesProps> = ({
     const seq = parseInt(newItemEntry.sequencia);
     const type = parseInt(newItemEntry.tipo) as StockType;
     const typeLabel = type === StockType.BANDA_A ? 'BANDA_A' : type === StockType.BANDA_B ? 'BANDA_B' : 'INTEIRO';
-    const weight = parseFloat(newItemEntry.peso.replace(',', '.'));
+    // CORREÇÃO: se modo GRAMAS, divide por 1000
+    const rawValue = parseFloat(newItemEntry.peso.replace(',', '.'));
+    const weight = pesoUnit === 'G' ? rawValue / 1000 : rawValue;
     const id_completo = `${selectedBatchId}-${String(seq).padStart(3, '0')}-${typeLabel}`;
 
 
@@ -736,6 +743,118 @@ const Batches: React.FC<BatchesProps> = ({
                     <ZapIcon size={18} /> Iniciar Recepção
                   </button>
 
+                  {/* ═══ LEITOR DE ROMANEIO IA ═══ */}
+                  <div className="border-2 border-dashed border-blue-200 rounded-2xl p-4 bg-blue-50/50">
+                    <div className="flex items-center gap-2 mb-3">
+                      <FileIcon size={15} className="text-blue-600" />
+                      <span className="text-[10px] font-black text-blue-800 uppercase tracking-widest">📄 Romaneio IA — Leitura Automática</span>
+                    </div>
+                    <p className="text-[9px] text-blue-600 mb-3">Envie o PDF ou foto do romaneio. A IA Gemini vai ler e cadastrar as peças automaticamente.</p>
+                    <input
+                      ref={romaneioFileRef}
+                      type="file"
+                      accept=".pdf,image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file || !selectedBatchId) return;
+                        setRomaneioReading(true);
+                        setRomaneioResult('');
+                        try {
+                          const reader = new FileReader();
+                          reader.onload = async (ev) => {
+                            const base64 = (ev.target?.result as string).split(',')[1];
+                            const mime = file.type || 'image/jpeg';
+                            const geminiKey = (import.meta as any).env.VITE_AI_API_KEY as string || '';
+                            if (!geminiKey) { alert('⚠️ Chave Gemini não configurada (VITE_AI_API_KEY)'); setRomaneioReading(false); return; }
+
+                            const prompt = `Você é um leitor especializado de romaneios de frigorífico.
+Analise este documento e extraia TODOS os itens de pesagem.
+Para cada item, identifique:
+- Número sequencial da carcaça/animal
+- Tipo: BANDA_A (traseira esquerda), BANDA_B (traseira direita), ou INTEIRO
+- Peso em kg (com decimais, exemplo: 125,4)
+
+Retorne APENAS no formato JSON puro, sem markdown:
+[
+  {"seq": 1, "tipo": "BANDA_A", "peso": 125.4},
+  {"seq": 1, "tipo": "BANDA_B", "peso": 123.8},
+  ...
+]
+
+Se não conseguir identificar claramente, ignore o item.
+Não inclua explicações. Retorne apenas o array JSON.`;
+
+                            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                contents: [{ parts: [
+                                  { text: prompt },
+                                  { inlineData: { mimeType: mime, data: base64 } }
+                                ]}]
+                              })
+                            });
+                            const data = await res.json();
+                            const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+                            setRomaneioResult(text);
+
+                            // Tentar parsear e auto-cadastrar
+                            try {
+                              const cleanText = text.replace(/```json|```/g, '').trim();
+                              const items: {seq: number; tipo: string; peso: number}[] = JSON.parse(cleanText);
+                              let count = 0;
+                              for (const item of items) {
+                                const typeMap: Record<string, StockType> = {'BANDA_A': StockType.BANDA_A, 'BANDA_B': StockType.BANDA_B, 'INTEIRO': StockType.INTEIRO};
+                                const tipo = typeMap[item.tipo] || StockType.BANDA_A;
+                                const typeLabel = tipo === StockType.BANDA_A ? 'BANDA_A' : tipo === StockType.BANDA_B ? 'BANDA_B' : 'INTEIRO';
+                                const id_completo = `${selectedBatchId}-${String(item.seq).padStart(3, '0')}-${typeLabel}`;
+                                const newStockItem: StockItem = {
+                                  id_completo,
+                                  id_lote: selectedBatchId,
+                                  sequencia: item.seq,
+                                  tipo,
+                                  peso_entrada: item.peso,
+                                  status: 'DISPONIVEL',
+                                  data_entrada: (draftBatch || safeBatches.find(b => b.id_lote === selectedBatchId))?.data_recebimento || new Date().toISOString().split('T')[0]
+                                };
+                                setDraftItems(prev => [...prev.filter(p => p.id_completo !== id_completo), newStockItem]);
+                                count++;
+                              }
+                              setRomaneioResult(`✅ ${count} peça(s) lidas e cadastradas automaticamente pelo Gemini!\n\n${text}`);
+                              setShowRomaneioModal(true);
+                            } catch (parseErr) {
+                              setRomaneioResult(`⚠️ IA leu o romaneio mas não conseguiu extrair estrutura JSON.\n\nResposta bruta:\n${text}`);
+                              setShowRomaneioModal(true);
+                            }
+                            setRomaneioReading(false);
+                          };
+                          reader.readAsDataURL(file);
+                        } catch (err: any) {
+                          setRomaneioReading(false);
+                          setRomaneioResult('❌ Erro: ' + err.message);
+                          setShowRomaneioModal(true);
+                        }
+                        e.target.value = '';
+                      }}
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={romaneioReading || !selectedBatchId}
+                        onClick={() => romaneioFileRef.current?.click()}
+                        className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+                      >
+                        {romaneioReading ? (
+                          <><span className="animate-spin">⚙️</span> Gemini Lendo...</>
+                        ) : (
+                          <><FileIcon size={13} /> 📤 Enviar Romaneio PDF/Foto</>
+                        )}
+                      </button>
+                    </div>
+                    {!selectedBatchId && <p className="text-[9px] text-amber-600 mt-2">⚠️ Inicie a recepção do lote primeiro</p>}
+                  </div>
+
                   {/* ═══ VISION AI SCANNER SIMULATOR ═══ */}
                   {!selectedBatch && (
                     <div className={`p-4 rounded-2xl border-2 border-dashed transition-all ${visionScanning ? 'bg-blue-50 border-blue-200 animate-pulse' : 'bg-slate-50 border-slate-200'}`}>
@@ -899,24 +1018,37 @@ const Batches: React.FC<BatchesProps> = ({
                       </div>
                     </div>
 
-                    {/* WEIGHT INPUT + TECLADO CALCULADORA */}
+                    {/* WEIGHT INPUT + TOGGLE KG/G + TECLADO */}
                     <div className="md:col-span-7">
                       <div className="text-[9px] font-black text-orange-400 uppercase tracking-widest mb-1 flex items-center justify-between">
-                        <span>Peso (KG)</span>
-                        {Recognition && (
+                        <span>Peso</span>
+                        <div className="flex items-center gap-2">
+                          {/* TOGGLE KG / GRAMAS */}
                           <button
                             type="button"
-                            onClick={toggleVoice}
-                            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[8px] transition-all ${isListening ? 'bg-rose-600 text-white animate-pulse' : 'bg-slate-700 text-slate-400 hover:text-white'
-                              }`}
+                            onClick={() => setPesoUnit(u => u === 'KG' ? 'G' : 'KG')}
+                            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[8px] font-black transition-all ${
+                              pesoUnit === 'G' ? 'bg-amber-500 text-white' : 'bg-slate-700 text-slate-400 hover:text-white'
+                            }`}
+                            title="Alternar entre KG e Gramas"
                           >
-                            {isListening ? <WavesIcon size={10} /> : <MicIcon size={10} />}
-                            {isListening ? 'OUVINDO' : 'VOZ'}
+                            {pesoUnit === 'KG' ? '⚖️ KG' : '🔢 GRAMAS'}
                           </button>
-                        )}
+                          {Recognition && (
+                            <button
+                              type="button"
+                              onClick={toggleVoice}
+                              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[8px] transition-all ${isListening ? 'bg-rose-600 text-white animate-pulse' : 'bg-slate-700 text-slate-400 hover:text-white'
+                                }`}
+                            >
+                              {isListening ? <WavesIcon size={10} /> : <MicIcon size={10} />}
+                              {isListening ? 'OUVINDO' : 'VOZ'}
+                            </button>
+                          )}
+                        </div>
                       </div>
 
-                      {/* DISPLAY DO PESO + BACKSPACE */}
+                      {/* DISPLAY — mostra valor e unidade atual */}
                       <div className="w-full bg-white rounded-xl py-3 px-4 shadow-xl mb-2 flex items-center justify-between min-h-[60px]">
                         <button
                           type="button"
@@ -926,7 +1058,13 @@ const Batches: React.FC<BatchesProps> = ({
                           ←
                         </button>
                         <div className="text-4xl md:text-5xl font-black text-slate-900 text-right flex-1 px-2">
-                          {newItemEntry.peso || '0'}<span className="text-xl text-slate-400 ml-1">kg</span>
+                          {newItemEntry.peso || '0'}
+                          <span className={`text-xl ml-1 ${pesoUnit === 'G' ? 'text-amber-500' : 'text-slate-400'}`}>{pesoUnit === 'G' ? 'g' : 'kg'}</span>
+                          {pesoUnit === 'G' && newItemEntry.peso && (
+                            <div className="text-xs text-amber-500 font-bold">
+                              = {(parseFloat(newItemEntry.peso.replace(',', '.')) / 1000).toFixed(3)} kg
+                            </div>
+                          )}
                         </div>
                         <button
                           type="button"
@@ -1401,8 +1539,40 @@ const Batches: React.FC<BatchesProps> = ({
           </div>
         )
       }
+
+      {/* MODAL RESULTADO ROMANEIO IA */}
+      {showRomaneioModal && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[300] flex items-center justify-center p-4 animate-reveal">
+          <div className="bg-white rounded-[36px] shadow-2xl max-w-lg w-full overflow-hidden">
+            <div className={`p-8 text-white text-center ${romaneioResult.startsWith('✅') ? 'bg-blue-600' : romaneioResult.startsWith('⚠️') ? 'bg-amber-500' : 'bg-rose-600'}`}>
+              <div className="text-5xl mb-3">
+                {romaneioResult.startsWith('✅') ? '📋' : romaneioResult.startsWith('⚠️') ? '🔍' : '❌'}
+              </div>
+              <h3 className="text-2xl font-black uppercase tracking-tight">
+                {romaneioResult.startsWith('✅') ? 'Romaneio Lido!' : romaneioResult.startsWith('⚠️') ? 'Revisão Necessária' : 'Erro na Leitura'}
+              </h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <pre className="text-xs text-slate-600 bg-slate-50 rounded-xl p-4 overflow-auto max-h-48 whitespace-pre-wrap">
+                {romaneioResult}
+              </pre>
+              <p className="text-[10px] text-slate-500 text-center">
+                {romaneioResult.startsWith('✅')
+                  ? 'As peças foram adicionadas ao rascunho. Revise e finalize o lote.'
+                  : 'Verifique o romaneio e cadastre manualmente se necessário.'}
+              </p>
+              <button
+                onClick={() => setShowRomaneioModal(false)}
+                className="w-full py-3 bg-slate-900 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-blue-600 transition-all"
+              >
+                OK, Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div >
   );
 };
 
-export default Batches;
+export default Batches;
