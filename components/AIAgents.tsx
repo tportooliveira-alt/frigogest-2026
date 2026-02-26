@@ -850,8 +850,10 @@ ${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}
 ÚLTIMAS 8 ENTREGAS (candidatos a pesquisa pós-venda — enviar entre 24h-48h após entrega):
 ${sales.filter(s => s.status_pagamento !== 'ESTORNADO').sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime()).slice(0, 8).map(s => {
                     const cli = clients.find(c => c.id_ferro === s.id_cliente);
+                    const item = stock.find(st => st.id_completo === s.id_completo);
+                    const tipoStr = item ? (item.tipo === 1 ? 'Inteiro' : item.tipo === 2 ? 'Dianteiro' : 'Traseiro') : 'N/A';
                     const dias = Math.floor((new Date().getTime() - new Date(s.data_venda).getTime()) / 86400000);
-                    return `- ${cli?.nome_social || s.id_cliente} | ${s.peso_real_saida}kg (${s.tipo === 1 ? 'Inteiro' : s.tipo === 2 ? 'Dianteiro' : 'Traseiro'}) | ${s.data_venda} (${dias}d atrás) | ${s.status_pagamento}`;
+                    return `- ${cli?.nome_social || s.id_cliente} | ${s.peso_real_saida}kg (${tipoStr}) | ${s.data_venda} (${dias}d atrás) | ${s.status_pagamento}`;
                 }).join('\n')}
 
 PERFIL COMPLETO DOS CLIENTES ATIVOS (para pesquisa personalizada):
