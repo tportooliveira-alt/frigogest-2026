@@ -525,6 +525,87 @@ const Batches: React.FC<BatchesProps> = ({
   return (
     <div className="p-4 md:p-10 min-h-screen bg-[#f8fafc] technical-grid animate-reveal pb-20">
 
+      {/* INPUT OCULTO DO ROMANEIO IA — sempre montado, fora de qualquer condicional */}
+      <input
+        ref={romaneioFileRef}
+        type="file"
+        accept=".pdf,image/*"
+        className="hidden"
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          if (!file || !selectedBatchId) {
+            alert('⚠️ Inicie a recepção do lote antes de enviar o romaneio.');
+            return;
+          }
+          setRomaneioReading(true);
+          setRomaneioResult('');
+          try {
+            const reader = new FileReader();
+            reader.onload = async (ev) => {
+              const base64 = (ev.target?.result as string).split(',')[1];
+              const mime = file.type || 'application/pdf';
+              const geminiKey = (import.meta as any).env.VITE_AI_API_KEY as string || '';
+              if (!geminiKey) { alert('⚠️ Chave Gemini não configurada'); setRomaneioReading(false); return; }
+
+              const prompt = `Você é um leitor especializado de romaneios de frigorífico brasileiro.
+Analise este documento e extraia TODOS os itens de pesagem.
+Para cada animal/carcaça identifique:
+- seq: número sequencial do animal
+- tipo: BANDA_A (traseiro esquerdo / Tr.Esq), BANDA_B (traseiro direito / Tr.Dir), ou INTEIRO
+- peso: peso em kg com decimais (ex: 125.4)
+
+Retorne APENAS JSON puro sem markdown:
+[{"seq":1,"tipo":"BANDA_A","peso":126.5},{"seq":1,"tipo":"BANDA_B","peso":125.9}]
+
+Não inclua explicações. Apenas o array JSON.`;
+
+              try {
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: mime, data: base64 } }] }] })
+                });
+                const data = await res.json();
+                const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+
+                const cleanText = text.replace(/```json|```/g, '').trim();
+                const items: { seq: number; tipo: string; peso: number }[] = JSON.parse(cleanText);
+                let count = 0;
+                for (const item of items) {
+                  const typeMap: Record<string, StockType> = { 'BANDA_A': StockType.BANDA_A, 'BANDA_B': StockType.BANDA_B, 'INTEIRO': StockType.INTEIRO };
+                  const tipo = typeMap[item.tipo] || StockType.BANDA_A;
+                  const typeLabel = tipo === StockType.BANDA_A ? 'BANDA_A' : tipo === StockType.BANDA_B ? 'BANDA_B' : 'INTEIRO';
+                  const id_completo = `${selectedBatchId}-${String(item.seq).padStart(3, '0')}-${typeLabel}`;
+                  const newStockItem: StockItem = {
+                    id_completo,
+                    id_lote: selectedBatchId,
+                    sequencia: item.seq,
+                    tipo,
+                    peso_entrada: item.peso,
+                    status: 'DISPONIVEL',
+                    data_entrada: (draftBatch || safeBatches.find(b => b.id_lote === selectedBatchId))?.data_recebimento || new Date().toISOString().split('T')[0]
+                  };
+                  setDraftItems(prev => [...prev.filter(p => p.id_completo !== id_completo), newStockItem]);
+                  count++;
+                }
+                setRomaneioResult(`✅ ${count} peça(s) lidas e cadastradas automaticamente!\n\n${text}`);
+                setShowRomaneioModal(true);
+              } catch (parseErr) {
+                setRomaneioResult(`⚠️ IA leu o romaneio mas não conseguiu extrair o JSON.\n\nTente uma foto mais nítida.`);
+                setShowRomaneioModal(true);
+              }
+              setRomaneioReading(false);
+            };
+            reader.readAsDataURL(file);
+          } catch (err: any) {
+            setRomaneioReading(false);
+            setRomaneioResult('❌ Erro: ' + err.message);
+            setShowRomaneioModal(true);
+          }
+          e.target.value = '';
+        }}
+      />
+
       {/* PREMIUM HEADER */}
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
         <div className="flex flex-col gap-4">
