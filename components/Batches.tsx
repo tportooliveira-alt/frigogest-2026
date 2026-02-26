@@ -803,117 +803,6 @@ const Batches: React.FC<BatchesProps> = ({
                       : 'Iniciar Recepção'}
                   </button>
 
-                  {/* ═══ LEITOR DE ROMANEIO IA ═══ */}
-                  <div className="border-2 border-dashed border-blue-200 rounded-2xl p-4 bg-blue-50/50">
-                    <div className="flex items-center gap-2 mb-3">
-                      <FileIcon size={15} className="text-blue-600" />
-                      <span className="text-[10px] font-black text-blue-800 uppercase tracking-widest">📄 Romaneio IA — Leitura Automática</span>
-                    </div>
-                    <p className="text-[9px] text-blue-600 mb-3">Envie o PDF ou foto do romaneio. A IA Gemini vai ler e cadastrar as peças automaticamente.</p>
-                    <input
-                      ref={romaneioFileRef}
-                      type="file"
-                      accept=".pdf,image/*"
-                      className="hidden"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (!file || !selectedBatchId) return;
-                        setRomaneioReading(true);
-                        setRomaneioResult('');
-                        try {
-                          const reader = new FileReader();
-                          reader.onload = async (ev) => {
-                            const base64 = (ev.target?.result as string).split(',')[1];
-                            const mime = file.type || 'image/jpeg';
-                            const geminiKey = (import.meta as any).env.VITE_AI_API_KEY as string || '';
-                            if (!geminiKey) { alert('⚠️ Chave Gemini não configurada (VITE_AI_API_KEY)'); setRomaneioReading(false); return; }
-
-                            const prompt = `Você é um leitor especializado de romaneios de frigorífico.
-Analise este documento e extraia TODOS os itens de pesagem.
-Para cada item, identifique:
-- Número sequencial da carcaça/animal
-- Tipo: BANDA_A (traseira esquerda), BANDA_B (traseira direita), ou INTEIRO
-- Peso em kg (com decimais, exemplo: 125,4)
-
-Retorne APENAS no formato JSON puro, sem markdown:
-[
-  {"seq": 1, "tipo": "BANDA_A", "peso": 125.4},
-  {"seq": 1, "tipo": "BANDA_B", "peso": 123.8},
-  ...
-]
-
-Se não conseguir identificar claramente, ignore o item.
-Não inclua explicações. Retorne apenas o array JSON.`;
-
-                            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                contents: [{ parts: [
-                                  { text: prompt },
-                                  { inlineData: { mimeType: mime, data: base64 } }
-                                ]}]
-                              })
-                            });
-                            const data = await res.json();
-                            const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-                            setRomaneioResult(text);
-
-                            // Tentar parsear e auto-cadastrar
-                            try {
-                              const cleanText = text.replace(/```json|```/g, '').trim();
-                              const items: {seq: number; tipo: string; peso: number}[] = JSON.parse(cleanText);
-                              let count = 0;
-                              for (const item of items) {
-                                const typeMap: Record<string, StockType> = {'BANDA_A': StockType.BANDA_A, 'BANDA_B': StockType.BANDA_B, 'INTEIRO': StockType.INTEIRO};
-                                const tipo = typeMap[item.tipo] || StockType.BANDA_A;
-                                const typeLabel = tipo === StockType.BANDA_A ? 'BANDA_A' : tipo === StockType.BANDA_B ? 'BANDA_B' : 'INTEIRO';
-                                const id_completo = `${selectedBatchId}-${String(item.seq).padStart(3, '0')}-${typeLabel}`;
-                                const newStockItem: StockItem = {
-                                  id_completo,
-                                  id_lote: selectedBatchId,
-                                  sequencia: item.seq,
-                                  tipo,
-                                  peso_entrada: item.peso,
-                                  status: 'DISPONIVEL',
-                                  data_entrada: (draftBatch || safeBatches.find(b => b.id_lote === selectedBatchId))?.data_recebimento || new Date().toISOString().split('T')[0]
-                                };
-                                setDraftItems(prev => [...prev.filter(p => p.id_completo !== id_completo), newStockItem]);
-                                count++;
-                              }
-                              setRomaneioResult(`✅ ${count} peça(s) lidas e cadastradas automaticamente pelo Gemini!\n\n${text}`);
-                              setShowRomaneioModal(true);
-                            } catch (parseErr) {
-                              setRomaneioResult(`⚠️ IA leu o romaneio mas não conseguiu extrair estrutura JSON.\n\nResposta bruta:\n${text}`);
-                              setShowRomaneioModal(true);
-                            }
-                            setRomaneioReading(false);
-                          };
-                          reader.readAsDataURL(file);
-                        } catch (err: any) {
-                          setRomaneioReading(false);
-                          setRomaneioResult('❌ Erro: ' + err.message);
-                          setShowRomaneioModal(true);
-                        }
-                        e.target.value = '';
-                      }}
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        disabled={romaneioReading || !selectedBatchId}
-                        onClick={() => romaneioFileRef.current?.click()}
-                        className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all disabled:opacity-40 flex items-center justify-center gap-2"
-                      >
-                        {romaneioReading ? (
-                          <><span className="animate-spin">⚙️</span> Gemini Lendo...</>
-                        ) : (
-                          <><FileIcon size={13} /> 📤 Enviar Romaneio PDF/Foto</>
-                        )}
-                      </button>
-                    </div>
-                    {!selectedBatchId && <p className="text-[9px] text-amber-600 mt-2">⚠️ Inicie a recepção do lote primeiro</p>}
-                  </div>
 
                   {/* ═══ VISION AI SCANNER SIMULATOR ═══ */}
                   {!selectedBatch && (
@@ -998,6 +887,33 @@ Não inclua explicações. Retorne apenas o array JSON.`;
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* ROMANEIO IA — aparece APÓS Iniciar Recepção */}
+            {!isBatchLocked && (
+              <div className="premium-card p-5">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center">
+                    <FileIcon size={16} />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">📄 Enviar Romaneio (PDF ou Foto)</h3>
+                    <p className="text-[9px] text-slate-400">A IA lê e cadastra todas as peças automaticamente</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={romaneioReading}
+                  onClick={() => romaneioFileRef.current?.click()}
+                  className="w-full py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-xl text-sm font-black uppercase tracking-wider transition-all disabled:opacity-40 flex items-center justify-center gap-2 shadow-lg shadow-blue-100"
+                >
+                  {romaneioReading ? (
+                    <><span className="animate-spin inline-block">⚙️</span> Gemini analisando...</>
+                  ) : (
+                    <><FileIcon size={16} /> 📤 Selecionar Romaneio PDF / Foto</>
+                  )}
+                </button>
               </div>
             )}
 
