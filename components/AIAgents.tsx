@@ -11,6 +11,8 @@ import { GoogleGenAI } from '@google/genai';
 import { fetchAllNews, formatNewsForAgent, NewsItem } from '../services/newsService';
 import { sendWhatsAppMessage } from '../utils/whatsappAPI';
 import { INDUSTRY_BENCHMARKS_2026 } from '../constants';
+import { getAgentMemories, saveAgentMemory, formatMemoriesForPrompt, extractInsightsFromResponse, countAgentMemories } from '../services/agentMemoryService';
+import { AgentMemory } from '../types';
 
 // ═══ AI CASCADE — Gemini → Groq → Cerebras ═══
 interface CascadeProvider {
@@ -325,6 +327,19 @@ const AIAgents: React.FC<AIAgentsProps> = ({
 
     // ═══ AUTOMAÇÃO — ESTADO POR AGENTE ═══
     const [agentDiagnostics, setAgentDiagnostics] = useState<Record<string, { text: string; provider: string; timestamp: Date }>>({});
+    const [memoryCounts, setMemoryCounts] = useState<Record<string, number>>({});
+
+    // Load memory counts on mount
+    useEffect(() => {
+        const loadCounts = async () => {
+            const counts: Record<string, number> = {};
+            for (const agent of agents) {
+                counts[agent.id] = await countAgentMemories(agent.id as any);
+            }
+            setMemoryCounts(counts);
+        };
+        loadCounts();
+    }, [agents]);
     const [bulkRunning, setBulkRunning] = useState(false);
     const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number; currentAgent: string }>({ current: 0, total: 0, currentAgent: '' });
     const [autoRunDone, setAutoRunDone] = useState(false);
@@ -1358,11 +1373,26 @@ Organize em: 🤝 SAÚDE DO CLIENTE (NPS), 🥩 QUALIDADE PERCEBIDA, 🚚 FEEDBA
 
             const baseRules = `\nRegras gerais: \n - Responda SEMPRE em português brasileiro\n - Seja DIRETO, PRÁTICO e ACIONÁVEL — fale como gerente de frigorífico, não como robô\n - Use emojis: 🔴 crítico, 🟡 atenção, 🟢 ok\n - Cite NÚMEROS ESPECÍFICOS do snapshot — nunca invente dados\n - Se não tiver dados suficientes, diga claramente o que falta\n - Máximo 600 palavras\n - Termine SEMPRE com 3 ações concretas numeradas: "FAÇA AGORA: 1. ... 2. ... 3. ..."`;
 
+            // 🧠 MEMÓRIA PERSISTENTE — Buscar e injetar memórias anteriores
+            let memoryBlock = '';
+            try {
+                const memories = await getAgentMemories(agentType as any);
+                memoryBlock = formatMemoriesForPrompt(memories);
+            } catch (e) { console.warn('[Memory] Falha ao buscar memórias:', e); }
+
             const newsBlock = marketNews.length > 0 ? `\n\n${formatNewsForAgent(marketNews)} ` : '';
-            const fullPrompt = `${prompts[agentType]}${baseRules} \n\n${dataPackets[agentType]}${newsBlock} \n\nINSTRUÇÃO CRÍTICA: A data de HOJE é ${new Date().toLocaleDateString('pt-BR')}.Use as NOTÍCIAS DO MERCADO acima como base para sua análise.NÃO invente notícias — cite apenas as que foram fornecidas.Se não houver notícias, diga que o feed não está disponível no momento.`;
+            const fullPrompt = `${prompts[agentType]}${baseRules}${memoryBlock} \n\n${dataPackets[agentType]}${newsBlock} \n\nINSTRUÇÃO CRÍTICA: A data de HOJE é ${new Date().toLocaleDateString('pt-BR')}.Use as NOTÍCIAS DO MERCADO acima como base para sua análise.NÃO invente notícias — cite apenas as que foram fornecidas.Se não houver notícias, diga que o feed não está disponível no momento.`;
             const { text, provider } = await runCascade(fullPrompt);
-            setAgentResponse(`_via ${provider} _\n\n${text} `);
+            setAgentResponse(`_via ${provider} | 🧠 ${(memoryCounts[agentType] || 0) + 1} memórias_\n\n${text} `);
             setTimeout(() => agentResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+
+            // 🧠 SALVAR MEMÓRIA — Extrair insights e persistir
+            try {
+                const agentAlerts = liveAlerts.filter(a => a.agent === agentType);
+                const memoryData = extractInsightsFromResponse(text, agentType as any, provider, agentAlerts.length, 'INDIVIDUAL');
+                await saveAgentMemory(memoryData);
+                setMemoryCounts(prev => ({ ...prev, [agentType]: (prev[agentType] || 0) + 1 }));
+            } catch (e) { console.warn('[Memory] Falha ao salvar memória:', e); }
         } catch (err: any) {
             setAgentError(err.message || 'Erro ao consultar a IA.');
         } finally {
@@ -1641,8 +1671,23 @@ Estrutura obrigatória:
 
 Responda em português BR, direto e prático.Use emojis.Cite números específicos.`;
 
-                const { text, provider } = await runCascade(miniPrompt);
+                // 🧠 MEMÓRIA — Buscar e injetar memórias neste agente
+                let memBlock = '';
+                try {
+                    const mems = await getAgentMemories(agent.id as any, 3);
+                    memBlock = formatMemoriesForPrompt(mems);
+                } catch(e) {}
+                const promptWithMemory = miniPrompt + memBlock;
+
+                const { text, provider } = await runCascade(promptWithMemory);
                 setAgentDiagnostics(prev => ({ ...prev, [agent.id]: { text, provider, timestamp: new Date() } }));
+
+                // 🧠 SALVAR MEMÓRIA do diagnóstico bulk
+                try {
+                    const memData = extractInsightsFromResponse(text, agent.id as any, provider, liveAlerts.filter(a => a.agent === agent.id).length, 'REUNIAO');
+                    await saveAgentMemory(memData);
+                    setMemoryCounts(prev => ({ ...prev, [agent.id]: (prev[agent.id] || 0) + 1 }));
+                } catch(e) {}
             } catch (err: any) {
                 setAgentDiagnostics(prev => ({ ...prev, [agent.id]: { text: `⚠️ Erro: ${err.message} `, provider: 'erro', timestamp: new Date() } }));
             }
@@ -2056,7 +2101,14 @@ Regras:
                                                     )}
                                                 </div>
                                             </div>
-                                            <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight mb-1">{agent.name}</h3>
+                                            <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight mb-1">
+                                                {agent.name}
+                                                {(memoryCounts[agent.id] || 0) > 0 && (
+                                                    <span className="ml-2 px-2 py-0.5 rounded-full bg-purple-100 text-purple-600 text-[8px] font-black align-middle" title={`${memoryCounts[agent.id]} memórias persistentes`}>
+                                                        🧠 {memoryCounts[agent.id]}
+                                                    </span>
+                                                )}
+                                            </h3>
                                             <p className="text-[11px] text-slate-400 leading-relaxed mb-4">{agent.description}</p>
                                             <div className="flex flex-wrap gap-1.5">
                                                 {agent.modules.slice(0, 4).map(m => (

@@ -291,3 +291,16 @@ export const BREED_REFERENCE_DATA: BreedReference[] = [
   { raca: 'Charolês × Nelore', rendimento_min: 53, rendimento_max: 57, quebra_resfriamento_min: 1.5, quebra_resfriamento_max: 2.0, peso_medio_min: 260, peso_medio_max: 300, observacoes: 'Alto rendimento muscular. EMBRAPA.' },
   { raca: 'Simental × Nelore', rendimento_min: 52, rendimento_max: 56, quebra_resfriamento_min: 1.5, quebra_resfriamento_max: 2.0, peso_medio_min: 250, peso_medio_max: 290, observacoes: 'Bom crescimento e precocidade. EMBRAPA.' },
 ];
+
+// ═══ MEMÓRIA PERSISTENTE DOS AGENTES IA ═══
+export interface AgentMemory {
+  id: string;
+  agentId: AgentType;
+  timestamp: string; // ISO date
+  summary: string; // Resumo da interação
+  keyInsights: string[]; // 3-5 insights extraídos
+  alertsFound: number; // Quantos alertas foram encontrados
+  actionsRecommended: string[]; // Ações sugeridas
+  provider: string; // Qual IA respondeu (Gemini, Groq, etc)
+  context: 'INDIVIDUAL' | 'REUNIAO' | 'CHAT'; // Tipo de interação
+}
