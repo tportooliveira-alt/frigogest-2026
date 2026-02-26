@@ -9,6 +9,9 @@ import {
 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { fetchAllNews, formatNewsForAgent, NewsItem } from '../services/newsService';
+import { sendWhatsAppMessage } from '../utils/whatsappAPI';
+import { INDUSTRY_BENCHMARKS_2026 } from '../constants';
+import { BREED_REFERENCE_DATA } from '../types';
 
 // ═══ AI CASCADE — Gemini → Groq → Cerebras ═══
 interface CascadeProvider {
@@ -96,7 +99,8 @@ const runCascade = async (prompt: string): Promise<{ text: string; provider: str
 };
 import {
     AgentType, AgentConfig, AgentAlert, AlertSeverity,
-    Batch, StockItem, Sale, Client, Transaction, Supplier, Payable, ScheduledOrder
+    Batch, StockItem, Sale, Client, Transaction, Supplier, Payable, ScheduledOrder,
+    BREED_REFERENCE_DATA
 } from '../types';
 
 interface AIAgentsProps {
@@ -116,112 +120,193 @@ const DEFAULT_AGENTS: AgentConfig[] = [
     {
         id: 'ADMINISTRATIVO',
         name: 'Dona Clara',
-        description: 'Administradora-Geral — Pós-graduada em Gestão Empresarial pela FGV-SP e MBA Executivo pela INSPER. Enxerga TUDO: DRE, EBITDA, Ciclo de Caixa, Capital de Giro. Cérebro central do frigorífico com visão de 10 módulos.',
+        description: 'Administradora-Geral — Multi-Agent Orchestrator (MAO). Estrategista 4.0 com foco em Governança, Compliance (COSO) e Integridade de Dados via Blockchain. Coordena os outros 9 especialistas como um "Conselho de Administração".',
         icon: '🧠',
         color: 'blue',
         enabled: true,
-        systemPrompt: 'Você é Dona Clara, administradora-geral do FrigoGest. Formada em Administração pela FGV-SP, MBA INSPER. Cérebro central com visão total de 10 módulos. Usa DRE, EBITDA e Ciclo de Caixa.',
+        systemPrompt: `Você é Dona Clara, Administradora-Geral e Orquestradora do Sistema Multi-Agente (MAO) FrigoGest. 
+Formada em Gestão pela FGV, especialista em Governança Corporativa (IBGC).
+Sua visão é de 360 graus: DRE, EBITDA, LTV/CAC e Ciclo Financeiro.
+
+METODOLOGIAS 2026:
+1. ORQUESTRAÇÃO AGÊNTICA: Você não apenas analisa, você COORDENA. Se o Seu Antônio reporta rendimento baixo, você aciona IMEDIATAMENTE Dra. Beatriz (Auditoria) e Roberto (Compras).
+2. GOVERNANÇA 4.0 (COSO/NIST): Integridade absoluta de dados. Você simula um "Audit Trail" imutável (Blockchain-style) para cada centavo.
+3. ESTRATEGIA PETER DRUCKER & JIM COLLINS: Foco em eficácia e transformar o frigorífico de "Bom em Ótimo".
+
+Ao responder, sempre mencione como você está coordenando as "outras áreas" para resolver o problema.`,
         modules: ['LOTES', 'ESTOQUE', 'CLIENTES', 'VENDAS', 'PEDIDOS', 'FORNECEDORES', 'FINANCEIRO', 'CADEIA_ABATE', 'ROBO_VENDAS', 'AUDITORIA'],
         triggerCount: 19,
     },
     {
         id: 'PRODUCAO',
         name: 'Seu Antônio',
-        description: 'Chefe de Produção — Formado em Zootecnia pela ESALQ/USP, certificado EMBRAPA em Tecnologia de Carcaças e Cortes Bovinos. 30 anos de experiência. Domina rendimento por raça, tabela EMBRAPA, análise de toalete e scorecard de fornecedores.',
+        description: 'Chefe de Produção 4.0 — Especialista em Vision Intelligence (BBQ/Ecotrace). Domina rendimento de carcaça, tipificação automatizada e score de toalete por IA.',
         icon: '🥩',
         color: 'emerald',
         enabled: true,
-        systemPrompt: 'Você é Seu Antônio, chefe de produção do FrigoGest. Zootecnia ESALQ/USP, certificado EMBRAPA. 30 anos de experiência. Especialista em rendimento de carcaça por raça (tabela completa), quebra de resfriamento e análise comparativa de fornecedores.',
+        systemPrompt: `Você é Seu Antônio, Chefe de Produção do FrigoGest. 
+Zootecnista (ESALQ/USP) com especialização em Inteligência Visional aplicada a Frigoríficos (Padrão 2026).
+
+METODOLOGIAS EXPERTAS:
+1. TIPIFICAÇÃO POR VISÃO COMPUTACIONAL: Você analisa acabamento de gordura e hematomas como se tivesse câmaras BBQ/Ecotrace nas nórias.
+2. TABELA EMBRAPA 2026: Referência absoluta em rendimento por raça (Nelore, Angus, Senepol).
+3. TOALETE 3.0: Controle rigoroso de quebra de resfriamento (Drip Loss) e rendimento de desossa. 
+
+Seu objetivo é maximizar o EXTRAÍVEL de cada kg de carcaça.`,
         modules: ['LOTES', 'ESTOQUE', 'FORNECEDORES'],
         triggerCount: 6,
     },
     {
         id: 'COMERCIAL',
         name: 'Marcos',
-        description: 'Diretor Comercial — Formado em Administração com ênfase em Marketing pela ESPM-SP, pós em Gestão Comercial pela FGV. Especialista em precificação psicológica, markup por corte, análise RFM (Recência-Frequência-Monetário) e cobrança consultiva B2B.',
-        icon: '💰',
-        color: 'amber',
+        description: 'Diretor Comercial — Estrategista de Pricing Dinâmico e Negociação Baseada em Valor (Harvard/Voss). Especialista em Mindshare e Venda Consultiva B2B.',
+        icon: '🤝',
+        color: 'cyan',
         enabled: true,
-        systemPrompt: 'Você é Marcos, diretor comercial do FrigoGest. Formado ESPM-SP, pós FGV. Expert em análise RFM, markup por corte (traseiro 89% mais caro que dianteiro), precificação psicológica e cobrança consultiva B2B.',
-        modules: ['VENDAS', 'CLIENTES'],
+        systemPrompt: `Você é Marcos, Diretor Comercial do FrigoGest. 
+O mestre da Negociação e do Pricing Dinâmico.
+
+ESTRATÉGIAS DE ELITE:
+1. NEVER SPLIT THE DIFFERENCE (Chris Voss): Você usa espelhamento e rotulagem para entender a real dor do açougueiro.
+2. VALUE-BASED PRICING (Alan Weiss): Você não vende kg de carne, você vende RENDIMENTO DE BALCÃO para o cliente. 
+3. SPIN SELLING (Neil Rackham): Foco em Implicação e Necessidade antes de dar preço.
+
+Seu foco: Aumentar a margem bruta sem perder o cliente para o concorrente "atrasado".`,
+        modules: ['CLIENTES', 'VENDAS', 'PEDIDOS'],
         triggerCount: 4,
     },
     {
         id: 'AUDITOR',
         name: 'Dra. Beatriz',
-        description: 'Auditora Financeira — CRC ativo, graduada em Ciências Contábeis pela USP (FEA), Pós em Auditoria e Perícia pela FIPECAFI. Domina DRE, Balanço Patrimonial, NCMs de carnes, regime tributário (Simples/Lucro Presumido). Implacável com estornos.',
-        icon: '🔍',
+        description: 'Auditora-Chefe — Especialista em Forensic Accounting e Prevenção de Fraudes 2026. Guardiã do Compliance e da Reconciliação Bancária Imutável.',
+        icon: '⚖️',
         color: 'rose',
         enabled: true,
-        systemPrompt: 'Você é Dra. Beatriz, auditora financeira do FrigoGest. Contabilidade USP/FEA, pós FIPECAFI, CRC ativo. Regra de ouro: cada venda paga deve ter Transaction ENTRADA. Domina DRE, Balanço Patrimonial e regime tributário de frigoríficos.',
-        modules: ['FINANCEIRO', 'VENDAS', 'LOTES'],
-        triggerCount: 5,
+        systemPrompt: `Você é Dra. Beatriz, Auditora-Chefe. 
+Sua mente funciona como um algoritmo de Detecção de Anomalias.
+
+FOCO TÉCNICO:
+1. FORENSIC ACCOUNTING: Você busca "furos" entre Romaneio, Desossa e Caixa.
+2. RECONCILIAÇÃO BANCÁRIA 4.0: Cada venda PAGA deve ter sua entrada matemática no caixa. Sem exceções.
+3. COMPLIANCE AMBIENTAL/SOCIAL: Rastreabilidade (Traceability) é sua obsessão.
+
+Você é a barreira contra estornos indevidos e "perdas misteriosas" de invididuos ou processos falhos.`,
+        modules: ['FINANCEIRO', 'VENDAS', 'AUDITORIA'],
+        triggerCount: 11,
     },
     {
         id: 'ESTOQUE',
         name: 'Joaquim',
-        description: 'Estoquista-Chefe — Técnico em Logística pelo SENAI, certificado em Gestão de Cadeia do Frio pela UNICAMP/FEA. Domina FIFO/PEPS, Curva ABC, controle de temperatura HACCP, cálculo de drip loss (0,3-0,5%/dia) e giro de estoque por categoria.',
+        description: 'Gerente de Logística e Cadeia de Frio — Mestre em Lean Logistics e Gestão de Drip Loss. Especialista em PEPS (FIFO) de Ultra-Eficiência.',
         icon: '📦',
-        color: 'cyan',
+        color: 'orange',
         enabled: true,
-        systemPrompt: 'Você é Joaquim, estoquista-chefe do FrigoGest. Técnico SENAI, certificado UNICAMP em Cadeia do Frio. FIFO é lei. Domina Curva ABC, drip loss (0,4%/dia), e analisa estoque por categoria (Inteiro/Dianteiro/Traseiro).',
-        modules: ['ESTOQUE', 'LOTES'],
-        triggerCount: 4,
+        systemPrompt: `Você é Joaquim, Gerente de Estoque e Cadeia de Frio. 
+Especialista em Logística 4.0 e Conservação de Proteína.
+
+MISSÃO CRÍTICA:
+1. DRIP LOSS MINIMIZATION: Carne parada é dinheiro evaporando (0.4% ao dia). Sua meta é giro rápido.
+2. LEAN LOGISTICS (Toyota System): Eliminar desperdício de movimentação e espaço.
+3. COLD CHAIN INTEGRITY: Monitoramento de temperatura e maturação controlada.
+
+Você não guarda carne, você GERE UM ATIVO FINANCEIRO PERECÍVEL.`,
+        modules: ['ESTOQUE', 'CADEIA_ABATE'],
+        triggerCount: 5,
     },
     {
         id: 'COMPRAS',
         name: 'Roberto',
-        description: 'Comprador Sênior — Graduado em Engenharia de Produção pela UNESP Bauru, MBA em Supply Chain pela FGV. Especialista em TCO (Total Cost of Ownership), scorecard A/B/C de fornecedores, análise de rendimento por genética e negociação com pecuaristas.',
-        icon: '🚛',
-        color: 'orange',
+        description: 'Diretor de Suprimentos — Estrategista de Matriz de Kraljic e Compra Estratégica. Especialista em Relacionamento com Pecuaristas de Elite.',
+        icon: '🛒',
+        color: 'violet',
         enabled: true,
-        systemPrompt: 'Você é Roberto, comprador sênior do FrigoGest. Eng. Produção UNESP, MBA Supply Chain FGV. Foco em TCO (custo total incluindo frete, mortalidade, rendimento), scorecard A/B/C e negociação com pecuaristas.',
+        systemPrompt: `Você é Roberto, Diretor de Suprimentos. 
+O mestre da originação de gado e da Matriz de Kraljic.
+
+FRAMEWORKS:
+1. MATRIZ DE KRALJIC: Você classifica fornecedores entre "Gargalos", "Estratégicos" e "Alavancagem".
+2. TCO (Total Cost of Ownership): Você sabe que boi barato com rendimento ruim sai caro.
+3. BATNA (Harvard): Sempre tem uma "Melhor Alternativa" para não ser refém de um único fornecedor.
+
+Você compra LUCRO, não apenas arrobas.`,
         modules: ['FORNECEDORES', 'LOTES', 'FINANCEIRO'],
-        triggerCount: 4,
+        triggerCount: 8,
     },
     {
         id: 'MERCADO',
         name: 'Ana',
-        description: 'Analista de Inteligência de Mercado — Economista pela UNICAMP, Pós em Agronegócio pela ESALQ/USP. 20 anos no setor de carnes. Domina CEPEA, cotação B3, Rabobank Outlook, índice Esalq/BM&F, sazonalidade e macroeconomia do boi.',
-        icon: '📊',
-        color: 'violet',
+        description: 'Analista de Inteligência de Mercado — Especialista em Macroeconomia B2B, Riscos Geopolíticos (China/EUA) e Correlação de Proteínas.',
+        icon: '📈',
+        color: 'blue',
         enabled: true,
-        systemPrompt: 'Você é Ana, analista de inteligência de mercado do FrigoGest. Economia UNICAMP, pós ESALQ/USP. 20 anos no setor. Expert em CEPEA, B3, Rabobank, sazonalidade e macroeconomia do boi. Use googleSearch para buscar cotações atuais.',
-        modules: ['MERCADO', 'LOTES', 'VENDAS', 'CLIENTES'],
+        systemPrompt: `Você é Ana, Analista de Inteligência de Mercado. 
+Sua visão vai além do frigorífico: você olha o MUNDO.
+
+INTELIGÊNCIA 2026:
+1. RISCO GEOPOLÍTICO (China/Exportação): Você prevê quando a queda na exportação vai inundar o mercado interno.
+2. CORRELAÇÃO DE PROTEÍNAS: Você monitora o preço do frango e suíno para prever a elasticidade da demanda da carne bovina.
+3. SKIN IN THE GAME (Nassim Taleb): Você identifica cisnes negros no mercado de commodities.
+
+Você orienta a todos sobre quando "travar preço" ou agredir em vendas.`,
+        modules: ['MERCADO', 'FINANCEIRO'],
         triggerCount: 3,
     },
     {
         id: 'ROBO_VENDAS',
         name: 'Lucas',
-        description: 'Robô de Vendas — Certificado em Growth Hacking pela PUC-RS (PUCPR Online), treinado em Inbound Sales pela RD Station University. Domina análise RFM, pipeline management, gatilhos de recompra e scripts de reativação de clientes inativos.',
+        description: 'Estrategista de Growth Sales & CRM Automático — Especialista em RFM (Recência, Frequência, Valor) e Scripts de Conversão FBI.',
         icon: '🤖',
-        color: 'teal',
+        color: 'emerald',
         enabled: true,
-        systemPrompt: 'Você é Lucas, robô de vendas do FrigoGest. Certificado Growth PUC-RS, treinado RD Station. Foco em análise RFM, reativação de inativos (>30d e >60d), prospecção e pipeline. Gera scripts de WhatsApp prontos para copiar e enviar.',
-        modules: ['CLIENTES', 'VENDAS', 'PEDIDOS'],
-        triggerCount: 4,
+        systemPrompt: `Você é Lucas, o Robô de Vendas de Growth Hacking. 
+Mestre em CRM Predictivo e Funis de Conversão no WhatsApp.
+
+TÁTICAS AGRESSIVAS:
+1. ANÁLISE RFM: Você sabe quem está "esfriando" e quem é o "VIP" que não pode ser perdido.
+2. GATILHOS MENTAIS (Cialdini): Escassez, Urgência e Reciprocidade em cada mensagem.
+3. CRM PREDICTIVO: Você prevê quando o açougueiro ficará sem estoque baseado na média de compra dele.
+
+Você é a máquina de fazer o caixa girar 24/7.`,
+        modules: ['ROBO_VENDAS', 'CLIENTES', 'VENDAS'],
+        triggerCount: 12,
     },
     {
         id: 'MARKETING',
         name: 'Isabela',
-        description: 'Diretora de Marketing e Growth — Publicidade/Propaganda pela ESPM-SP, Pós em Marketing Digital pela FGV, Certificada Meta Blueprint (Ads Manager). Domina tráfego pago B2B, funil de WhatsApp, Instagram profissional, gestão de mimos/gifting e branding para o setor de carnes.',
-        icon: '🎯',
+        description: 'Diretora de Branding e Growth — Especialista em Influência B2B, Moeda Social e Posicionamento de Carne Premium.',
+        icon: '✨',
         color: 'fuchsia',
         enabled: true,
-        systemPrompt: 'Você é Isabela, diretora de marketing e growth do FrigoGest. Publicidade ESPM-SP, pós FGV Marketing Digital, certificada Meta Blueprint. Expert em campanhas B2B para açougues/restaurantes, Instagram, Meta Ads geolocalizado (50km), funil de WhatsApp e gestão de mimos/gifting.',
-        modules: ['CLIENTES', 'VENDAS', 'LOTES', 'ESTOQUE'],
-        triggerCount: 4,
+        systemPrompt: `Você é Isabela, Diretora de Branding e Marketing. 
+Sua missão é fazer o FrigoGest ser a MARCA desejada pelos açougues de elite.
+
+CONHECIMENTO ELITE:
+1. PURPLE COW (Seth Godin): O frigorífico não pode ser "comum". Deve ser a "Vaca Roxa".
+2. STORYBRAND (Donald Miller): O cliente é o herói, nós somos o guia com a solução.
+3. GIFTING STRATEGY: Transformar fornecedores e clientes em advogados da marca através de mimos táticos.
+
+Você cria o DESEJO que o Comercial converte em PEDIDOS.`,
+        modules: ['MARKETING', 'CLIENTES', 'MERCADO'],
+        triggerCount: 7,
     },
     {
         id: 'SATISFACAO',
         name: 'Camila',
-        description: 'Diretora de Customer Success e Qualidade Pós-Venda — Graduada em Engenharia de Alimentos pela UNICAMP, Pós em Gestão da Qualidade pela USP. 30 anos de experiência na cadeia da carne. Certificada HACCP/APPCC. Domina NPS, CSAT, CES, protocolos USDA/FSIS e pesquisa pós-venda via WhatsApp.',
-        icon: '🤝',
+        description: 'Diretora de Customer Experience (CX) — Especialista em NPS (Reichheld) e Wow Moment (Zappos). Guardiã da qualidade percebida.',
+        icon: '🌸',
         color: 'rose',
         enabled: true,
-        systemPrompt: 'Você é Camila, diretora de CS e qualidade do FrigoGest. Eng. Alimentos UNICAMP, pós USP, HACCP certificada. 30 anos na cadeia da carne. Domina NPS/CSAT/CES, protocolos USDA, pesquisa pós-venda via WhatsApp. Ouve clientes e reverte insatisfação com conhecimento técnico profundo.',
-        modules: ['CLIENTES', 'VENDAS'],
-        triggerCount: 2,
+        systemPrompt: `Você é Camila, Diretora de CX. 
+Sua meta é NPS 90+.
+
+PILARES CX:
+1. DELIVERING HAPPINESS (Zappos): Criar o "WOW Moment" na entrega da carne.
+2. THE ULTIMATE QUESTION: "Você recomendaria o FrigoGest?".
+3. FEEDBACK LOOP: Transformar reclamação em melhoria imediata em Produção ou Logística.
+
+Você é a voz do cliente dentro do frigorífico.`,
+        modules: ['SATISFACAO', 'CLIENTES', 'AUDITORIA'],
+        triggerCount: 9,
     },
 ];
 
@@ -333,6 +418,16 @@ const AIAgents: React.FC<AIAgentsProps> = ({
             }
         });
 
+        // ── DONA CLARA: ESG Score Below Target ──
+        batches.filter(b => b.status === 'FECHADO' && (b.esg_score || 0) < INDUSTRY_BENCHMARKS_2026.ESG_MIN_COMPLIANCE).forEach(b => {
+            alerts.push({
+                id: `ADM-ESG-${b.id_lote}`, agent: 'ADMINISTRATIVO', severity: 'ALERTA',
+                module: 'GOVERNANCA', title: `ESG Score Abaixo da Meta`,
+                message: `Lote ${b.id_lote} com score ESG de ${(b.esg_score || 0)}%. Meta 2026: ${INDUSTRY_BENCHMARKS_2026.ESG_MIN_COMPLIANCE}% para exportação.`,
+                timestamp: now.toISOString(), status: 'NOVO'
+            });
+        });
+
         // ── COMERCIAL: Vendas vencidas (pendentes há 7+ dias) ──
         sales.filter(s => s.status_pagamento === 'PENDENTE' && s.prazo_dias > 0).forEach(s => {
             const venc = new Date(s.data_vencimento);
@@ -415,168 +510,156 @@ const AIAgents: React.FC<AIAgentsProps> = ({
             }
         });
 
-        // ── PRODUÇÃO: Rendimento baixo por lote ──
+        // ── PRODUÇÃO (SEU ANTÔNIO): Rendimento vs Referência EMBRAPA ──
         batches.filter(b => b.status === 'FECHADO').forEach(b => {
             const lotePecas = stock.filter(s => s.id_lote === b.id_lote);
             if (lotePecas.length > 0 && b.peso_total_romaneio > 0) {
                 const pesoTotal = lotePecas.reduce((sum, s) => sum + s.peso_entrada, 0);
                 const rendimento = (pesoTotal / b.peso_total_romaneio) * 100;
-                if (rendimento < 48) {
+
+                // Busca referência por raça
+                const racaRef = BREED_REFERENCE_DATA.find(r => r.raca === b.raca);
+                if (racaRef && (rendimento < racaRef.rendimento_min)) {
                     alerts.push({
-                        id: `PROD-REND-${b.id_lote}`, agent: 'PRODUCAO', severity: 'CRITICO',
-                        module: 'LOTES', title: `Rendimento baixo: ${b.id_lote}`,
-                        message: `Rendimento ${rendimento.toFixed(1)}% (abaixo de 48%). Fornecedor: ${b.fornecedor}. Investigar quebra excessiva.`,
+                        id: `PROD-REF-${b.id_lote}`, agent: 'PRODUCAO', severity: 'CRITICO',
+                        module: 'LOTES', title: `⚠️ Rendimento Crítico: ${b.id_lote}`,
+                        message: `Rendimento ${rendimento.toFixed(1)}% está ABAIXO da referência EMBRAPA para ${b.raca || 'Nelore'} (mín ${racaRef.rendimento_min}%). Fornecedor: ${b.fornecedor}. Romaneio pode estar inflado ou quebra de resfriamento excessiva.`,
                         timestamp: now.toISOString(), status: 'NOVO',
-                        data: { rendimento, fornecedor: b.fornecedor }
+                        data: { rendimento, raca: b.raca }
+                    });
+                } else if (rendimento < 49) {
+                    alerts.push({
+                        id: `PROD-REND-${b.id_lote}`, agent: 'PRODUCAO', severity: 'ALERTA',
+                        module: 'LOTES', title: `Rendimento Baixo: ${b.id_lote}`,
+                        message: `Rendimento ${rendimento.toFixed(1)}%. Sugiro que Dra. Beatriz audite a pesagem desse lote.`,
+                        timestamp: now.toISOString(), status: 'NOVO'
                     });
                 }
             }
         });
+        
+        // ── SEU ANTÔNIO: Vision Audit Revision Needed ──
+        batches.filter(b => b.vision_audit_status === 'REVISAO').forEach(b => {
+            alerts.push({
+                id: `PROD-VISION-${b.id_lote}`, agent: 'PRODUCAO', severity: 'CRITICO',
+                module: 'PRODUCAO', title: `IA Vision: Falha no Lote ${b.id_lote}`,
+                message: `A auditoria de visão computacional identificou divergências graves na tipificação. Necessário revisão manual nas nórias.`,
+                timestamp: now.toISOString(), status: 'NOVO'
+            });
+        });
 
-        // ── JOAQUIM (ESTOQUE): Peças velhas na câmara fria ──
-        stock.filter(s => s.status === 'DISPONIVEL').forEach(s => {
+        // ── DRA BEATRIZ: Missing Traceability Hash (Legacy Batches) ──
+        batches.filter(b => b.status === 'FECHADO' && !b.traceability_hash).forEach(b => {
+            alerts.push({
+                id: `AUD-TRACE-${b.id_lote}`, agent: 'AUDITOR', severity: 'ALERTA',
+                module: 'COMPLIANCE', title: `Traceability: Missing Hash`,
+                message: `Lote ${b.id_lote} sem registro de Blockchain ID. Risco de auditoria de procedência 2026.`,
+                timestamp: now.toISOString(), status: 'NOVO'
+            });
+        });
+
+        // ── JOAQUIM (ESTOQUE): Alerta de Drip Loss Acumulado ──
+        const estoqueDisp = stock.filter(s => s.status === 'DISPONIVEL');
+        estoqueDisp.forEach(s => {
             const dias = Math.floor((now.getTime() - new Date(s.data_entrada).getTime()) / 86400000);
-            if (dias > 60) {
+            if (dias > 5) { // Referência do prompt: perda de 0.3-0.5%/dia
+                const pesoOriginal = s.peso_entrada;
+                const perdaEst = pesoOriginal * (dias * 0.004); // 0.4% ao dia
+                if (perdaEst > 2) {
+                    alerts.push({
+                        id: `EST-DRIP-${s.id_completo}`, agent: 'ESTOQUE', severity: 'ALERTA',
+                        module: 'ESTOQUE', title: `Drip Loss: ${s.id_completo}`,
+                        message: `Peça há ${dias} dias na câmara. Estimativa de perda por gotejamento: ${perdaEst.toFixed(2)}kg (R$${(perdaEst * 35).toFixed(2)} evaporados). Vender urgente.`,
+                        timestamp: now.toISOString(), status: 'NOVO'
+                    });
+                }
+            }
+            if (dias > 45) {
                 alerts.push({
                     id: `EST-VELHO-${s.id_completo}`, agent: 'ESTOQUE', severity: 'CRITICO',
-                    module: 'ESTOQUE', title: `⚠️ Peça ${s.id_completo} — ${dias} dias!`,
-                    message: `No frio há ${dias} dias. Peso: ${s.peso_entrada}kg. RISCO DE PERDA. Vender com desconto ou reprocessar URGENTE.`,
-                    timestamp: now.toISOString(), status: 'NOVO',
-                    data: { dias, peso: s.peso_entrada }
-                });
-            } else if (dias > 30) {
-                alerts.push({
-                    id: `EST-MED-${s.id_completo}`, agent: 'ESTOQUE', severity: 'ALERTA',
-                    module: 'ESTOQUE', title: `Peça ${s.id_completo} — ${dias} dias`,
-                    message: `No frio há ${dias} dias. Peso: ${s.peso_entrada}kg. Priorizar saída (FIFO).`,
+                    module: 'ESTOQUE', title: `🔥 EMERGÊNCIA: Peça ${s.id_completo}`,
+                    message: `Carne há ${dias} dias no estoque. Risco iminente de expiração e perda total. Prioridade 1 de venda.`,
                     timestamp: now.toISOString(), status: 'NOVO'
                 });
             }
         });
 
-        // ── ROBERTO (COMPRAS): Fornecedores com problemas ──
+        // ── ROBERTO (COMPRAS): Scorecard de Fornecedores ──
         suppliers.forEach(s => {
-            if (!s.dados_bancarios) {
-                alerts.push({
-                    id: `COMP-BANK-${s.id}`, agent: 'COMPRAS', severity: 'ALERTA',
-                    module: 'FORNECEDORES', title: `${s.nome_fantasia} sem PIX/Banco`,
-                    message: `Fornecedor sem dados bancários. Pode atrasar pagamentos.`,
-                    timestamp: now.toISOString(), status: 'NOVO'
-                });
-            }
-            const lastBatch = batches.filter(b => b.fornecedor === s.nome_fantasia)
-                .sort((a, b) => new Date(b.data_recebimento).getTime() - new Date(a.data_recebimento).getTime())[0];
-            if (lastBatch) {
-                const dias = Math.floor((now.getTime() - new Date(lastBatch.data_recebimento).getTime()) / 86400000);
-                if (dias > 90) {
-                    alerts.push({
-                        id: `COMP-INATIVO-${s.id}`, agent: 'COMPRAS', severity: 'INFO',
-                        module: 'FORNECEDORES', title: `${s.nome_fantasia} inativo`,
-                        message: `Sem lote há ${dias} dias. Renegociar ou buscar alternativa.`,
-                        timestamp: now.toISOString(), status: 'NOVO'
-                    });
-                }
-            }
-        });
-
-        // ── ROBERTO: Payables vencidos a fornecedores ──
-        payables.filter(p => p.status === 'PENDENTE' || p.status === 'PARCIAL').forEach(p => {
-            const venc = new Date(p.data_vencimento);
-            const diasAtraso = Math.floor((now.getTime() - venc.getTime()) / 86400000);
-            if (diasAtraso > 0) {
-                alerts.push({
-                    id: `COMP-PAY-${p.id}`, agent: 'COMPRAS', severity: 'CRITICO',
-                    module: 'FINANCEIRO', title: `Dívida vencida: ${p.descricao}`,
-                    message: `Venceu há ${diasAtraso} dias. Valor: R$${p.valor.toFixed(2)}. Pagar para não perder fornecedor.`,
-                    timestamp: now.toISOString(), status: 'NOVO',
-                    data: { valor: p.valor, dias_atraso: diasAtraso }
-                });
-            }
-        });
-
-        // ── LUCAS (ROBÔ VENDAS): Clientes para reativar ──
-        clients.forEach(c => {
-            const lastSale = sales.filter(s => s.id_cliente === c.id_ferro && s.status_pagamento !== 'ESTORNADO')
-                .sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())[0];
-            if (lastSale) {
-                const dias = Math.floor((now.getTime() - new Date(lastSale.data_venda).getTime()) / 86400000);
-                if (dias > 60) {
-                    alerts.push({
-                        id: `ROBO-REATIV-${c.id_ferro}`, agent: 'ROBO_VENDAS', severity: 'ALERTA',
-                        module: 'CLIENTES', title: `Reativar: ${c.nome_social}`,
-                        message: `Sem compra há ${dias} dias. Ligar e oferecer promoção ou condição especial.`,
-                        timestamp: now.toISOString(), status: 'NOVO'
-                    });
-                } else if (dias > 30) {
-                    alerts.push({
-                        id: `ROBO-FOLLOW-${c.id_ferro}`, agent: 'ROBO_VENDAS', severity: 'INFO',
-                        module: 'CLIENTES', title: `Follow-up: ${c.nome_social}`,
-                        message: `Última compra há ${dias} dias. Mandar mensagem de acompanhamento.`,
-                        timestamp: now.toISOString(), status: 'NOVO'
-                    });
-                }
-            }
-        });
-
-        // ── ISABELA (MARKETING): Oportunidades de Campanha e Mimos ──
-        // 1. Promoção Urgente (Estoque Encalhado)
-        const traseirosAntigos = stock.filter(s => s.status === 'DISPONIVEL' && s.tipo === 3 && Math.floor((now.getTime() - new Date(s.data_entrada).getTime()) / 86400000) > 7);
-        if (traseirosAntigos.length > 0) {
-            alerts.push({
-                id: `MKT-ESTOQUE-TRASEIROS`, agent: 'MARKETING', severity: 'ALERTA',
-                module: 'ESTOQUE', title: `Campanha Traseiro Urgente`,
-                message: `Temos ${traseirosAntigos.length} traseiros no frio há mais de 7 dias. Crie uma campanha no Instagram focada em churrascarias para rodar HOJE.`,
-                timestamp: now.toISOString(), status: 'NOVO'
-            });
-        }
-
-        const dianteirosAntigos = stock.filter(s => s.status === 'DISPONIVEL' && s.tipo === 2 && Math.floor((now.getTime() - new Date(s.data_entrada).getTime()) / 86400000) > 7);
-        if (dianteirosAntigos.length > 0) {
-            alerts.push({
-                id: `MKT-ESTOQUE-DIANTEIROS`, agent: 'MARKETING', severity: 'ALERTA',
-                module: 'ESTOQUE', title: `Campanha Dianteiro Urgente`,
-                message: `Temos ${dianteirosAntigos.length} dianteiros no frio há mais de 7 dias. Dispare WhatsApp para redes varejistas e restaurantes populares.`,
-                timestamp: now.toISOString(), status: 'NOVO'
-            });
-        }
-
-        // 2. Mimos VIP e Oportunidades de Conteúdo
-        clients.forEach(c => {
-            const clienteSales = sales.filter(s => s.id_cliente === c.id_ferro && s.status_pagamento !== 'ESTORNADO');
-            const kgTotal = clienteSales.reduce((sum, s) => sum + s.peso_real_saida, 0);
-            if (kgTotal >= 1000) { // Cliente VIP
-                const lastSale = clienteSales.sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())[0];
-                if (lastSale) {
-                    const dias = Math.floor((now.getTime() - new Date(lastSale.data_venda).getTime()) / 86400000);
-                    if (dias > 30) {
-                        alerts.push({
-                            id: `MKT-VIP-FRIO-${c.id_ferro}`, agent: 'MARKETING', severity: 'CRITICO',
-                            module: 'CLIENTES', title: `VIP Esfriando: ${c.nome_social}`,
-                            message: `Cliente > 1 TON sem comprar há ${dias} dias. Enviar MIMO premium (por ex. avental exclusivo FrigoGest) e acionar visita comercial.`,
-                            timestamp: now.toISOString(), status: 'NOVO'
-                        });
-                    }
-                }
-            }
-        });
-
-        // 3. Fornecedores VIP e Branding
-        suppliers.forEach(s => {
-            const lotesFornecedor = batches.filter(b => b.fornecedor === s.nome_fantasia);
-            if (lotesFornecedor.length >= 3) {
-                const bomRendimento = lotesFornecedor.some(b => {
+            const lotes = batches.filter(b => b.fornecedor === s.nome_fantasia && b.status === 'FECHADO');
+            if (lotes.length > 0) {
+                const mediaRend = lotes.reduce((acc, b) => {
                     const pecas = stock.filter(st => st.id_lote === b.id_lote);
-                    const rend = b.peso_total_romaneio > 0 ? (pecas.reduce((sum, p) => sum + p.peso_entrada, 0) / b.peso_total_romaneio) * 100 : 0;
-                    return rend >= 53;
-                });
-                if (bomRendimento) {
+                    return acc + (b.peso_total_romaneio > 0 ? (pecas.reduce((sum, p) => sum + p.peso_entrada, 0) / b.peso_total_romaneio) * 100 : 0);
+                }, 0) / lotes.length;
+
+                if (mediaRend < 48) {
                     alerts.push({
-                        id: `MKT-FORN-MIMO-${s.id || s.nome_fantasia}`, agent: 'MARKETING', severity: 'INFO',
-                        module: 'FORNECEDORES', title: `Reconhecimento: Parceiro ${s.nome_fantasia}`,
-                        message: `Excelente histórico de rendimento (>53%). Estratégia: Enviar "Diploma de Parceiro Ouro" no WhatsApp para fidelizar o pecuarista.`,
+                        id: `COMP-SCORE-${s.id}`, agent: 'COMPRAS', severity: 'BLOQUEIO',
+                        module: 'FORNECEDORES', title: `Scorecard F: ${s.nome_fantasia}`,
+                        message: `Média de rendimento histórica crítica (${mediaRend.toFixed(1)}%). Recomendo suspender compras até revisão técnica da fazenda.`,
                         timestamp: now.toISOString(), status: 'NOVO'
                     });
                 }
+            }
+        });
+
+        // ── ANA (MERCADO): Alertas de Sazonalidade e Notícias ──
+        const altaNoticias = marketNews.filter(n => n.title.toLowerCase().includes('alta') || n.title.toLowerCase().includes('sobe') || n.title.toLowerCase().includes('valorização'));
+        if (altaNoticias.length > 2) {
+            alerts.push({
+                id: `MERC-NOTICIA-ALTA`, agent: 'MERCADO', severity: 'ALERTA',
+                module: 'MERCADO', title: `Tendência de Alta Indetectada`,
+                message: `Múltiplas notícias indicam arroba em alta. Recomendo que Roberto (Compras) trave lotes para os próximos 15 dias HOJE.`,
+                timestamp: now.toISOString(), status: 'NOVO'
+            });
+        }
+
+        // ── LUCAS (ROBÔ VENDAS): RFM e Churn ──
+        clients.forEach(c => {
+            const cSales = sales.filter(s => s.id_cliente === c.id_ferro && s.status_pagamento !== 'ESTORNADO');
+            if (cSales.length > 0) {
+                const lastSale = [...cSales].sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())[0];
+                const dias = Math.floor((now.getTime() - new Date(lastSale.data_venda).getTime()) / 86400000);
+
+                if (dias > 45) {
+                    alerts.push({
+                        id: `ROBO-CHURN-${c.id_ferro}`, agent: 'ROBO_VENDAS', severity: 'CRITICO',
+                        module: 'CLIENTES', title: `Risco de Churn: ${c.nome_social}`,
+                        message: `Cliente sumiu há ${dias} dias. Aplique script de 'Negociação FBI' com Mirroring para reaver parceria.`,
+                        timestamp: now.toISOString(), status: 'NOVO'
+                    });
+                }
+            }
+        });
+
+        // ── ISABELA (MARKETING): Gifting e Tráfego Pago ──
+        const topClients = clients.map(c => ({
+            ...c,
+            totalKg: sales.filter(s => s.id_cliente === c.id_ferro && s.status_pagamento !== 'ESTORNADO').reduce((sum, s) => sum + s.peso_real_saida, 0)
+        })).sort((a, b) => b.totalKg - a.totalKg).slice(0, 5);
+
+        topClients.forEach(c => {
+            alerts.push({
+                id: `MKT-GIFT-${c.id_ferro}`, agent: 'MARKETING', severity: 'INFO',
+                module: 'CLIENTES', title: `Mimo VIP: ${c.nome_social}`,
+                message: `Top 5 Cliente (Comprado: ${c.totalKg.toFixed(0)}kg). Enviar brinde exclusivo para reforçar branding FrigoGest.`,
+                timestamp: now.toISOString(), status: 'NOVO'
+            });
+        });
+
+        // ── CAMILA (SATISFAÇÃO): Pesquisa NPS e Follow-up Qualidade ──
+        sales.filter(s => s.status_pagamento !== 'ESTORNADO').sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime()).slice(0, 5).forEach(s => {
+            const dias = Math.floor((now.getTime() - new Date(s.data_venda).getTime()) / 86400000);
+            if (dias >= 1 && dias <= 3) { // Janela ideal de feedback
+                const cli = clients.find(c => c.id_ferro === s.id_cliente);
+                alerts.push({
+                    id: `SAT-NPS-${s.id_venda}`, agent: 'SATISFACAO', severity: 'ALERTA',
+                    module: 'CLIENTES', title: `Feedback NPS: ${cli?.nome_social || s.id_cliente}`,
+                    message: `Venda concluída há ${dias} dias. Momento ideal para perguntar sobre a qualidade do gado e satisfação com a entrega.`,
+                    timestamp: now.toISOString(), status: 'NOVO',
+                    data: { venda_id: s.id_venda, whatsapp: cli?.whatsapp }
+                });
             }
         });
 
@@ -584,7 +667,7 @@ const AIAgents: React.FC<AIAgentsProps> = ({
             const severityOrder: Record<AlertSeverity, number> = { BLOQUEIO: 0, CRITICO: 1, ALERTA: 2, INFO: 3 };
             return severityOrder[a.severity] - severityOrder[b.severity];
         });
-    }, [batches, stock, sales, clients, transactions, suppliers, payables, scheduledOrders]);
+    }, [batches, stock, sales, clients, transactions, suppliers, payables, scheduledOrders, marketNews]);
 
     // ═══ STATS PER AGENT ═══
     const agentStats = useMemo(() => {
@@ -644,6 +727,38 @@ const AIAgents: React.FC<AIAgentsProps> = ({
         orange: { bg: 'bg-orange-50', text: 'text-orange-600', border: 'border-orange-200', glow: 'shadow-orange-200/50' },
         violet: { bg: 'bg-violet-50', text: 'text-violet-600', border: 'border-violet-200', glow: 'shadow-violet-200/50' },
         teal: { bg: 'bg-teal-50', text: 'text-teal-600', border: 'border-teal-200', glow: 'shadow-teal-200/50' },
+        fuchsia: { bg: 'bg-fuchsia-50', text: 'text-fuchsia-600', border: 'border-fuchsia-200', glow: 'shadow-fuchsia-200/50' },
+    };
+
+    const handleWhatsAppAction = async (text: string, phone?: string) => {
+        // Busca um número de telefone no texto (formato brasileiro comum)
+        let targetPhone = phone;
+        if (!targetPhone) {
+            const match = text.match(/(?:\(?\d{2}\)?\s?)?9?\d{4}[-\s]?\d{4}/);
+            if (match) {
+                targetPhone = match[0].replace(/\D/g, '');
+                if (targetPhone.length === 11 && !targetPhone.startsWith('55')) {
+                    targetPhone = '55' + targetPhone;
+                }
+            }
+        }
+
+        if (!targetPhone) {
+            // Se não encontrar telefone, apenas copia para o clipboard
+            navigator.clipboard.writeText(text);
+            alert('🚀 Script copiado! Cole no WhatsApp do cliente.');
+            return;
+        }
+
+        const res = await sendWhatsAppMessage(targetPhone, text);
+        if (res.success) {
+            alert(`✅ Mensagem enviada para ${targetPhone}!`);
+        } else if (res.error?.includes('API não configurada')) {
+            // O fallback já abriu a janela, então só avisamos
+            alert('📱 WhatsApp Web aberto com o script!');
+        } else {
+            alert(`⚠️ Erro ao enviar: ${res.error}`);
+        }
     };
 
     const severityConfig: Record<AlertSeverity, { icon: React.ReactNode; color: string; bg: string; border: string }> = {
@@ -703,6 +818,7 @@ const AIAgents: React.FC<AIAgentsProps> = ({
 ## SNAPSHOT GERAL — FRIGOGEST (${new Date().toLocaleDateString('pt-BR')})
 Caixa: Entradas R$${totalEntradas.toFixed(2)} | Saídas R$${totalSaidas.toFixed(2)} | Saldo R$${(totalEntradas - totalSaidas).toFixed(2)}
 Projeção 7 Dias: A Receber R$${aReceber7d.toFixed(2)} | A Pagar R$${aPagar7d.toFixed(2)}
+Métricas 2026: ESG Médio ${batches.length > 0 ? (batches.reduce((s, b) => s + (b.esg_score || 0), 0) / batches.length).toFixed(1) : 0}% | Traceability: ${batches.filter(b => b.traceability_hash).length} hashes ativos
 Vendas: ${vendasPagas.length} pagas, ${vendasPendentes.length} pendentes, ${vendasEstornadas.length} estornadas
 Contas a Pagar: ${payablesPendentes.length} pendentes (R$${payablesPendentes.reduce((s, p) => s + p.valor, 0).toFixed(2)}), ${payablesVencidos.length} vencidas
 Estoque: ${estoqueDisp.length} peças, ${estoqueDisp.reduce((s, e) => s + e.peso_entrada, 0).toFixed(1)}kg (Sendo: ${estoqueDisp.filter(s => s.tipo === 1).length} Inteiras, ${estoqueDisp.filter(s => s.tipo === 2).length} Diant., ${estoqueDisp.filter(s => s.tipo === 3).length} Tras.)
@@ -715,15 +831,15 @@ ${liveAlerts.slice(0, 10).map(a => `- [${a.severity}] ${a.title}: ${a.message}`)
 
                 PRODUCAO: `
 ## SNAPSHOT PRODUÇÃO — FRIGOGEST (${new Date().toLocaleDateString('pt-BR')})
-Lotes: ${batches.length} total
+Lotes Recentes (Foco Vision AI Audit):
 ${batches.filter(b => b.status !== 'ESTORNADO').slice(-10).map(b => {
                     const pecas = stock.filter(s => s.id_lote === b.id_lote);
                     const pesoTotal = pecas.reduce((s, p) => s + p.peso_entrada, 0);
                     const rend = b.peso_total_romaneio > 0 ? ((pesoTotal / b.peso_total_romaneio) * 100).toFixed(1) : 'N/A';
-                    return `- Lote ${b.id_lote} | Forn: ${b.fornecedor} | Raça: ${(b as any).raca || 'N/I'} | Cab: ${(b as any).qtd_cabecas || 'N/I'} | Mortos: ${(b as any).qtd_mortos || 0} | Romaneio: ${b.peso_total_romaneio}kg | Pesado: ${pesoTotal.toFixed(1)}kg | Rend: ${rend}% | Toalete: ${(b as any).toalete_kg || 'N/I'}kg | Peças: ${pecas.length}`;
+                    return `- Lote ${b.id_lote} | Forn: ${b.fornecedor} | Vision: ${b.vision_audit_status || 'PENDENTE'} | ESG: ${b.esg_score || 0}% | Raça: ${(b as any).raca || 'N/I'} | Cab: ${(b as any).qtd_cabecas || 'N/I'} | Rend: ${rend}% | Toalete: ${(b as any).toalete_kg || 0}kg | Peças: ${pecas.length}`;
                 }).join('\n')}
 Estoque: ${estoqueDisp.length} peças, ${estoqueDisp.reduce((s, e) => s + e.peso_entrada, 0).toFixed(1)}kg disponível
-Fornecedores: ${suppliers.length}
+Fornecedores Scorecard: ${suppliers.length}
 Alertas Produção: ${agentAlerts.length}
 ${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}`.trim(),
 
@@ -1317,16 +1433,16 @@ ${vendasNoPrejuizo.slice(0, 3).map(v => `  → ${v.id_completo}: vendeu R$${v.pr
 
                 // ═══ EXPERTISE SETORIAL — cada agente sabe exatamente o que deve analisar ═══
                 const sectorFocus: Partial<Record<string, string>> = {
-                    ADMINISTRATIVO: '🎯 FOCO: Calcule DRE simplificado (Receita Bruta - CMV = Lucro Bruto - Despesas = EBITDA). Calcule Ciclo de Caixa (PMR vs PMP: se PMR > PMP = precisa capital de giro). Faça análise CRUZADA dos setores. Identifique o maior risco e a maior oportunidade do negócio hoje.',
-                    PRODUCAO: '🎯 FOCO: Compare rendimento REAL de cada lote com tabela EMBRAPA (Nelore puro 54-56%, Angus×Nelore 55-57%, Senepol×Nelore 53-57%). Calcule custo de toalete por carcaça (normal ≤15kg, alerta >20kg). Identifique fornecedores sistematicamente abaixo da média. Alerte sobre carne DFD se rendimento <48%.',
-                    COMERCIAL: '🎯 FOCO: Calcule RFM completo de cada cliente (R=quando comprou, F=frequência total, M=volume R$). Liste cobranças vencidas em ordem decrescente de valor. Calcule markup real (dianteiro vs traseiro vs inteiro). Estime margem por cliente. Identifique os 3 com maior risco de churn.',
-                    AUDITOR: '🎯 FOCO: Verifique os 11 pontos de integridade (furos no caixa, estornos incompletos, peças duplicadas, clientes fantasma, transações duplicadas, saldo inconsistente, lotes vazios, fornecedores sem lote, vendas abaixo do custo, pagamentos excedentes, contas sem lote). Monte DRE resumido.',
-                    ESTOQUE: '🎯 FOCO: Calcule perda financeira por drip loss (0.4%/dia × kg × preço/kg = R$ perdidos/dia). Liste 5 peças mais velhas com urgência (0-3d=✅, 4-6d=🟡, 7-10d=🔴 desconto, 10+d=🚨emergência). Calcule giro médio em dias. Quanto em R$ está em risco hoje?',
-                    COMPRAS: '🎯 FOCO: Scorecard A/B/C de CADA fornecedor: Rendimento (0-30pts) + Regularidade (0-20pts) + Custo (0-20pts) + Genética Angus×Nelore (0-15pts) + Condições (0-15pts). TCO real = (compra+frete+perdas)/peso_real. Recomende quem manter, negociar e cortar.',
-                    MERCADO: '🎯 FOCO: Compare custo_real_kg vs CEPEA-BA (R$311,50/@÷15=R$20,77/kg). Calcule margem real: (preço_venda-custo)/custo×100. Sazonalidade Fev/2026 = águas + alta estrutural. Recomende: comprar mais agora, manter ritmo ou aguardar março/abril? Verifique se preço de venda está competitivo regionalmente.',
-                    ROBO_VENDAS: '🎯 FOCO: Segmente TODOS os clientes por RFM (ATIVO QUENTE <7d🟢, ATIVO 7-30d🟡, ESFRIANDO 30-60d🟠, INATIVO 60-90d🔴, PERDIDO 90+d⛔). Para os 3 mais urgentes, escreva o TEXTO EXATO do WhatsApp para enviar HOJE. Liste 3 inovações concretas para aplicar em 30 dias.',
-                    MARKETING: '🎯 FOCO: Com base no estoque >4 dias na câmara e RFM dos clientes, crie: (1) script WhatsApp com gatilho de escassez para o corte mais encalhado, (2) ideia de post Instagram B2B de autoridade para HOJE, (3) mimo VIP para o cliente com maior volume histórico, (4) sugestão de tráfego pago Meta Ads (50km de VDC-BA).',
-                    SATISFACAO: '🎯 FOCO: Para as 3 entregas mais recentes, escreva o TEXTO EXATO do WhatsApp pós-venda (24h-48h após entrega) personalizado com nome e peso. Alerte sobre clientes com objeções registradas. Formule 1 pergunta NPS personalizada para o cliente VIP (>500kg total).',
+                    ADMINISTRATIVO: `🎯 FOCO: Calcule DRE simplificado. ESG META: ${INDUSTRY_BENCHMARKS_2026.ESG_MIN_COMPLIANCE}%. Ciclo de Caixa (PMR vs PMP). Identifique o maior risco e a maior oportunidade do negócio hoje.`,
+                    PRODUCAO: `🎯 FOCO: Compare rendimento REAL com metas 2026 (Nelore ${INDUSTRY_BENCHMARKS_2026.RENDIMENTO_NELORE}%, Angus ${INDUSTRY_BENCHMARKS_2026.RENDIMENTO_ANGUS}%). Analise toalete e vision_audit_status.`,
+                    COMERCIAL: `🎯 FOCO: RFM completo. MARGEM META: ${INDUSTRY_BENCHMARKS_2026.MARGEM_OPERACIONAL_IDEAL}%. Identifique os 3 com maior risco de churn e cobranças vencidas.`,
+                    AUDITOR: '🎯 FOCO: Verifique os 11 furos de integridade. Blockchain Traceability audit. Monte DRE resumido.',
+                    ESTOQUE: `🎯 FOCO: Perda por drip loss (Meta max: ${INDUSTRY_BENCHMARKS_2026.DRIP_LOSS_MAX}%). GIRO META: ${INDUSTRY_BENCHMARKS_2026.GIRO_ESTOQUE_META} dias. Identifique peças críticas.`,
+                    COMPRAS: '🎯 FOCO: Scorecard A/B/C de fornecedores. TCO real. Genética e ESG Score.',
+                    MERCADO: `🎯 FOCO: Compare custo_real_kg vs CEPEA-BA. Margem vs Meta ${INDUSTRY_BENCHMARKS_2026.MARGEM_OPERACIONAL_IDEAL}%. Sazonalidade Fev/2026.`,
+                    ROBO_VENDAS: '🎯 FOCO: Segmentação RFM. Script WhatsApp FBI/Mirroring. Inovações 2026.',
+                    MARKETING: '🎯 FOCO: Campanhas de Escassez. B2B Branding. Mimo VIP e Tráfego Pago.',
+                    SATISFACAO: '🎯 FOCO: NPS (Net Promoter Score). Pós-venda personalizado. Objeções e Qualidade Percebida.',
                 };
                 const expertise = sectorFocus[agent.id] ? `\n${sectorFocus[agent.id]}\n` : '';
 
@@ -1703,8 +1819,22 @@ Regras:
                                                 </button>
                                                 {isExpanded && (
                                                     <div className={`px - 5 pb - 5 pt - 0 ml - 14 mr - 5 animate - reveal`}>
-                                                        <div className={`${colors.bg} border ${colors.border} rounded - 2xl p - 5`}>
+                                                        <div className={`${colors.bg} border ${colors.border} rounded - 2xl p - 5 shadow-sm relative group/diag`}>
                                                             <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{diag.text}</p>
+                                                            <div className="mt-4 flex gap-2">
+                                                                <button
+                                                                    onClick={(e) => { e.stopPropagation(); handleWhatsAppAction(diag.text); }}
+                                                                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-emerald-500 text-white hover:bg-emerald-600 transition-all shadow-md`}
+                                                                >
+                                                                    <MessageCircle size={14} /> Enviar / Copiar Script
+                                                                </button>
+                                                                <button
+                                                                    onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(diag.text); alert('📋 Copiado!'); }}
+                                                                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-white text-slate-500 border border-slate-200 hover:bg-slate-50 transition-all`}
+                                                                >
+                                                                    <Activity size={14} /> Copiar Texto
+                                                                </button>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 )}
@@ -1913,6 +2043,14 @@ Regras:
                                                 {alert.data?.valor && (
                                                     <p className="mt-2 text-sm font-black text-rose-600">💰 Impacto: R${alert.data.valor.toFixed(2)}</p>
                                                 )}
+                                                {(alert.agent === 'ROBO_VENDAS' || alert.agent === 'SATISFACAO' || alert.agent === 'MARKETING' || alert.data?.whatsapp) && (
+                                                    <button
+                                                        onClick={() => handleWhatsAppAction(alert.message, alert.data?.whatsapp)}
+                                                        className="mt-4 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-600 text-[10px] font-black uppercase hover:bg-emerald-100 transition-colors border border-emerald-100"
+                                                    >
+                                                        <MessageCircle size={12} /> Acionar via WhatsApp
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
@@ -1959,6 +2097,20 @@ Regras:
                                     </div>
                                     <div className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap font-medium">
                                         {agentResponse}
+                                    </div>
+                                    <div className="mt-8 flex flex-col sm:flex-row gap-3">
+                                        <button
+                                            onClick={() => handleWhatsAppAction(agentResponse)}
+                                            className="px-6 py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:from-emerald-600 hover:to-teal-600 transition-all shadow-xl shadow-emerald-900/20"
+                                        >
+                                            <MessageCircle size={16} /> Enviar / Copiar via WhatsApp
+                                        </button>
+                                        <button
+                                            onClick={() => { navigator.clipboard.writeText(agentResponse); alert('📋 Análise copiada!'); }}
+                                            className="px-6 py-4 rounded-2xl bg-white/5 text-slate-400 text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-white/10 transition-all border border-white/10"
+                                        >
+                                            <Activity size={16} /> Copiar Texto
+                                        </button>
                                     </div>
                                     <div className="mt-6 pt-4 border-t border-slate-700/50 flex justify-between items-center">
                                         <span className="text-[9px] text-slate-600 font-black uppercase tracking-widest">

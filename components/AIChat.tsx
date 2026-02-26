@@ -214,6 +214,9 @@ const AIChat: React.FC<Props> = ({
             const diasAberto = Math.floor((agora - new Date(b.data_recebimento).getTime()) / msPerDay);
             return diasAberto > 7;
         });
+        const esgMedio = batches.length > 0 ? batches.reduce((s, b) => s + (b.esg_score || 0), 0) / batches.length : 0;
+        const lotesComVision = batches.filter(b => b.vision_audit_status === 'APROVADO').length;
+        const lotesComBlockchain = batches.filter(b => b.traceability_hash).length;
 
         // ── ESTOQUE ──
         const activeStock = stock.filter(s => s.status === 'DISPONIVEL');
@@ -303,6 +306,7 @@ const AIChat: React.FC<Props> = ({
 🐄 LOTES
 - Total: ${batches.length} lotes | Abertos: ${lotesAbertos.length} | Fechados: ${lotesFechados.length}
 - Rendimento médio: ${rendimentoMedio > 0 ? rendimentoMedio.toFixed(1) + '%' : 'sem dados'} | Custo médio/kg: ${custoKgMedio > 0 ? 'R$' + custoKgMedio.toFixed(2) : 'sem dados'}
+- IA Vision Aprovado: ${lotesComVision} | Blockchain Traceability: ${lotesComBlockchain} | ESG Score Médio: ${esgMedio.toFixed(1)}%
 - Mortos/Descarte (Global): ${batches.reduce((s, b) => s + ((b as any).qtd_mortos || 0), 0)} cabeças
 ${lotesAntigos.length > 0 ? `🔴 ATENÇÃO: ${lotesAntigos.length} lote(s) aberto(s) há mais de 7 dias!` : '🟢 Lotes em dia'}
 

@@ -21,6 +21,15 @@ export const MOCK_DATA: AppState = {
   payables: []
 };
 
+export const INDUSTRY_BENCHMARKS_2026 = {
+  RENDIMENTO_NELORE: 54.5,
+  RENDIMENTO_ANGUS: 56.2,
+  DRIP_LOSS_MAX: 0.8, // % em 24h
+  MARGEM_OPERACIONAL_IDEAL: 18.5, // %
+  ESG_MIN_COMPLIANCE: 92, // %
+  GIRO_ESTOQUE_META: 4, // dias
+};
+
 export const getTypeName = (type: StockType) => {
   switch (type) {
     case StockType.INTEIRO: return 'Carcaça Inteira';

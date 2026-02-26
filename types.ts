@@ -61,6 +61,10 @@ export interface Batch {
   rendimento_real?: number; // (peso_desossa / peso_gancho) × 100 — calculado
   toalete_kg?: number; // Peso removido na toalete pelo frigorífico (kg)
   preco_arroba?: number; // Preço pago por arroba (R$) — ref. CEPEA regional
+  // ═══ CAMPOS IA 2026 — RASTREABILIDADE & VISÃO ═══
+  traceability_hash?: string; // Hash único Blockchain para exportação
+  vision_audit_status?: 'PENDENTE' | 'APROVADO' | 'REVISAO'; // Status da auditoria por visão computacional
+  esg_score?: number; // Score de compliance ambiental/social (0-100)
 }
 
 export enum StockType {
@@ -78,6 +82,11 @@ export interface StockItem {
   peso_animal_entrada?: number; // Soma de A+B ou Integral
   status: 'DISPONIVEL' | 'VENDIDO' | 'ESTORNADO';
   data_entrada: string;
+  // ═══ CAMPOS QUALIDADE IA 2026 ═══
+  gordura?: 1 | 2 | 3 | 4 | 5; // Grau de acabamento de gordura (Visão IA)
+  conformacao?: 'P' | 'U' | 'R' | 'O' | 'C' | 'O_L'; // Padrão de conformação muscular
+  marmoreio?: number; // Score de marmoreio (0-10)
+  anomalias_detectadas?: string[]; // Ex: ["hematoma_traseiro", "abscesso_vacina"]
 }
 
 export type PaymentMethod = 'DINHEIRO' | 'PIX' | 'CHEQUE' | 'BOLETO' | 'TRANSFERENCIA' | 'OUTROS';

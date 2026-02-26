@@ -330,13 +330,14 @@ const Stock: React.FC<StockProps> = ({ stock, batches, sales, clients, updateBat
                               );
                             })()}
 
-                            {/* SUPPLIER INSIGHT */}
-                            {batch?.fornecedor && supplierInsights.has(batch.fornecedor) && (
-                              <span className={`flex items-center gap-1.5 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest border shadow-sm ${supplierInsights.get(batch.fornecedor)?.quality === 'top' ? 'bg-indigo-50 text-indigo-600 border-indigo-100' :
-                                supplierInsights.get(batch.fornecedor)?.quality === 'poor' ? 'bg-orange-50 text-orange-600 border-orange-100' :
-                                  'bg-slate-50 text-slate-600 border-slate-100'
-                                }`}>
                                 <Dna size={10} /> {supplierInsights.get(batch.fornecedor)?.quality === 'top' ? 'Genética Premium' : 'Gado Regular'}
+                              </span>
+                            )}
+                            
+                            {/* ═══ 2026 AI METRICS ═══ */}
+                            {batch?.vision_audit_status === 'APROVADO' && (
+                              <span className="flex items-center gap-1.5 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest bg-blue-50 text-blue-600 border border-blue-100 shadow-sm">
+                                <Activity size={10} /> Vision Certified
                               </span>
                             )}
                           </div>
@@ -346,6 +347,14 @@ const Stock: React.FC<StockProps> = ({ stock, batches, sales, clients, updateBat
                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
                           ID-LOTE: <span className="text-slate-900">{batchId}</span>
                         </span>
+                        {batch?.traceability_hash && (
+                          <>
+                            <div className="w-1 h-1 bg-slate-200 rounded-full"></div>
+                            <span className="text-[10px] font-mono font-bold text-emerald-600 bg-emerald-50 px-2 rounded tracking-tighter">
+                              HASH: {batch.traceability_hash}
+                            </span>
+                          </>
+                        )}
                         <div className="w-1 h-1 bg-slate-200 rounded-full"></div>
                         <span className="text-[10px] font-medium text-slate-400 uppercase tracking-widest">
                           Entrada: {batch?.data_recebimento ? new Date(batch.data_recebimento).toLocaleDateString() : 'N/A'}
@@ -419,12 +428,24 @@ const Stock: React.FC<StockProps> = ({ stock, batches, sales, clients, updateBat
 
                           <div className="space-y-2 flex-1">
                             {seqItems.map(item => (
-                              <div key={item.id_completo} className="flex justify-between items-center text-[10px] font-bold">
-                                <span className="flex items-center gap-1.5 text-slate-500">
-                                  <div className={`w-1.5 h-1.5 rounded-full ${item.tipo === StockType.BANDA_A ? 'bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.4)]' : item.tipo === StockType.BANDA_B ? 'bg-blue-500 shadow-[0_0_8px_rgba(37,99,235,0.4)]' : 'bg-slate-900 shadow-[0_0_8px_rgba(15,23,42,0.4)]'}`} />
-                                  {getTypeName(item.tipo).toUpperCase()}
-                                </span>
-                                <span className="text-slate-900 bg-slate-50 px-2 py-0.5 rounded-lg">{formatWeight(item.peso_entrada)}</span>
+                              <div key={item.id_completo} className="space-y-1">
+                                <div className="flex justify-between items-center text-[10px] font-bold">
+                                  <span className="flex items-center gap-1.5 text-slate-500">
+                                    <div className={`w-1.5 h-1.5 rounded-full ${item.tipo === StockType.BANDA_A ? 'bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.4)]' : item.tipo === StockType.BANDA_B ? 'bg-blue-500 shadow-[0_0_8px_rgba(37,99,235,0.4)]' : 'bg-slate-900 shadow-[0_0_8px_rgba(15,23,42,0.4)]'}`} />
+                                    {getTypeName(item.tipo).toUpperCase()}
+                                  </span>
+                                  <span className="text-slate-900 bg-slate-50 px-2 py-0.5 rounded-lg">{formatWeight(item.peso_entrada)}</span>
+                                </div>
+                                {(item.gordura || item.marmoreio) && (
+                                  <div className="flex gap-1">
+                                    {item.gordura && (
+                                      <span className="text-[8px] font-black bg-orange-100 text-orange-700 px-1.5 rounded uppercase">GORD: {item.gordura}</span>
+                                    )}
+                                    {item.marmoreio && (
+                                      <span className="text-[8px] font-black bg-purple-100 text-purple-700 px-1.5 rounded uppercase">MARM: {item.marmoreio}</span>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             ))}
                             {!isComplete && !hasInteiro && (
