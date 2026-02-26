@@ -333,7 +333,22 @@ const Batches: React.FC<BatchesProps> = ({
   const handleBatchSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const loteId = newBatch.id_lote || generateNextId();
-    if (!newBatch.peso_total_romaneio) return;
+
+    // Validação com mensagem clara
+    if (!newBatch.fornecedor || String(newBatch.fornecedor).trim() === '') {
+      alert('⚠️ Preencha o Fornecedor / Fazenda antes de iniciar!');
+      return;
+    }
+    if (!newBatch.valor_compra_total || newBatch.valor_compra_total <= 0) {
+      alert('⚠️ Preencha o Valor do Gado (R$) antes de iniciar!');
+      return;
+    }
+
+    // Peso do romaneio: permite iniciar sem, mas avisa
+    if (!newBatch.peso_total_romaneio || newBatch.peso_total_romaneio <= 0) {
+      const continuar = window.confirm('⚠️ Peso do Romaneio está zerado.\n\nVocê pode preencher depois pelo romaneio IA ou manualmente.\n\nDeseja iniciar mesmo assim?');
+      if (!continuar) return;
+    }
 
     // ═══ BLOCKCHAIN TRACEABILITY 2026 ═══
     const traceabilityHash = `0x${Math.random().toString(16).substring(2, 10)}${Date.now().toString(16)}`.toUpperCase();
@@ -350,6 +365,7 @@ const Batches: React.FC<BatchesProps> = ({
 
     // Guarda o lote em memória (draft) - só será salvo na finalização
     setDraftBatch(batchToCreate);
+
     setSelectedBatchId(loteId);
   };
 
@@ -685,19 +701,47 @@ const Batches: React.FC<BatchesProps> = ({
                       <DecimalInput disabled={!!selectedBatch} className="modern-input text-rose-600" placeholder="Nº" value={selectedBatch ? (selectedBatch as any).qtd_mortos || 0 : (newBatch.qtd_mortos || 0)} onValueChange={v => setNewBatch({ ...newBatch, qtd_mortos: v })} />
                     </div>
                     <div>
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Peso Gancho (kg)</label>
-                      <DecimalInput disabled={!!selectedBatch} className="modern-input" placeholder="Total" value={selectedBatch ? (selectedBatch as any).peso_gancho || 0 : (newBatch.peso_gancho || 0)} onValueChange={v => setNewBatch({ ...newBatch, peso_gancho: v })} />
+                      <label className="text-[10px] font-bold text-orange-500 uppercase tracking-widest block mb-2 px-1">⚛️ Peso Gancho (kg)</label>
+                      {/* DESBLOQUEADO: só é conhecido após pesagem */}
+                      <DecimalInput
+                        className="modern-input border-orange-200 bg-orange-50 font-bold"
+                        placeholder="Preencha após pesar"
+                        value={selectedBatch ? (selectedBatch as any).peso_gancho || 0 : (newBatch.peso_gancho || 0)}
+                        onValueChange={v => {
+                          if (selectedBatch && draftBatch) {
+                            setDraftBatch(prev => prev ? { ...prev, peso_gancho: v } as any : prev);
+                          } else {
+                            setNewBatch({ ...newBatch, peso_gancho: v });
+                          }
+                        }}
+                      />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Peso Vivo Médio</label>
-                      <DecimalInput disabled={!!selectedBatch} className="modern-input text-xs" placeholder="kg/cab" value={selectedBatch ? (selectedBatch as any).peso_vivo_medio || 0 : (newBatch.peso_vivo_medio || 0)} onValueChange={v => setNewBatch({ ...newBatch, peso_vivo_medio: v })} />
+                      <label className="text-[10px] font-bold text-orange-500 uppercase tracking-widest block mb-2 px-1">⚖️ Peso Vivo Médio</label>
+                      <DecimalInput
+                        className="modern-input border-orange-200 bg-orange-50 text-xs"
+                        placeholder="kg/cab"
+                        value={selectedBatch ? (selectedBatch as any).peso_vivo_medio || 0 : (newBatch.peso_vivo_medio || 0)}
+                        onValueChange={v => {
+                          if (selectedBatch && draftBatch) setDraftBatch(prev => prev ? { ...prev, peso_vivo_medio: v } as any : prev);
+                          else setNewBatch({ ...newBatch, peso_vivo_medio: v });
+                        }}
+                      />
                     </div>
                     <div>
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Toalete (kg)</label>
-                      <DecimalInput disabled={!!selectedBatch} className="modern-input text-xs" placeholder="kg" value={selectedBatch ? (selectedBatch as any).toalete_kg || 0 : (newBatch.toalete_kg || 0)} onValueChange={v => setNewBatch({ ...newBatch, toalete_kg: v })} />
+                      <label className="text-[10px] font-bold text-orange-500 uppercase tracking-widest block mb-2 px-1">✂️ Toalete (kg)</label>
+                      <DecimalInput
+                        className="modern-input border-orange-200 bg-orange-50 text-xs"
+                        placeholder="kg"
+                        value={selectedBatch ? (selectedBatch as any).toalete_kg || 0 : (newBatch.toalete_kg || 0)}
+                        onValueChange={v => {
+                          if (selectedBatch && draftBatch) setDraftBatch(prev => prev ? { ...prev, toalete_kg: v } as any : prev);
+                          else setNewBatch({ ...newBatch, toalete_kg: v });
+                        }}
+                      />
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">R$/Arroba</label>
@@ -739,8 +783,24 @@ const Batches: React.FC<BatchesProps> = ({
                     <span className="text-2xl font-black text-orange-400">{formatCurrency(simulatedCost)}</span>
                   </div>
 
-                  <button onClick={handleBatchSubmit} className="w-full btn-modern btn-brand py-5 bg-orange-600 hover:bg-orange-700 shadow-lg shadow-orange-100 mb-4">
-                    <ZapIcon size={18} /> Iniciar Recepção
+                  {/* CHECKLIST: o que falta preencher */}
+                  {(!newBatch.fornecedor || !newBatch.valor_compra_total) && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[9px] space-y-1">
+                      <p className="font-black text-amber-700 uppercase tracking-wider mb-2">⚠️ Para iniciar, preencha:</p>
+                      {!newBatch.fornecedor && <p className="text-amber-600">• Fornecedor / Fazenda</p>}
+                      {(!newBatch.valor_compra_total || newBatch.valor_compra_total <= 0) && <p className="text-amber-600">• Valor do Gado (R$)</p>}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleBatchSubmit}
+                    disabled={!newBatch.fornecedor || !newBatch.valor_compra_total}
+                    className="w-full btn-modern btn-brand py-5 bg-orange-600 hover:bg-orange-700 shadow-lg shadow-orange-100 mb-4 disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-slate-400"
+                  >
+                    <ZapIcon size={18} />
+                    {(!newBatch.fornecedor || !newBatch.valor_compra_total)
+                      ? 'Preencha Fornecedor e Valor ↑'
+                      : 'Iniciar Recepção'}
                   </button>
 
                   {/* ═══ LEITOR DE ROMANEIO IA ═══ */}
