@@ -25,11 +25,14 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, stock, transactions, batch
   const safeBatches = Array.isArray(batches) ? batches : [];
   const safeClients = Array.isArray(clients) ? clients : [];
 
-  const totalRevenue = safeSales.reduce((acc, curr) => acc + (curr.peso_real_saida * curr.preco_venda_kg), 0);
-  const totalWeightSold = safeSales.reduce((acc, curr) => acc + curr.peso_real_saida, 0);
-  const totalBreakage = safeSales.reduce((acc, curr) => acc + (curr.quebra_kg || 0), 0);
+  // CORREÇÃO AUDITORIA v2: Filtrar vendas estornadas dos KPIs
+  const activeSales = safeSales.filter(s => s.status_pagamento !== 'ESTORNADO');
 
-  const totalReceivable = safeSales
+  const totalRevenue = activeSales.reduce((acc, curr) => acc + (curr.peso_real_saida * curr.preco_venda_kg), 0);
+  const totalWeightSold = activeSales.reduce((acc, curr) => acc + curr.peso_real_saida, 0);
+  const totalBreakage = activeSales.reduce((acc, curr) => acc + (curr.quebra_kg || 0), 0);
+
+  const totalReceivable = activeSales
     .filter(s => s.status_pagamento === 'PENDENTE')
     .reduce((acc, curr) => {
       const total = curr.peso_real_saida * curr.preco_venda_kg;
@@ -37,7 +40,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, stock, transactions, batch
       return acc + (total - paid);
     }, 0);
 
-  const chartData = safeSales.slice(-12).map((s, idx) => ({
+  const chartData = activeSales.slice(-12).map((s, idx) => ({
     name: `V${idx + 1}`,
     lucro: (s.lucro_liquido_unitario || 0) * s.peso_real_saida,
     valor: s.peso_real_saida * s.preco_venda_kg
@@ -46,7 +49,8 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, stock, transactions, batch
   const salesByBatch = useMemo(() => {
     const grouped = new Map<string, any[]>();
 
-    safeSales.forEach(sale => {
+    // CORREÇÃO AUDITORIA v2: Usar activeSales (sem estornados)
+    activeSales.forEach(sale => {
       const item = safeStock.find(s => s.id_completo === sale.id_completo);
       const batch = item ? safeBatches.find(b => b.id_lote === item.id_lote) : null;
       const client = safeClients.find(c => c.id_ferro === sale.id_cliente);
