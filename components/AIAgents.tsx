@@ -17,6 +17,8 @@ import { parseActionsFromResponse, DetectedAction, generateWhatsAppLink } from '
 import { calculatePredictions, formatPredictionsForPrompt, PredictiveSnapshot } from '../utils/predictions';
 import { WHATSAPP_TEMPLATES, generateCatalogFromStock, suggestTemplateForClient, generateWhatsAppLinkFromTemplate, TemplateType } from '../services/whatsappCommerceService';
 import { generateDRE, formatDREText, calculateESGScore, COMPLIANCE_CHECKLIST, DREReport } from '../services/complianceService';
+import { calcularPrecificacao, formatPrecificacaoForPrompt, PrecificacaoItem } from '../services/pricingEngine';
+import { calculateClientScores, formatRFMForPrompt, getClientTierSummary, ClientScore } from '../services/clientScoringService';
 
 // ═══ AI CASCADE — Gemini → Groq → Cerebras ═══
 interface CascadeProvider {
@@ -805,6 +807,20 @@ const AIAgents: React.FC<AIAgentsProps> = ({
         return calculateESGScore(batches, stock);
     }, [batches, stock]);
 
+    // ═══ 💲 PRECIFICAÇÃO INTELIGENTE (FASE 7) ═══
+    const precificacao = useMemo(() => {
+        return calcularPrecificacao(stock, batches, sales);
+    }, [stock, batches, sales]);
+
+    // ═══ 👥 SCORING CLIENTES RFM (FASE 8) ═══
+    const clientScores = useMemo(() => {
+        return calculateClientScores(clients, sales);
+    }, [clients, sales]);
+
+    const tierSummary = useMemo(() => {
+        return getClientTierSummary(clientScores);
+    }, [clientScores]);
+
     // ═══ STATS PER AGENT ═══
     const agentStats = useMemo(() => {
         const stats: Record<AgentType, { total: number; criticos: number; bloqueios: number }> = {
@@ -1452,7 +1468,9 @@ Organize em: 🤝 SAÚDE DO CLIENTE (NPS), 🥩 QUALIDADE PERCEBIDA, 🚚 FEEDBA
             const newsBlock = marketNews.length > 0 ? `\n\n${formatNewsForAgent(marketNews)} ` : '';
             const predictionsBlock = formatPredictionsForPrompt(predictions);
             const dreBlock = (agentType === 'AUDITOR' || agentType === 'ADMINISTRATIVO') ? `\n\n${formatDREText(dreReport)}` : '';
-            const fullPrompt = `${prompts[agentType]}${baseRules}${memoryBlock} \n\n${dataPackets[agentType]}${predictionsBlock}${dreBlock}${newsBlock} \n\nINSTRUÇÃO CRÍTICA: A data de HOJE é ${new Date().toLocaleDateString('pt-BR')}.Use as NOTÍCIAS DO MERCADO acima como base para sua análise.NÃO invente notícias — cite apenas as que foram fornecidas.Se não houver notícias, diga que o feed não está disponível no momento.LEMBRE-SE: CARNE DURA NO MÁXIMO 8 DIAS NA CÂMARA. Peças com 6+ dias = VENDA URGENTE.`;
+            const pricingBlock = (agentType === 'ESTOQUE' || agentType === 'COMERCIAL' || agentType === 'PRODUCAO') ? formatPrecificacaoForPrompt(precificacao) : '';
+            const rfmBlock = (agentType === 'COMERCIAL' || agentType === 'MARKETING' || agentType === 'SATISFACAO') ? formatRFMForPrompt(clientScores) : '';
+            const fullPrompt = `${prompts[agentType]}${baseRules}${memoryBlock} \n\n${dataPackets[agentType]}${predictionsBlock}${dreBlock}${pricingBlock}${rfmBlock}${newsBlock} \n\nINSTRUÇÃO CRÍTICA: A data de HOJE é ${new Date().toLocaleDateString('pt-BR')}.Use as NOTÍCIAS DO MERCADO acima como base para sua análise.NÃO invente notícias — cite apenas as que foram fornecidas.Se não houver notícias, diga que o feed não está disponível no momento.LEMBRE-SE: CARNE DURA NO MÁXIMO 8 DIAS NA CÂMARA. Peças com 6+ dias = VENDA URGENTE.`;
             const { text, provider } = await runCascade(fullPrompt);
             setAgentResponse(`_via ${provider} | 🧠 ${(memoryCounts[agentType] || 0) + 1} memórias_\n\n${text} `);
 
@@ -2183,6 +2201,107 @@ Regras:
                                 <p className="text-xs text-slate-500 mt-2 text-center font-bold">
                                     ⏳ {bulkProgress.currentAgent} está analisando...
                                 </p>
+                            </div>
+                        )}
+
+                        {/* ═══ 💲 PRECIFICAÇÃO INTELIGENTE (FASE 7) ═══ */}
+                        {precificacao.length > 0 && (
+                            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                                <div className="p-6 border-b border-slate-50">
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <div className="bg-emerald-500/10 p-2 rounded-xl">
+                                            <TrendingUp size={20} className="text-emerald-500" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">💲 Precificação Inteligente</h3>
+                                            <p className="text-[9px] font-bold text-slate-400">Preço automático por idade • FIFO • Margem protegida</p>
+                                        </div>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-[9px]">
+                                            <thead>
+                                                <tr className="text-left text-slate-400 font-black uppercase tracking-widest border-b border-slate-100">
+                                                    <th className="pb-2">Peça</th>
+                                                    <th className="pb-2">Tipo</th>
+                                                    <th className="pb-2">Peso</th>
+                                                    <th className="pb-2">Dias</th>
+                                                    <th className="pb-2">Custo/kg</th>
+                                                    <th className="pb-2">Preço Sugerido</th>
+                                                    <th className="pb-2">Desc.</th>
+                                                    <th className="pb-2">Margem</th>
+                                                    <th className="pb-2">Status</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-50">
+                                                {precificacao.slice(0, 10).map(item => (
+                                                    <tr key={item.id_completo} className={item.diasNaCamara >= 7 ? 'bg-rose-50' : item.diasNaCamara >= 5 ? 'bg-amber-50' : ''}>
+                                                        <td className="py-2 font-mono font-bold text-slate-600">{item.id_completo}</td>
+                                                        <td className="py-2 text-slate-500">{item.tipoNome}</td>
+                                                        <td className="py-2 font-bold">{item.pesoKg.toFixed(1)}kg</td>
+                                                        <td className="py-2 font-black">{item.emoji} {item.diasNaCamara}d</td>
+                                                        <td className="py-2 text-slate-400">R${item.custoRealKg.toFixed(2)}</td>
+                                                        <td className="py-2 font-black text-emerald-600">R${item.precoSugerido.toFixed(2)}</td>
+                                                        <td className="py-2">{item.descontoAplicado > 0 ? <span className="text-rose-500 font-black">-{item.descontoAplicado}%</span> : '—'}</td>
+                                                        <td className={`py-2 font-black ${item.margemEstimada >= 25 ? 'text-emerald-600' : item.margemEstimada >= 10 ? 'text-amber-500' : 'text-rose-500'}`}>{item.margemEstimada}%</td>
+                                                        <td className="py-2 text-[8px] font-black">{item.label}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ═══ 👥 SCORING CLIENTES RFM (FASE 8) ═══ */}
+                        {clientScores.length > 0 && (
+                            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                                <div className="p-6 border-b border-slate-50">
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <div className="bg-purple-500/10 p-2 rounded-xl">
+                                            <Users size={20} className="text-purple-500" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">👥 Scoring de Clientes (RFM)</h3>
+                                            <p className="text-[9px] font-bold text-slate-400">Classificação automática • Recency × Frequency × Monetary</p>
+                                        </div>
+                                    </div>
+                                    {/* Tier Distribution */}
+                                    <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-4">
+                                        {([
+                                            { tier: 'OURO', emoji: '🥇', color: 'from-amber-400 to-yellow-500' },
+                                            { tier: 'PRATA', emoji: '🥈', color: 'from-slate-300 to-slate-400' },
+                                            { tier: 'BRONZE', emoji: '🥉', color: 'from-orange-400 to-amber-500' },
+                                            { tier: 'RISCO', emoji: '⚠️', color: 'from-rose-400 to-red-500' },
+                                            { tier: 'NOVO', emoji: '🆕', color: 'from-blue-400 to-cyan-500' },
+                                            { tier: 'INATIVO', emoji: '💤', color: 'from-gray-300 to-gray-400' },
+                                        ] as const).map(t => (
+                                            <div key={t.tier} className={`bg-gradient-to-r ${t.color} rounded-xl p-3 text-center text-white`}>
+                                                <p className="text-lg font-black">{tierSummary[t.tier]}</p>
+                                                <p className="text-[8px] font-bold opacity-80">{t.emoji} {t.tier}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {/* Top clients */}
+                                    <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                                        {clientScores.slice(0, 8).map(c => (
+                                            <div key={c.id_ferro} className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 transition-colors">
+                                                <span className="text-lg">{c.tierEmoji}</span>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-[10px] font-black text-slate-700 truncate">{c.nome}</p>
+                                                    <p className="text-[8px] text-slate-400">{c.recomendacao.substring(0, 60)}...</p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-[9px] font-black text-slate-600">R${c.monetary.toFixed(0)}</p>
+                                                    <p className="text-[7px] text-slate-400">{c.frequency}x em 90d</p>
+                                                </div>
+                                                <span className={`text-[7px] font-black px-2 py-0.5 rounded-full ${c.tier === 'OURO' ? 'bg-amber-100 text-amber-700' : c.tier === 'RISCO' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'}`}>
+                                                    {c.totalScore}/15
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
                         )}
 
