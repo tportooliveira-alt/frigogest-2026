@@ -15,6 +15,7 @@ import { getAgentMemories, saveAgentMemory, formatMemoriesForPrompt, extractInsi
 import { AgentMemory } from '../types';
 import { parseActionsFromResponse, DetectedAction, generateWhatsAppLink } from '../services/actionParserService';
 import { calculatePredictions, formatPredictionsForPrompt, PredictiveSnapshot } from '../utils/predictions';
+import { WHATSAPP_TEMPLATES, generateCatalogFromStock, suggestTemplateForClient, generateWhatsAppLinkFromTemplate, TemplateType } from '../services/whatsappCommerceService';
 
 // ═══ AI CASCADE — Gemini → Groq → Cerebras ═══
 interface CascadeProvider {
@@ -351,6 +352,10 @@ const AIAgents: React.FC<AIAgentsProps> = ({
     // FASE 4: Multi-Agent Debate
     const [debateSynthesis, setDebateSynthesis] = useState<{ text: string; provider: string; timestamp: Date } | null>(null);
     const [debateRunning, setDebateRunning] = useState(false);
+    // FASE 5: WhatsApp Commerce
+    const [selectedWaTemplate, setSelectedWaTemplate] = useState<TemplateType | null>(null);
+    const [selectedWaClient, setSelectedWaClient] = useState<string>('');  
+    const [waPreview, setWaPreview] = useState<string>('');
     const [expandedDiagnostic, setExpandedDiagnostic] = useState<string | null>(null);
     const [marketNews, setMarketNews] = useState<NewsItem[]>([]);
     const [newsLoading, setNewsLoading] = useState(false);
@@ -2167,6 +2172,102 @@ Regras:
                                 </p>
                             </div>
                         )}
+
+                        {/* ═══ 📱 WHATSAPP COMMERCE (FASE 5) ═══ */}
+                        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                            <div className="p-6 border-b border-slate-50">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="bg-green-500/10 p-2 rounded-xl">
+                                        <MessageCircle size={20} className="text-green-500" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">📱 WhatsApp Commerce</h3>
+                                        <p className="text-[9px] font-bold text-slate-400">8 templates prontos • Catálogo digital • FIFO automático</p>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+                                    {WHATSAPP_TEMPLATES.map(t => (
+                                        <button
+                                            key={t.id}
+                                            onClick={() => {
+                                                setSelectedWaTemplate(t.id);
+                                                setWaPreview('');
+                                            }}
+                                            className={`px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all ${
+                                                selectedWaTemplate === t.id
+                                                    ? `bg-gradient-to-r ${t.color} text-white shadow-lg scale-[1.02]`
+                                                    : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
+                                            }`}
+                                        >
+                                            <span>{t.icon}</span> {t.name}
+                                        </button>
+                                    ))}
+                                </div>
+                                {selectedWaTemplate && (
+                                    <div className="bg-slate-50 rounded-2xl p-4 space-y-3">
+                                        <div className="flex gap-3">
+                                            <select
+                                                value={selectedWaClient}
+                                                onChange={(e) => {
+                                                    setSelectedWaClient(e.target.value);
+                                                    const cli = clients.find(c => c.id_ferro === e.target.value);
+                                                    if (cli) {
+                                                        const tmpl = WHATSAPP_TEMPLATES.find(t => t.id === selectedWaTemplate);
+                                                        const catalog = generateCatalogFromStock(stock, sales);
+                                                        const diasInativo = sales.filter(s => s.id_cliente === cli.id_ferro && s.status_pagamento !== 'ESTORNADO')
+                                                            .sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())[0];
+                                                        const msg = tmpl?.generate(cli, {
+                                                            diasInativo: diasInativo ? Math.floor((Date.now() - new Date(diasInativo.data_venda).getTime()) / 86400000) : 30,
+                                                            valorDevido: cli.saldo_devedor,
+                                                            produtosEstoque: catalog.slice(0, 5)
+                                                        }) || '';
+                                                        setWaPreview(msg);
+                                                    }
+                                                }}
+                                                className="flex-1 px-4 py-3 rounded-xl bg-white border border-slate-200 text-sm text-slate-900 font-bold"
+                                            >
+                                                <option value="">Selecionar cliente...</option>
+                                                {clients.filter(c => c.whatsapp).map(c => {
+                                                    const suggested = suggestTemplateForClient(c, sales);
+                                                    return (
+                                                        <option key={c.id_ferro} value={c.id_ferro}>
+                                                            {c.nome_social} {c.saldo_devedor > 0 ? `(💰 R$${c.saldo_devedor.toFixed(0)})` : ''} {suggested === selectedWaTemplate ? '✅ Recomendado' : ''}
+                                                        </option>
+                                                    );
+                                                })}
+                                            </select>
+                                        </div>
+                                        {waPreview && (
+                                            <>
+                                                <div className="bg-white rounded-xl p-4 border border-green-200 shadow-sm">
+                                                    <p className="text-[9px] font-black text-green-600 uppercase tracking-widest mb-2">👁️ Pré-visualização</p>
+                                                    <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">{waPreview}</p>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        onClick={() => {
+                                                            const cli = clients.find(c => c.id_ferro === selectedWaClient);
+                                                            if (cli?.whatsapp) {
+                                                                window.open(generateWhatsAppLinkFromTemplate(cli.whatsapp, waPreview), '_blank');
+                                                            }
+                                                        }}
+                                                        className="flex-1 px-4 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:from-green-600 hover:to-emerald-600 transition-all shadow-lg"
+                                                    >
+                                                        <MessageCircle size={14} /> Enviar via WhatsApp
+                                                    </button>
+                                                    <button
+                                                        onClick={() => { navigator.clipboard.writeText(waPreview); alert('📋 Mensagem copiada!'); }}
+                                                        className="px-4 py-3 rounded-xl bg-white text-slate-500 text-[10px] font-black uppercase tracking-widest border border-slate-200 hover:bg-slate-50 transition-all"
+                                                    >
+                                                        📋 Copiar
+                                                    </button>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
 
                         {/* ═══ 🤝 SÍNTESE EXECUTIVA — MULTI-AGENT DEBATE (FASE 4) ═══ */}
                         {debateRunning && (

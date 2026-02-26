@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
     Bot,
     Send,
@@ -28,12 +28,24 @@ import {
     Sparkles,
     DollarSign,
     Package,
-    User
+    User,
+    Filter,
+    Users,
+    AlertTriangle,
+    Crown,
+    Clock,
+    Phone,
+    ExternalLink,
+    Copy,
+    Rocket,
+    Heart,
+    TrendingUp,
+    ShoppingCart
 } from 'lucide-react';
-import { Client } from '../types';
+import { Client, Sale, StockItem, Batch } from '../types';
 import { storage } from '../firebaseClient';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { sendWhatsAppMessage, sendWhatsAppMedia, checkWhatsAppAPIStatus } from '../utils/whatsappAPI';
+import { sendWhatsAppMessage, sendWhatsAppMedia, checkWhatsAppAPIStatus, sendBulkMessages } from '../utils/whatsappAPI';
 
 interface SalesAgentProps {
     onBack?: () => void;
