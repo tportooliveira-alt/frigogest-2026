@@ -272,21 +272,23 @@ Você é a máquina de fazer o caixa girar 24/7.`,
     {
         id: 'MARKETING',
         name: 'Isabela',
-        description: 'Diretora de Branding e Growth — Especialista em Influência B2B, Moeda Social e Posicionamento de Carne Premium.',
+        description: 'Diretora de Growth Marketing & ABM 2026 — Especialista em Hiperpersonalização IA, Neuromarketing B2B (Cialdini/Kahneman), Account-Based Marketing, WhatsApp Commerce e Funil de Conversão Preditivo.',
         icon: '✨',
         color: 'fuchsia',
         enabled: true,
-        systemPrompt: `Você é Isabela, Diretora de Branding e Marketing. 
-Sua missão é fazer o FrigoGest ser a MARCA desejada pelos açougues de elite.
+        systemPrompt: `Você é Isabela, Diretora de Growth Marketing & ABM do FrigoGest. 
+A MENTE MAIS BRILHANTE de marketing B2B do setor de carnes no Brasil.
 
-CONHECIMENTO ELITE:
-1. PURPLE COW (Seth Godin): O frigorífico não pode ser "comum". Deve ser a "Vaca Roxa".
-2. STORYBRAND (Donald Miller): O cliente é o herói, nós somos o guia com a solução.
-3. GIFTING STRATEGY: Transformar fornecedores e clientes em advogados da marca através de mimos táticos.
+ESTRATÉGIA 2026 — IA COMO CAMADA OPERACIONAL:
+1. HIPERPERSONALIZAÇÃO: Você analisa RFM, perfil_compra, padrao_gordura e objecoes_frequentes de cada cliente para criar ofertas sob medida.
+2. ABM (Account-Based Marketing): Cada açougue VIP é um "mercado de um". Você trata contas estratégicas individualmente.
+3. NEUROMARKETING APLICADO (Kahneman/Cialdini/Ariely): Vieses cognitivos como Anchoring, Loss Aversion e Decoy Effect em CADA script.
+4. WHATSAPP COMMERCE: O funil inteiro acontece no WhatsApp — da prospecção ao pós-venda.
+5. DATA-DRIVEN GROWTH: Cada ação tem métrica (CAC, LTV, taxa de conversão, NPS).
 
-Você cria o DESEJO que o Comercial converte em PEDIDOS.`,
-        modules: ['MARKETING', 'CLIENTES', 'MERCADO'],
-        triggerCount: 7,
+Você cria o DESEJO que o Comercial converte em PEDIDOS e o Lucas automatiza em ESCALA.`,
+        modules: ['MARKETING', 'CLIENTES', 'MERCADO', 'VENDAS'],
+        triggerCount: 14,
     },
     {
         id: 'SATISFACAO',
@@ -632,17 +634,68 @@ const AIAgents: React.FC<AIAgentsProps> = ({
             }
         });
 
-        // ── ISABELA (MARKETING): Gifting e Tráfego Pago ──
+        // ── ISABELA (MARKETING 2026): ABM, Escassez, Churn, Growth ──
+        const msDay = 86400000;
+        const validSalesForMkt = sales.filter(s => s.status_pagamento !== 'ESTORNADO');
+        
+        // ABM: Clientes esfriando (30-60d sem compra)
+        clients.forEach(c => {
+            const cs = validSalesForMkt.filter(s => s.id_cliente === c.id_ferro);
+            if (cs.length > 0) {
+                const lastSale = [...cs].sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())[0];
+                const diasSemCompra = Math.floor((now.getTime() - new Date(lastSale.data_venda).getTime()) / msDay);
+                if (diasSemCompra >= 30 && diasSemCompra <= 60) {
+                    alerts.push({
+                        id: `MKT-REATIV-${c.id_ferro}`, agent: 'MARKETING', severity: 'ALERTA',
+                        module: 'CLIENTES', title: `🟡 Reativação ABM: ${c.nome_social}`,
+                        message: `${diasSemCompra}d sem comprar. Enviar script Loss Aversion: "Você sabia que seus concorrentes já estão com o lote novo?". WhatsApp: ${c.whatsapp || 'N/A'}`,
+                        timestamp: now.toISOString(), status: 'NOVO'
+                    });
+                }
+                if (diasSemCompra > 60) {
+                    alerts.push({
+                        id: `MKT-PERDIDO-${c.id_ferro}`, agent: 'MARKETING', severity: 'CRITICO',
+                        module: 'CLIENTES', title: `🔴 Cliente Perdido: ${c.nome_social}`,
+                        message: `${diasSemCompra}d inativo. Campanha de Reconquista: Zero Price Effect (frete grátis no próximo pedido). LTV perdido estimado: R$${cs.reduce((s, v) => s + v.peso_real_saida * v.preco_venda_kg, 0).toFixed(0)}.`,
+                        timestamp: now.toISOString(), status: 'NOVO'
+                    });
+                }
+            }
+        });
+        
+        // Escassez: Estoque velho = campanha urgente
+        const estoqueVelho = stock.filter(s => s.status === 'DISPONIVEL' && Math.floor((now.getTime() - new Date(s.data_entrada).getTime()) / msDay) > 4);
+        if (estoqueVelho.length > 2) {
+            alerts.push({
+                id: `MKT-ESCASSEZ-${now.toISOString().split('T')[0]}`, agent: 'MARKETING', severity: 'ALERTA',
+                module: 'ESTOQUE', title: `📦 Campanha Relâmpago: ${estoqueVelho.length} peças`,
+                message: `${estoqueVelho.length} peças com >4 dias. Montar combo Decoy Effect e disparar via WhatsApp para lista VIP. Peso total: ${estoqueVelho.reduce((s, e) => s + e.peso_entrada, 0).toFixed(0)}kg.`,
+                timestamp: now.toISOString(), status: 'NOVO'
+            });
+        }
+        
+        // Desequilíbrio: Excesso de dianteiro vs traseiro
+        const dianteirosD = stock.filter(s => s.status === 'DISPONIVEL' && s.tipo === 2);
+        const traseirosD = stock.filter(s => s.status === 'DISPONIVEL' && s.tipo === 3);
+        if (dianteirosD.length > traseirosD.length * 1.5 && dianteirosD.length > 2) {
+            alerts.push({
+                id: `MKT-COMBO-DECOY`, agent: 'MARKETING', severity: 'ALERTA',
+                module: 'ESTOQUE', title: `🧠 Decoy Effect: Combo Dianteiro`,
+                message: `${dianteirosD.length} dianteiros vs ${traseirosD.length} traseiros. Criar COMBO irresistível: "Leve Dianteiro + Traseiro com 8% OFF". O dianteiro avulso deve parecer ruim.`,
+                timestamp: now.toISOString(), status: 'NOVO'
+            });
+        }
+        
+        // Gifting VIPs
         const topClients = clients.map(c => ({
             ...c,
-            totalKg: sales.filter(s => s.id_cliente === c.id_ferro && s.status_pagamento !== 'ESTORNADO').reduce((sum, s) => sum + s.peso_real_saida, 0)
-        })).sort((a, b) => b.totalKg - a.totalKg).slice(0, 5);
-
+            totalKg: validSalesForMkt.filter(s => s.id_cliente === c.id_ferro).reduce((sum, s) => sum + s.peso_real_saida, 0)
+        })).sort((a, b) => b.totalKg - a.totalKg).slice(0, 3);
         topClients.forEach(c => {
             alerts.push({
                 id: `MKT-GIFT-${c.id_ferro}`, agent: 'MARKETING', severity: 'INFO',
-                module: 'CLIENTES', title: `Mimo VIP: ${c.nome_social}`,
-                message: `Top 5 Cliente (Comprado: ${c.totalKg.toFixed(0)}kg). Enviar brinde exclusivo para reforçar branding FrigoGest.`,
+                module: 'CLIENTES', title: `🎁 Mimo ABM: ${c.nome_social}`,
+                message: `Top 3 Cliente (${c.totalKg.toFixed(0)}kg comprados). GROWTH LOOP: Enviar Display "Parceiro FrigoGest 2026" + churrasco cortesia → ele posta → lead orgânico.`,
                 timestamp: now.toISOString(), status: 'NOVO'
             });
         });
@@ -950,20 +1003,82 @@ Pedidos abertos: ${scheduledOrders.filter(o => o.status === 'ABERTO').length}
 Alertas Robô: ${agentAlerts.length}
 ${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}`.trim(),
 
-                MARKETING: `
-## SNAPSHOT MARKETING & CRM — FRIGOGEST (${new Date().toLocaleDateString('pt-BR')})
-Status Geral: Máquina de Vendas Ativa
-Clientes Ativos Totais: ${clients.filter(c => c.status !== 'INATIVO').length}
-Volume VENDIDO (Últimos 30 Dias): R$${sales.filter(s => s.status_pagamento !== 'ESTORNADO' && Math.floor((new Date().getTime() - new Date(s.data_venda).getTime()) / 86400000) <= 30).reduce((s, v) => s + (v.peso_real_saida * v.preco_venda_kg), 0).toFixed(2)}
-Top Clientes Recentes (Alvos para Upsell/Cross-sell):
-${clients.sort((a, b) => { const va = sales.filter(s => s.id_cliente === a.id_ferro).reduce((s, v) => s + v.peso_real_saida, 0); const vb = sales.filter(s => s.id_cliente === b.id_ferro).reduce((s, v) => s + v.peso_real_saida, 0); return vb - va; }).slice(0, 5).map(c => `- ${c.nome_social} (${c.bairro || 'S/Bairro'}) | Volume Histórico: ${sales.filter(s => s.id_cliente === c.id_ferro).reduce((sum, s) => sum + s.peso_real_saida, 0).toFixed(0)}kg | Preferência de Compra: ${c.perfil_compra || 'N/I'}`).join('\n')}
-Gatilhos de Estoque Crítico (Oportunidades de Escassez):
-${estoqueDisp.filter(s => Math.floor((new Date().getTime() - new Date(s.data_entrada).getTime()) / 86400000) > 4).slice(0, 5).map(s => `- Lote ${s.id_lote}: ${s.tipo === 1 ? 'Inteiro' : s.tipo === 2 ? 'Dianteiro' : 'Traseiro'} (${s.peso_entrada.toFixed(1)}kg) - Risco de perda, prioridade promocional!`).join('\n')}
-Gatilhos de Fornecedores VIP (Gifting/Employer Branding):
-${suppliers.slice(0, 3).map(f => `- ${f.nome_fantasia} (Região: ${f.regiao || 'N/A'}) - Investir em relacionamento B2B`).join('\n')}
-Alertas Específicos do Marketing: ${agentAlerts.length}
-${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}
-`.trim(),
+                MARKETING: (() => {
+                    const now = new Date();
+                    const msDay = 86400000;
+                    const validSales = sales.filter(s => s.status_pagamento !== 'ESTORNADO');
+                    const sales30d = validSales.filter(s => Math.floor((now.getTime() - new Date(s.data_venda).getTime()) / msDay) <= 30);
+                    const sales7d = validSales.filter(s => Math.floor((now.getTime() - new Date(s.data_venda).getTime()) / msDay) <= 7);
+                    const revenue30d = sales30d.reduce((s, v) => s + (v.peso_real_saida * v.preco_venda_kg), 0);
+                    const revenue7d = sales7d.reduce((s, v) => s + (v.peso_real_saida * v.preco_venda_kg), 0);
+                    const kg30d = sales30d.reduce((s, v) => s + v.peso_real_saida, 0);
+                    
+                    // RFM SEGMENTATION
+                    const clientRFM = clients.filter(c => c.status !== 'INATIVO').map(c => {
+                        const cs = validSales.filter(s => s.id_cliente === c.id_ferro);
+                        const lastSale = cs.sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())[0];
+                        const recencia = lastSale ? Math.floor((now.getTime() - new Date(lastSale.data_venda).getTime()) / msDay) : 999;
+                        const frequencia = cs.length;
+                        const valor = cs.reduce((s, v) => s + (v.peso_real_saida * v.preco_venda_kg), 0);
+                        const segmento = recencia <= 15 && frequencia >= 3 ? 'VIP_ATIVO' : recencia <= 30 ? 'ATIVO' : recencia <= 60 ? 'ESFRIANDO' : recencia <= 90 ? 'EM_RISCO' : frequencia > 0 ? 'PERDIDO' : 'NUNCA_COMPROU';
+                        return { ...c, recencia, frequencia, valor, segmento };
+                    });
+                    const vips = clientRFM.filter(c => c.segmento === 'VIP_ATIVO');
+                    const esfriando = clientRFM.filter(c => c.segmento === 'ESFRIANDO');
+                    const emRisco = clientRFM.filter(c => c.segmento === 'EM_RISCO');
+                    const perdidos = clientRFM.filter(c => c.segmento === 'PERDIDO');
+                    const nuncaComprou = clientRFM.filter(c => c.segmento === 'NUNCA_COMPROU');
+                    
+                    // ESTOQUE PARA CAMPANHAS DE ESCASSEZ
+                    const estoqueVelho = estoqueDisp.filter(s => Math.floor((now.getTime() - new Date(s.data_entrada).getTime()) / msDay) > 4);
+                    const dianteirosDisp = estoqueDisp.filter(s => s.tipo === 2);
+                    const traseirosDisp = estoqueDisp.filter(s => s.tipo === 3);
+                    const inteirosDisp = estoqueDisp.filter(s => s.tipo === 1);
+                    
+                    // LTV (Lifetime Value) por segmento
+                    const ltvVip = vips.length > 0 ? vips.reduce((s, c) => s + c.valor, 0) / vips.length : 0;
+                    
+                    return `
+## SNAPSHOT GROWTH MARKETING 2026 — FRIGOGEST (${now.toLocaleDateString('pt-BR')})
+
+═══ 📊 KPIs DE GROWTH ═══
+Receita 7 dias: R$${revenue7d.toFixed(2)} | Receita 30 dias: R$${revenue30d.toFixed(2)}
+Volume 30d: ${kg30d.toFixed(0)}kg em ${sales30d.length} vendas
+Ticket Médio: R$${sales30d.length > 0 ? (revenue30d / sales30d.length).toFixed(2) : '0.00'}
+LTV Médio VIP: R$${ltvVip.toFixed(2)} | Total Clientes: ${clients.filter(c => c.status !== 'INATIVO').length}
+
+═══ 🎯 SEGMENTAÇÃO RFM (FUNIL ABM) ═══
+🟣 VIP ATIVO (≤15d, ≥3 compras): ${vips.length} clientes
+${vips.slice(0, 5).map(c => `  → ${c.nome_social} | ${c.recencia}d | ${c.frequencia} compras | R$${c.valor.toFixed(0)} | Perfil: ${c.perfil_compra || 'N/I'} | Gordura: ${c.padrao_gordura || 'N/I'} | WhatsApp: ${c.whatsapp || 'N/A'}`).join('\\n')}
+🟢 ATIVO (≤30d): ${clientRFM.filter(c => c.segmento === 'ATIVO').length} clientes
+🟡 ESFRIANDO (30-60d): ${esfriando.length} clientes — ALVO REATIVAÇÃO
+${esfriando.slice(0, 5).map(c => `  → ${c.nome_social} | ${c.recencia}d sem comprar | Objeções: ${c.objecoes_frequentes || 'Nenhuma'} | WhatsApp: ${c.whatsapp || 'N/A'}`).join('\\n')}
+🔴 EM RISCO (60-90d): ${emRisco.length} clientes — URGÊNCIA
+${emRisco.slice(0, 3).map(c => `  → ${c.nome_social} | ${c.recencia}d | Último R$${c.valor.toFixed(0)}`).join('\\n')}
+⚫ PERDIDO (>90d): ${perdidos.length} | NUNCA COMPROU: ${nuncaComprou.length}
+
+═══ 🧠 DADOS PARA NEUROMARKETING ═══
+PERFIS PSICOGRÁFICOS (para Decoy Effect e Anchoring):
+${clientRFM.filter(c => c.perfil_compra || c.padrao_gordura || c.objecoes_frequentes).slice(0, 8).map(c => `- ${c.nome_social}: Prefere ${c.perfil_compra || '?'} | Gordura ${c.padrao_gordura || '?'} | Objeção: "${c.objecoes_frequentes || 'nenhuma'}" | Mimo: ${c.mimo_recebido_data || 'nunca'}`).join('\\n')}
+
+═══ 📦 GATILHOS DE ESCASSEZ (Campanhas Urgentes) ═══
+Estoque >4 dias (perda iminente): ${estoqueVelho.length} peças — PROMO RELÂMPAGO
+Dianteiros disponíveis: ${dianteirosDisp.length} (${dianteirosDisp.reduce((s, e) => s + e.peso_entrada, 0).toFixed(0)}kg)
+Traseiros disponíveis: ${traseirosDisp.length} (${traseirosDisp.reduce((s, e) => s + e.peso_entrada, 0).toFixed(0)}kg)
+Inteiros disponíveis: ${inteirosDisp.length} (${inteirosDisp.reduce((s, e) => s + e.peso_entrada, 0).toFixed(0)}kg)
+${dianteirosDisp.length > traseirosDisp.length * 1.5 ? '⚠️ DESEQUILÍBRIO: Excesso de dianteiros — criar COMBO IRRESISTÍVEL (Decoy Effect)' : ''}
+${estoqueVelho.length > 3 ? '🔴 EMERGÊNCIA: +3 peças velhas — disparar campanha LOSS AVERSION "Última chance"' : '🟢 Estoque equilibrado'}
+
+═══ 🤝 ABM — CONTAS ESTRATÉGICAS ═══
+Fornecedores VIP (Gifting B2B):
+${suppliers.slice(0, 5).map(f => {
+                        const lotes = batches.filter(b => b.fornecedor === f.nome_fantasia && b.status !== 'ESTORNADO');
+                        return `- ${f.nome_fantasia} | ${lotes.length} lotes | Região: ${f.regiao || 'N/A'} | Raça: ${f.raca_predominante || 'N/I'}`;
+                    }).join('\\n')}
+Pedidos Abertos: ${scheduledOrders.filter(o => o.status === 'ABERTO').length}
+Alertas Marketing: ${agentAlerts.length}
+${agentAlerts.map(a => '- [' + a.severity + '] ' + a.title + ': ' + a.message).join('\\n')}`.trim();
+                })(),
 
                 SATISFACAO: `
 ## SNAPSHOT CUSTOMER SUCCESS & QUALIDADE — FRIGOGEST (${new Date().toLocaleDateString('pt-BR')})
@@ -1136,76 +1251,93 @@ Organize em: 📊 COTAÇÃO vs TENDÊNCIA, 📈 CICLO DE MERCADO, 💡 INSIGHTS 
 
 Organize em: 📞 PIPELINE DE VENDAS (HOT LEADS), 💡 INSIGHTS DE CONVERSÃO, 🔦 ESTRATÉGIA DE REATIVAÇÃO, 📱 AUTOMAÇÃO DIGITAL, 📈 TENDÊNCIAS DE CONSUMO`,
 
-                MARKETING: `Você é ISABELA, DIRETORA DE MARKETING E GROWTH DO FRIGOGEST — a maior MENTE BRILHANTE de captação e retenção B2B do mercado de carnes. 
-A MELHOR IA DE MARKETING DO MUNDO.
+                MARKETING: `Você é ISABELA, DIRETORA DE GROWTH MARKETING & ABM DO FRIGOGEST 2026 — a MENTE MAIS BRILHANTE de captação e retenção B2B do mercado de carnes no Brasil.
 
-Sua missão é gerar receita PREVISÍVEL e ESCALÁVEL através de estratégias agressivas e embasadas na literatura mundial de marketing.
+Sua missão é gerar receita PREVISÍVEL e ESCALÁVEL usando as estratégias mais modernas do mundo, adaptadas ao frigorífico regional.
 
-📚 SEU CONHECIMENTO PROFUNDO (BASEADO EM 12 BEST-SELLERS DE MARKETING):
+📚 SEU CONHECIMENTO PROFUNDO (18 BEST-SELLERS + TENDÊNCIAS 2026):
 
-1. "Hacking Growth" (Sean Ellis) e "Traction" (Gabriel Weinberg)
-   → METODOLOGIA DE CRESCIMENTO RÁPIDO: Você analisa os 19 canais de tração (B2B Sales, SEO, Content, Trade Shows, etc) e implementa o "Bullseye Framework" - focar no canal que mais converte (ex: Funil WhatsApp para Açougues).
-   → MÉTRICA ESTRELA (North Star Metric): "Total de kg faturados e retidos na base de VIPs mensais." Seu foco é aumentar a frequência (Retention Rate) antes de gastar rios de dinheiro em aquisição (CAC).
+═══ BLOCO 1: PSICOLOGIA DE DECISÃO E NEUROMARKETING ═══
 
-2. "Influence" (Robert Cialdini) e "Predictably Irrational" (Dan Ariely)
-   → GATILHOS MENTAIS APLICADOS AO FRIGORÍFICO:
-     * ESCASSEZ: "Último lote de traseiro Angus, só 2 disponíveis para envio hoje."
-     * PROVA SOCIAL: "Os 5 maiores açougues do seu bairro já são abastecidos pelo FrigoGest e pararam de pisar em matadouro."
-     * AUTORIDADE: "Desossa feita sob os padrões do USDA, entregamos rendimento exato de balcão."
-     * RECIPROCIDADE: Você manda um churrasco (brinde) para um novo líder de mercado, pois sabe que ele retribuirá testando nossa linha padrão.
-     * EFEITO ISCA (Decoy Effect): Oferecer Dianteiro, Traseiro e Misto. A precificação do Dianteiro e Traseiro isolados faz o "Combo Misto B2B" parecer a oferta irrecusável.
+1. "Thinking, Fast and Slow" (Daniel Kahneman, Nobel 2002)
+   → SISTEMA 1 vs SISTEMA 2: O dono do açougue decide com emoção (Sistema 1) e justifica com razão (Sistema 2). Você cria mensagens que ativam o emocional PRIMEIRO.
+   → ANCHORING (Viés de Ancoragem): Sempre mostre o preço mais alto primeiro. "Nosso traseiro premium sai R$42/kg, mas o combo B2B desta semana sai por R$35/kg."
 
-3. "Contagious" (Jonah Berger) e "Purple Cow" (Seth Godin)
-   → MARKETING DE BOCA-A-BOCA / VACA ROXA NO ESTADO DA BAHIA:
-   → Ninguém comenta de carne "ok". O frigorífico precisa ter uma "Vaca Roxa", ser notável. "A embalagem a vácuo perfeita" ou "O motoboy que chega impecável com boné". 
-   → Moeda Social: Faça o Açougueiro parecer chique por vender o FrigoGest. Mande um Display bonito de Acrílico "Açougue Parceiro Frigogest 2026 - Padrão Ouro". Ele vai postar.
+2. "Influence: The Psychology of Persuasion" (Robert Cialdini)
+   → 6+1 PRINCÍPIOS APLICADOS AO FRIGORÍFICO:
+   * ESCASSEZ: "Último lote de traseiro Angus, só 2 disponíveis para envio hoje."
+   * PROVA SOCIAL: "Os 5 maiores açougues do seu bairro já são abastecidos pelo FrigoGest."
+   * AUTORIDADE: "Desossa com certificação ESG 2026 e rastreabilidade Blockchain."
+   * RECIPROCIDADE: Enviar brinde tático → cliente retribui com pedido.
+   * COMPROMISSO E COERÊNCIA: "Você que sempre compra o melhor, vai deixar o padrão Angus acabar?"
+   * AFEIÇÃO: Construir rapport pessoal com cada açougueiro VIP.
+   * UNIDADE (7º princípio, 2021): "Nós, açougueiros da Bahia, merecemos carne de primeira."
 
-4. "Positioning: The Battle for Your Mind" (Al Ries & Jack Trout) e "Building a StoryBrand" (Donald Miller)
-   → POSICIONAMENTO B2B (MINDSHARE): Na mente do dono do açougue não há espaço para 10 frigoríficos. Ele tem o "Mais Barato", o "Atrasado", e você tem que ocupar o slot "O MAIS CONFIÁVEL DE ALTO RENDIMENTO". 
-   → O CLIENTE É O HERÓI (StoryBrand): Pare de falar de nós ("O Frigogest tem o melhor boi"). Fale do problema dele (o Frigogest ensina como: "Aumente sua margem na prateleira sem esgotar sua paciência com boi duro").
+3. "Predictably Irrational" (Dan Ariely, MIT)
+   → DECOY EFFECT B2B: Ofereça 3 opções: Dianteiro (barato), Traseiro (caro), COMBO MISTO (meio-termo atrativo). O combo é sua meta de margem.
+   → LOSS AVERSION: "Todo dia com boi ruim na câmara você PERDE 3 clientes para a concorrência."
+   → ZERO PRICE EFFECT: "Primeira entrega com frete GRÁTIS" destrói a barreira de entrada.
 
-5. "Ogilvy on Advertising" (David Ogilvy) e "This is Marketing" (Seth Godin)
-   → COPYWRITING CIENTÍFICO B2B: Ogilvy disse "Se não vende, não é criativo". Você cria títulos claros. O B2B quer números, fatos. "Nova safra: 54% de rendimento de carne limpa na nossa desossa".
-   → PEOPLE LIKE US DO THINGS LIKE THIS (Tribos): Crie o sentimento: "Açougues que lucram na Bahia compram o padrão FrigoGest". 
+═══ BLOCO 2: GROWTH HACKING & FUNIL B2B ═══
 
-6. "Crossing the Chasm" (Geoffrey Moore) e "Blue Ocean Strategy" (W. Chan Kim)
-   → OCÉANO AZUL REGIONAL: Qual é o Oceano Azul em Vitória da Conquista e Sudoeste Baiano? A maioria doa os ossos e banhas e disputa no centavo. Nós devemos oferecer inteligência! "O frigorífico que ensina o açougue a lucrar".
-   → LIDERANÇA DE NICHO: Atravesse o abismo. Focar no nicho de Açougues de Bairro e virar o rei deles, ou focar em Churrascarias Premium e monopolizar a região.
+4. "Hacking Growth" (Sean Ellis) + "Traction" (Gabriel Weinberg)
+   → BULLSEYE FRAMEWORK: O canal nº1 do FrigoGest é WHATSAPP COMMERCE (80% dos açougueiros estão lá).
+   → NORTH STAR METRIC: "Total de kg faturados e retidos na base de VIPs mensais."
+   → GROWTH LOOP: Cliente compra → recebe mimo (Cialdini: Reciprocidade) → posta foto do selo "Parceiro FrigoGest" → novo lead vê → ciclo repete.
+
+5. "Predictable Revenue" (Aaron Ross, Salesforce)
+   → MÁQUINA DE RECEITA PREVISÍVEL: Dividir o funil em COLD (prospecção), WARM (nutrição) e HOT (fechamento).
+   → INTEGRAÇÃO COM LUCAS (Robô de Vendas): Isabela cria a COPY, Lucas dispara em escala.
+
+═══ BLOCO 3: BRANDING, POSICIONAMENTO E CONTEÚDO ═══
+
+6. "Purple Cow" (Seth Godin) + "Contagious" (Jonah Berger)
+   → VACA ROXA: O FrigoGest não pode ser "mais um". Deve ser o frigorífico que o açougueiro ORGULHOSAMENTE conta para os outros.
+   → MOEDA SOCIAL: Mande um Display de Acrílico "Açougue Parceiro FrigoGest 2026 - Padrão Ouro". Ele vai postar.
+   → STEPPS (Jonah Berger): Social Currency, Triggers, Emotion, Public, Practical Value, Stories.
+
+7. "Building a StoryBrand" (Donald Miller) + "Positioning" (Al Ries)
+   → O CLIENTE É O HERÓI: "Aumente sua margem na prateleira sem esgotar sua paciência com boi duro."
+   → POSICIONAMENTO: Ocupar o slot mental "O MAIS CONFIÁVEL DE ALTO RENDIMENTO".
+
+8. "Ogilvy on Advertising" (David Ogilvy) + "This is Marketing" (Seth Godin)
+   → COPYWRITING CIENTÍFICO B2B: Títulos claros com números. "Nova safra: 54% de rendimento de carne limpa."
+   → TRIBOS: "Açougues que lucram na Bahia compram o padrão FrigoGest."
+
+═══ BLOCO 4: ABM & ESTRATÉGIA MODERNA 2026 ═══
+
+9. ACCOUNT-BASED MARKETING (ABM)
+   → Cada açougue VIP é um "mercado de um". Criar conteúdo exclusivo para as TOP 10 contas.
+   → PIPELINE ABM: Identify → Expand → Engage → Advocate.
+
+10. HIPERPERSONALIZAÇÃO VIA IA 2026
+   → Usar perfil_compra, padrao_gordura e objecoes_frequentes de cada cliente para criar ofertas sob medida.
+   → WHATSAPP COMMERCE: Catálogo digital, chatbot de pedidos, campanhas segmentadas por RFM.
+
+11. "Blue Ocean Strategy" (W. Chan Kim)
+   → OCÉANO AZUL: Enquanto concorrentes disputam preço, FrigoGest oferece INTELIGÊNCIA ("O frigorífico que ensina o açougue a lucrar").
 
 ═══════════════════════════════════════════════
-🎯 ESTRATÉGIAS DE GROWTH & CRM NA PRÁTICA (MÁQUINA B2B)
+💡 ENTREGUE 5 BLOCOS BRILHANTES:
 ═══════════════════════════════════════════════
 
-1. TRÁFEGO PAGO B2B CONVERTIDO EM CRM (LTV > CAC):
-   • Anúncios no Meta Ads hiper-segmentados para a região, focado nos desejos profundos do empresário: segurança. "Exausto de surpresas amargas na desossa? Descubra nosso processo de Toalete 3.0."
+🎯 1. DIAGNÓSTICO ABM (Segmentação RFM do Snapshot)
+Analise os segmentos VIP, ESFRIANDO e EM_RISCO. Defina ação específica para cada grupo.
 
-2. ESTEIRA DE RECEITA (FUNIL WHATSAPP EXTREMO):
-   • O ROBÔ LUCAS TOCA AS VENDAS, MAS VOCÊ É QUEM MONTA A COPY. 
-   • Use o Efeito "Anchoring" e "Loss Aversion" nas promoções. B2B teme mais perder dinheiro do que ganhar. "Todo dia com boi ruim na câmara você perde 3 clientes para a concorrência."
+✍️ 2. SCRIPTS WHATSAPP COMMERCE (2 scripts prontos)
+1 Script de REATIVAÇÃO (para ESFRIANDO) usando Loss Aversion + Mirroring FBI.
+1 Script de PROSPECÇÃO (para NUNCA_COMPROU) usando Decoy Effect + Zero Price.
 
-3. GESTÃO DE RELACIONAMENTO & MIMOS (GIFTING B2B DE IMPACTO GIGANTE):
-   • ESTRATÉGIA "Ogilvy": Se um Fornecedor bom te envia um lote excelente de vacas (alta qualidade), mande uma cesta tática que sua esposa vá adorar (garrafa de champanhe / flores + carne premium). Conquiste a esposa, e o pecuarista nunca mais troca de frigorífico.
-   • ESTRATÉGIA "Traction": VIPs precisam ver o Frigogest como seu próprio selo de qualidade. Presenteie-os mensalmente. 
+📊 3. CAMPANHA DE ESCASSEZ (baseada no estoque atual)
+Use os dados de estoque velho e desequilíbrios do Snapshot para criar uma campanha URGENTE.
 
-═══════════════════════════════════════════════
-💡 O QUE VOCÊ DEVE ANALISAR E ENTREGAR:
-═══════════════════════════════════════════════
+🧠 4. INSIGHT NEUROMARKETING
+Aplique um viés cognitivo específico de Kahneman/Ariely aos dados do Snapshot para hackear uma venda.
 
-Com base nos dados (Snapshot) e usando SEUS LIVROS e inteligência agressiva, ENTREGUE os 4 blocos brilhantes (use emojis):
+🎁 5. GIFTING & VIRAL (baseado nos VIPs e fornecedores do Snapshot)
+Qual mimo tático enviar HOJE para gerar boca-a-boca na região? Use STEPPS de Jonah Berger.
 
-👑 1. DIRETRIZ ESTRATÉGICA GROWTH (COM BASE NOS LIVROS MENCIONADOS)
-(Explique qual Framework você está aplicando, ex: StoryBrand para atrair inativos do Snapshot, ou Oceano Azul para aquele corte encalhado que ninguém vende).
-
-✍️ 2. PACOTE DE COPY "OGILVY / CIALDINI" (DOIS SCRIPTS WHATSAPP / INSTA)
-(1 Script de prospecção, 1 Post Instagram com a estratégia que vende e apela 100% à aversão à perda B2B).
-
-📊 3. INSIGHT NEUROMARKETING E HACKING GROWTH
-(Mostre usando dados do funil e um aprendizado que hackeou o cérebro humano em vendas).
-
-🎁 4. ESTRATÉGIA BOCA-A-BOCA ("PURPLE COW / CONTÁGIO")
-(Tática surpresa de relacionamento: Baseado nos VIPs e fornecedores listados, qual brinde, mimo, recompensa absurda você fará HOJE para gerar falatório B2B na região?).
-
-MÁXIMO 600 PALAVRAS. Demonstre o QI altíssimo de VENDAS E MARKETING!`,
+MÁXIMO 700 PALAVRAS. Use emojis. Cite NÚMEROS EXATOS do snapshot. Demonstre QI altíssimo.`,
 
                 SATISFACAO: `Você é CAMILA, DIRETORA DE CUSTOMER EXPERIENCE (CX) E QUALIDADE PERCEBIDA. 
 Sua missão é transformar compradores em FÃS do FrigoGest.
@@ -1457,7 +1589,7 @@ ${vendasNoPrejuizo.slice(0, 3).map(v => `  → ${v.id_completo}: vendeu R$${v.pr
                     COMPRAS: '🎯 FOCO: Scorecard A/B/C de fornecedores. TCO real. Genética e ESG Score.',
                     MERCADO: `🎯 FOCO: Compare custo_real_kg vs CEPEA-BA. Margem vs Meta ${INDUSTRY_BENCHMARKS_2026.MARGEM_OPERACIONAL_IDEAL}%. Sazonalidade Fev/2026.`,
                     ROBO_VENDAS: '🎯 FOCO: Segmentação RFM. Script WhatsApp FBI/Mirroring. Inovações 2026.',
-                    MARKETING: '🎯 FOCO: Campanhas de Escassez. B2B Branding. Mimo VIP e Tráfego Pago.',
+                    MARKETING: '🎯 FOCO: ABM Completo — Diagnóstico RFM (VIP/Esfriando/Em Risco/Perdido). Campanha de ESCASSEZ com estoque >4d. Script WhatsApp com Anchoring + Loss Aversion (Kahneman). Gifting B2B tático. GROWTH LOOP: compra→mimo→post→lead.',
                     SATISFACAO: '🎯 FOCO: NPS (Net Promoter Score). Pós-venda personalizado. Objeções e Qualidade Percebida.',
                 };
                 const expertise = sectorFocus[agent.id] ? `\n${sectorFocus[agent.id]}\n` : '';
