@@ -1214,8 +1214,8 @@ const App: React.FC = () => {
         onBack={() => setCurrentView('menu')}
       />}
       {
-        currentView === 'expedition' && <Expedition clients={data.clients} stock={closedStock} batches={closedBatches} salesHistory={data.sales} onConfirmSale={(saleData) => {
-          const { client, items, pricePerKg, extrasCost } = saleData;
+        currentView === 'expedition' && <Expedition clients={data.clients} stock={closedStock} batches={closedBatches} salesHistory={data.sales} onConfirmSale={async (saleData) => {
+          const { client, items, pricePerKg, extrasCost, pagoNoAto, metodoPagamento } = saleData;
 
           // AGRUPAR: Banda A + Banda B do mesmo animal = CARCAÇA INTEIRA
           const groupedItems = new Map<string, any[]>();
@@ -1228,31 +1228,30 @@ const App: React.FC = () => {
           const newSales: Sale[] = [];
           let groupIndex = 0;
 
-          // CORREÇÃO AUDITORIA #4: Calcular peso total para distribuir extras proporcionalmente
+          // Calcular peso total para distribuir extras proporcionalmente
           const totalSaleWeight = [...groupedItems.values()].reduce((acc, groupItems) =>
             acc + groupItems.reduce((sum: number, i: any) => sum + (i.peso_saida || i.peso_entrada), 0), 0);
 
           groupedItems.forEach((groupItems, key) => {
-            const isCarcacaInteira = groupItems.length > 1; // Banda A + Banda B = 2 itens
+            const isCarcacaInteira = groupItems.length > 1;
             const batch = data.batches.find(b => b.id_lote === groupItems[0].id_lote);
             const custoKg = batch ? batch.custo_real_kg : 0;
 
-            // Somar pesos de todos os itens do grupo
             const pesoEntradaTotal = groupItems.reduce((acc: number, i: any) => acc + i.peso_entrada, 0);
             const pesoSaidaTotal = groupItems.reduce((acc: number, i: any) => acc + (i.peso_saida || i.peso_entrada), 0);
             const quebraTotal = pesoEntradaTotal - pesoSaidaTotal;
 
-            // Calcular lucro consolidado
             const revenue = pesoSaidaTotal * pricePerKg;
             const cost = pesoSaidaTotal * custoKg;
-            // CORREÇÃO AUDITORIA #4: Distribuir extras proporcionalmente ao peso
             const groupExtraCost = totalSaleWeight > 0 ? (extrasCost * (pesoSaidaTotal / totalSaleWeight)) : 0;
             const profit = revenue - cost - groupExtraCost;
 
-            // ID: se for carcaça inteira, usa ID especial
             const idCompleto = isCarcacaInteira
               ? `${groupItems[0].id_lote}-${groupItems[0].sequencia}-INTEIRO`
               : groupItems[0].id_completo;
+
+            const valorTotal = pesoSaidaTotal * pricePerKg;
+            const metodo = metodoPagamento || 'OUTROS';
 
             newSales.push({
               id_venda: `V-${Date.now()}-${groupIndex++}`,
@@ -1265,17 +1264,35 @@ const App: React.FC = () => {
               quebra_kg: quebraTotal,
               lucro_liquido_unitario: profit,
               custo_extras_total: groupExtraCost,
-              prazo_dias: 30,
-              data_vencimento: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-              forma_pagamento: 'OUTROS',
-              status_pagamento: 'PENDENTE',
+              prazo_dias: pagoNoAto ? 0 : 30,
+              data_vencimento: new Date(Date.now() + (pagoNoAto ? 0 : 30) * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+              forma_pagamento: pagoNoAto ? metodo : 'OUTROS',
+              // PAGO NO ATO: já marca como PAGO e registra valor
+              status_pagamento: pagoNoAto ? 'PAGO' : 'PENDENTE',
+              valor_pago: pagoNoAto ? valorTotal : 0,
               tipo_venda: isCarcacaInteira ? 'CARCACA_INTEIRA' : 'BANDA_AVULSA',
-              // IDs originais dos itens no estoque (para marcar como vendido)
               stock_ids_originais: groupItems.map((i: any) => i.id_completo)
             } as any);
           });
 
-          addSales(newSales);
+          await addSales(newSales);
+
+          // 💰 PAGO NO ATO: criar ENTRADA no fluxo de caixa automaticamente
+          if (pagoNoAto && newSales.length > 0) {
+            const totalVenda = newSales.reduce((acc, s) => acc + (s.peso_real_saida * s.preco_venda_kg), 0);
+            const metodo = metodoPagamento || 'OUTROS';
+            await addTransaction({
+              id: `TR-VISTA-${Date.now()}`,
+              data: new Date().toISOString().split('T')[0],
+              descricao: `Venda à Vista (${metodo}): ${client.nome_social} — ${newSales.length} item(s)`,
+              tipo: 'ENTRADA',
+              categoria: 'VENDA',
+              valor: totalVenda,
+              metodo_pagamento: metodo,
+              referencia_id: newSales[0].id_venda
+            } as any);
+          }
+
           setCurrentView('sales_history');
         }} onBack={() => setCurrentView('menu')} />
       }

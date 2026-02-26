@@ -78,13 +78,19 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
       });
   }, [stock, batches]);
 
-  // Peças expiradas (> 8 dias) — visíveis mas bloqueadas
+  // Peças bloqueadas (>= 12 dias) — removidas completamente da lista
   const expiredItems = useMemo(() =>
-    availableStock.filter(item => getDaysInChamber(item) >= 8),
+    availableStock.filter(item => getDaysInChamber(item) >= 12),
     [availableStock]
   );
+  // Peças em atenção (8-11 dias) — podem vender mas com aviso laranja
+  const warningItems = useMemo(() =>
+    availableStock.filter(item => { const d = getDaysInChamber(item); return d >= 8 && d < 12; }),
+    [availableStock]
+  );
+  // Estoque seguro (< 12 dias) — inclui os de aviso (8-11d), mas REMOVE os bloqueados
   const safeStock = useMemo(() =>
-    availableStock.filter(item => getDaysInChamber(item) < 8),
+    availableStock.filter(item => getDaysInChamber(item) < 12),
     [availableStock]
   );
 
@@ -132,12 +138,15 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
         totalWeight: items.reduce((acc, i) => acc + i.peso_entrada, 0),
         supplier: getSupplierName(loteId),
         expiredCount: expiredItems.filter(e => e.id_lote === loteId).length,
+        warningCount: warningItems.filter(e => e.id_lote === loteId).length,
       };
     }).sort((a, b) => b.lote.localeCompare(a.lote));
-  }, [safeStock, searchTerm, batches, expiredItems]);
+  }, [safeStock, searchTerm, batches, expiredItems, warningItems]);
 
 
   const [itemWeights, setItemWeights] = useState<Record<string, number>>({});
+  const [pagoNoAto, setPagoNoAto] = useState(false);
+  const [pagoMetodo, setPagoMetodo] = useState<'PIX' | 'DINHEIRO' | 'CARTAO'>('PIX');
 
   const getTotalWeight = () => {
     return selectedItems.reduce((acc, item) => {
@@ -394,8 +403,16 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
       peso_saida: itemWeights[item.id_completo] !== undefined ? itemWeights[item.id_completo] : item.peso_entrada
     }));
 
-    onConfirmSale({ client: selectedClient, items: itemsWithWeights, pricePerKg, extrasCost });
+    onConfirmSale({
+      client: selectedClient,
+      items: itemsWithWeights,
+      pricePerKg,
+      extrasCost,
+      pagoNoAto,
+      metodoPagamento: pagoNoAto ? pagoMetodo : undefined
+    });
     setSelectedClient(null); setSelectedItems([]); setPricePerKg(0); setExtrasCost(0);
+    setPagoNoAto(false);
     setShowHistory(true); // Automatically go to history after sale
   };
 
@@ -569,7 +586,13 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
                           {(group as any).expiredCount > 0 && (
                             <div className="flex items-center gap-1.5 bg-rose-100 border border-rose-200 text-rose-700 px-3 py-1 rounded-full">
                               <AlertCircle size={12} />
-                              <span className="text-[9px] font-black uppercase">{(group as any).expiredCount} VENCIDA{(group as any).expiredCount > 1 ? 'S' : ''} — BLOQUEADA{(group as any).expiredCount > 1 ? 'S' : ''}</span>
+                              <span className="text-[9px] font-black uppercase">{(group as any).expiredCount} VENCIDA{(group as any).expiredCount > 1 ? 'S' : ''} — BLOQUEADA{(group as any).expiredCount > 1 ? 'S' : ''} +12d</span>
+                            </div>
+                          )}
+                          {(group as any).warningCount > 0 && (
+                            <div className="flex items-center gap-1.5 bg-amber-100 border border-amber-300 text-amber-700 px-3 py-1 rounded-full">
+                              <AlertCircle size={12} />
+                              <span className="text-[9px] font-black uppercase">{(group as any).warningCount} EM ATENÇÃO — 8-11d</span>
                             </div>
                           )}
                         </div>
@@ -849,12 +872,50 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
 
                 <div className="flex flex-col gap-3">
 
+                  {/* PAGO NO ATO TOGGLE */}
+                  <div className={`rounded-xl border p-3 transition-all ${pagoNoAto ? 'bg-emerald-500/20 border-emerald-400/40' : 'bg-white/5 border-white/10'}`}>
+                    <button
+                      onClick={() => setPagoNoAto(p => !p)}
+                      className="w-full flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className={`w-4 h-4 rounded-full border-2 transition-all flex items-center justify-center ${pagoNoAto ? 'bg-emerald-400 border-emerald-400' : 'border-white/30'}`}>
+                          {pagoNoAto && <div className="w-2 h-2 bg-white rounded-full" />}
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-wider text-white">💵 Pago no Ato</span>
+                      </div>
+                      <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-md ${pagoNoAto ? 'bg-emerald-400 text-white' : 'bg-white/10 text-slate-400'}`}>
+                        {pagoNoAto ? 'ATIVADO → Entrará no Caixa' : 'PRAZO'}
+                      </span>
+                    </button>
+                    {pagoNoAto && (
+                      <div className="mt-3 flex gap-2">
+                        {(['PIX', 'DINHEIRO', 'CARTAO'] as const).map(m => (
+                          <button
+                            key={m}
+                            onClick={() => setPagoMetodo(m)}
+                            className={`flex-1 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
+                              pagoMetodo === m ? 'bg-emerald-400 text-white shadow-sm' : 'bg-white/10 text-slate-300 hover:bg-white/20'
+                            }`}
+                          >
+                            {m === 'PIX' ? '⚡ PIX' : m === 'DINHEIRO' ? '💵 Dinheiro' : '💳 Cartão'}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   <button
                     onClick={handleConfirm}
                     disabled={selectedItems.length === 0 || !selectedClient || pricePerKg <= 0}
-                    className="w-full py-4 bg-blue-600 rounded-xl text-white font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-white hover:text-slate-900 transition-all disabled:opacity-20 active:scale-95 shadow-xl shadow-blue-500/20"
+                    className={`w-full py-4 rounded-xl text-white font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 transition-all disabled:opacity-20 active:scale-95 shadow-xl ${
+                      pagoNoAto
+                        ? 'bg-emerald-500 hover:bg-emerald-400 shadow-emerald-500/30'
+                        : 'bg-blue-600 hover:bg-white hover:text-slate-900 shadow-blue-500/20'
+                    }`}
                   >
-                    <ShieldCheck size={20} /> Confirmar Entrega [THIAGO 704]
+                    <ShieldCheck size={20} />
+                    {pagoNoAto ? `✅ Confirmar + Receber ${pagoMetodo}` : 'Confirmar Entrega [FIADO]'}
                   </button>
 
                   <button
