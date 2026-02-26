@@ -42,7 +42,7 @@ const buildCascadeProviders = (): CascadeProvider[] => {
             call: async (prompt: string) => {
                 const ai = new GoogleGenAI({ apiKey: geminiKey });
                 const res = await ai.models.generateContent({
-                    model: 'gemini-1.5-flash',
+                    model: 'gemini-2.5-flash',
                     contents: { parts: [{ text: prompt }] },
                 });
                 const text = res.candidates?.[0]?.content?.parts?.[0]?.text;

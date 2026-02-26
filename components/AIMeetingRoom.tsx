@@ -105,7 +105,7 @@ VENDAS E MARKETING:\n- Clientes Totais: ${clientesAtivos.length}\n- Top 5 Client
 
         try {
             const res = await ai.models.generateContent({
-                model: 'gemini-1.5-flash',
+                model: 'gemini-2.5-flash',
                 contents: { parts: [{ text: prompt }] },
                 config: {
                     tools: [{ googleSearch: {} }],
@@ -116,7 +116,7 @@ VENDAS E MARKETING:\n- Clientes Totais: ${clientesAtivos.length}\n- Top 5 Client
             if (error.message.includes('googleSearch')) {
                 // Fallback case new SDK structure for tools differs
                 const fbReq = await ai.models.generateContent({
-                    model: 'gemini-1.5-flash',
+                    model: 'gemini-2.5-flash',
                     contents: { parts: [{ text: prompt }] }
                 });
                 return fbReq.candidates?.[0]?.content?.parts?.[0]?.text || 'Fallback OK';
