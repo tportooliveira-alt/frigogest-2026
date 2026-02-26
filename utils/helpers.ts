@@ -3,7 +3,7 @@ import { Client, Sale } from '../types';
 
 export const calculateDaysInStock = (entryDate: string): number => {
   const start = new Date(entryDate);
-  const current = new Date(CURRENT_DATE);
+  const current = new Date(); // Always use live date, not static CURRENT_DATE
   const diffTime = Math.abs(current.getTime() - start.getTime());
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   return diffDays;

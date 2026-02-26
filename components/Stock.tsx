@@ -330,6 +330,12 @@ const Stock: React.FC<StockProps> = ({ stock, batches, sales, clients, updateBat
                               );
                             })()}
 
+                            {/* SUPPLIER INSIGHT */}
+                            {batch?.fornecedor && supplierInsights.has(batch.fornecedor) && (
+                              <span className={`flex items-center gap-1.5 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest border shadow-sm ${supplierInsights.get(batch.fornecedor)?.quality === 'top' ? 'bg-indigo-50 text-indigo-600 border-indigo-100' :
+                                supplierInsights.get(batch.fornecedor)?.quality === 'poor' ? 'bg-orange-50 text-orange-600 border-orange-100' :
+                                  'bg-slate-50 text-slate-600 border-slate-100'
+                                }`}>
                                 <Dna size={10} /> {supplierInsights.get(batch.fornecedor)?.quality === 'top' ? 'Genética Premium' : 'Gado Regular'}
                               </span>
                             )}
@@ -439,7 +445,7 @@ const Stock: React.FC<StockProps> = ({ stock, batches, sales, clients, updateBat
                                 {(item.gordura || item.marmoreio) && (
                                   <div className="flex gap-1">
                                     {item.gordura && (
-                                      <span className="text-[8px] font-black bg-orange-100 text-orange-700 px-1.5 rounded uppercase">GORD: {item.gordura}</span>
+                                      <span className="text-[8px] font-black bg-orange-100 text-orange-700 px-1.5 rounded uppercase">GORD: {item.gordura === 1 ? '1-Aus' : item.gordura === 2 ? '2-Esc' : item.gordura === 3 ? '3-Med' : item.gordura === 4 ? '4-Uni' : '5-Exc'}</span>
                                     )}
                                     {item.marmoreio && (
                                       <span className="text-[8px] font-black bg-purple-100 text-purple-700 px-1.5 rounded uppercase">MARM: {item.marmoreio}</span>

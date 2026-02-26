@@ -11,7 +11,6 @@ import { GoogleGenAI } from '@google/genai';
 import { fetchAllNews, formatNewsForAgent, NewsItem } from '../services/newsService';
 import { sendWhatsAppMessage } from '../utils/whatsappAPI';
 import { INDUSTRY_BENCHMARKS_2026 } from '../constants';
-import { BREED_REFERENCE_DATA } from '../types';
 
 // ═══ AI CASCADE — Gemini → Groq → Cerebras ═══
 interface CascadeProvider {
@@ -897,15 +896,20 @@ ${agentAlerts.map(a => '- [' + a.severity + '] ' + a.title + ': ' + a.message).j
 ## SNAPSHOT COMPRAS — FRIGOGEST (${new Date().toLocaleDateString('pt-BR')})
 Fornecedores: ${suppliers.length} cadastrados
 ${suppliers.slice(0, 10).map(s => {
-                    const lotes = batches.filter(b => b.fornecedor === s.nome_fantasia);
+                    const lotes = batches.filter(b => b.fornecedor === s.nome_fantasia && b.status !== 'ESTORNADO');
                     const totalKg = lotes.reduce((sum, b) => sum + b.peso_total_romaneio, 0);
                     const totalR = lotes.reduce((sum, b) => sum + b.valor_compra_total, 0);
-                    const mortos = lotes.reduce((sum, b) => sum + ((b as any).qtd_mortos || 0), 0);
-                    const rends = lotes.filter(b => b.rendimento_real && b.rendimento_real > 0);
-                    const avgRend = rends.length > 0 ? (rends.reduce((sum, b) => sum + (b.rendimento_real || 0), 0) / rends.length).toFixed(1) + '%' : 'N/A';
+                    const mortos = lotes.reduce((sum, b) => sum + (b.qtd_mortos || 0), 0);
+                    const rendsCalc = lotes.filter(b => b.peso_total_romaneio > 0).map(b => {
+                        const pecas = stock.filter(st => st.id_lote === b.id_lote);
+                        return pecas.reduce((sm, p) => sm + p.peso_entrada, 0) / b.peso_total_romaneio * 100;
+                    }).filter(r => r > 0);
+                    const avgRend = rendsCalc.length > 0 ? (rendsCalc.reduce((a, b) => a + b, 0) / rendsCalc.length).toFixed(1) + '%' : 'N/A';
                     const score = avgRend !== 'N/A' && parseFloat(avgRend) > 52 && mortos === 0 ? 'A (Excelente)' : (avgRend !== 'N/A' && parseFloat(avgRend) > 49 ? 'B (Bom)' : 'C (Atenção)');
-                    return `- ${s.nome_fantasia} | Score: ${score} | Raça: ${s.raca_predominante || 'N/I'} | ${lotes.length} lotes | Mortos: ${mortos} | Rend Médio: ${avgRend} | ${totalKg.toFixed(0)}kg | R$${totalR.toFixed(2)}`;
-                }).join('\n')}
+                    const esgAvg = lotes.filter(b => b.esg_score).length > 0 ? (lotes.reduce((sm, b) => sm + (b.esg_score || 0), 0) / lotes.filter(b => b.esg_score).length).toFixed(0) + '%' : 'N/A';
+                    const traceable = lotes.filter(b => b.traceability_hash).length;
+                    return `- ${s.nome_fantasia} | Score: ${score} | Raça: ${s.raca_predominante || 'N/I'} | ${lotes.length} lotes | Mortos: ${mortos} | Rend: ${avgRend} | ESG: ${esgAvg} | Trace: ${traceable}/${lotes.length} | ${totalKg.toFixed(0)}kg | R$${totalR.toFixed(2)}`;
+                }).join('\\n')}
 Contas a Pagar: ${payablesPendentes.length} (R$${payablesPendentes.reduce((s, p) => s + p.valor, 0).toFixed(2)})
 Vencidas: ${payablesVencidos.length} (R$${payablesVencidos.reduce((s, p) => s + p.valor, 0).toFixed(2)})
 Custo médio/kg: R$${batches.length > 0 ? (batches.reduce((s, b) => s + b.custo_real_kg, 0) / batches.length).toFixed(2) : '0.00'}
@@ -915,7 +919,7 @@ ${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}
                 MERCADO: `
 ## SNAPSHOT MERCADO — FRIGOGEST (${new Date().toLocaleDateString('pt-BR')})
 REFERÊNCIA CEPEA-BA Sul: R$311,50/@vivo (Fev/2026) → R$${(311.50 / 15).toFixed(2)}/kg carcaça (seu custo de oportunidade)
-SAZONALIDADE ATUAL: ${new Date().getMonth() >= 1 && new Date().getMonth() <= 5 ? '🟢 SAFRA (Jan-Jun) — boa oferta, preço firme, janela de compra razoável' : new Date().getMonth() >= 6 && new Date().getMonth() <= 10 ? '🔴 ENTRESSAFRA (Jul-Nov) — escassez, preço máximo, comprar com cautela' : '🟡 FESTAS/ÁGUAS (Dez-Jan) — demanda alta, preço em alta'}
+SAZONALIDADE ATUAL: ${new Date().getMonth() >= 0 && new Date().getMonth() <= 5 ? '🟢 SAFRA (Jan-Jun) — boa oferta, preço firme, janela de compra razoável' : new Date().getMonth() >= 6 && new Date().getMonth() <= 10 ? '🔴 ENTRESSAFRA (Jul-Nov) — escassez, preço máximo, comprar com cautela' : '🟡 FESTAS/ÁGUAS (Dez) — demanda alta, preço em alta'}
 
 INDICADORES INTERNOS:
 Custo médio compra/kg: R$${batches.length > 0 ? (batches.reduce((s, b) => s + b.custo_real_kg, 0) / batches.length).toFixed(2) : '0.00'} ${batches.length > 0 ? ((batches.reduce((s, b) => s + b.custo_real_kg, 0) / batches.length) > (311.50 / 15) ? '🔴 ACIMA do referencial CEPEA-BA' : '🟢 ABAIXO do referencial CEPEA-BA') : ''}
@@ -1240,7 +1244,19 @@ Organize em: 🤝 SAÚDE DO CLIENTE (NPS), 🥩 QUALIDADE PERCEBIDA, 🚚 FEEDBA
         setBulkRunning(true);
         setBulkProgress({ current: 0, total: agents.length, currentAgent: '' });
 
-        const validTx = transactions.filter(t => t.categoria !== 'ESTORNO');
+        const closedBatchesBulk = batches.filter(b => b.status === 'FECHADO');
+        const validLoteIdsBulk = new Set(closedBatchesBulk.map(b => b.id_lote));
+        const hasValidBatchesBulk = closedBatchesBulk.length > 0;
+        const validTx = transactions.filter(t => {
+            if (!t.referencia_id) return true;
+            if (validLoteIdsBulk.has(t.referencia_id)) return true;
+            if (t.id?.startsWith('TR-REC-') || t.id?.startsWith('TR-PAY-') || t.categoria === 'VENDA') return true;
+            if (t.id?.startsWith('TR-ESTORNO-') || t.categoria === 'ESTORNO') return true;
+            if (t.id?.startsWith('TR-DESC-') || t.categoria === 'DESCONTO') return true;
+            if (!t.referencia_id.includes('-')) return true;
+            if (hasValidBatchesBulk) return false;
+            return true;
+        });
         const totalEntradas = validTx.filter(t => t.tipo === 'ENTRADA').reduce((s, t) => s + t.valor, 0);
         const totalSaidas = validTx.filter(t => t.tipo === 'SAIDA').reduce((s, t) => s + t.valor, 0);
         const vendasPagas = sales.filter(s => s.status_pagamento === 'PAGO');

@@ -106,6 +106,7 @@ export interface Sale {
   data_vencimento: string;
   forma_pagamento: PaymentMethod;
   status_pagamento: 'PENDENTE' | 'PAGO' | 'ESTORNADO';
+  valor_pago?: number; // Valor já recebido (pagamentos parciais)
 }
 
 export interface ScheduledOrder {
