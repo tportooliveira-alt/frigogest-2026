@@ -347,7 +347,7 @@ const Batches: React.FC<BatchesProps> = ({
     const seq = parseInt(newItemEntry.sequencia);
     const type = parseInt(newItemEntry.tipo) as StockType;
     const typeLabel = type === StockType.BANDA_A ? 'BANDA_A' : type === StockType.BANDA_B ? 'BANDA_B' : 'INTEIRO';
-    const weight = parseFloat(newItemEntry.peso);
+    const weight = parseFloat(newItemEntry.peso.replace(',', '.'));
     const id_completo = `${selectedBatchId}-${String(seq).padStart(3, '0')}-${typeLabel}`;
 
 
@@ -895,8 +895,8 @@ const Batches: React.FC<BatchesProps> = ({
                         <button
                           type="button"
                           onClick={() => {
-                            if (!newItemEntry.peso.includes('.')) {
-                              setNewItemEntry(prev => ({ ...prev, peso: (prev.peso || '0') + '.' }));
+                            if (!newItemEntry.peso.includes(',') && !newItemEntry.peso.includes('.')) {
+                              setNewItemEntry(prev => ({ ...prev, peso: (prev.peso || '0') + ',' }));
                             }
                           }}
                           className="h-14 rounded-xl font-black text-2xl bg-slate-300 text-slate-700 hover:bg-slate-400 transition-all active:scale-95 shadow-sm"

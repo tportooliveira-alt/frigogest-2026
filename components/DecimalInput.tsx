@@ -11,12 +11,14 @@ interface DecimalInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
  * Converte vírgula para ponto automaticamente (padrão BR).
  */
 const DecimalInput = ({ value, onValueChange, onFocus, onBlur, ...props }: DecimalInputProps) => {
-    const [text, setText] = useState(value ? String(value) : '');
+    const formatValue = (val: number | '') => val !== '' ? String(val).replace('.', ',') : '';
+
+    const [text, setText] = useState(formatValue(value));
     const isFocused = useRef(false);
 
     useEffect(() => {
         if (!isFocused.current) {
-            setText(value ? String(value) : '');
+            setText(formatValue(value));
         }
     }, [value]);
 
@@ -28,18 +30,19 @@ const DecimalInput = ({ value, onValueChange, onFocus, onBlur, ...props }: Decim
             value={text}
             onFocus={(e) => { isFocused.current = true; onFocus?.(e); }}
             onChange={e => {
-                const v = e.target.value.replace(',', '.');
-                if (v === '' || /^\d*\.?\d*$/.test(v)) {
+                const v = e.target.value;
+                // Permite apenas números e no máximo uma vírgula ou ponto
+                if (v === '' || /^\d*[.,]?\d*$/.test(v)) {
                     setText(v);
-                    const num = parseFloat(v);
+                    const num = parseFloat(v.replace(',', '.'));
                     if (!isNaN(num)) onValueChange(num);
                     else if (v === '') onValueChange(0);
                 }
             }}
             onBlur={(e) => {
                 isFocused.current = false;
-                const num = parseFloat(text) || 0;
-                setText(num ? String(num) : '');
+                const num = parseFloat(text.replace(',', '.')) || 0;
+                setText(num ? String(num).replace('.', ',') : '');
                 onValueChange(num);
                 onBlur?.(e);
             }}

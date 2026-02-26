@@ -26,7 +26,9 @@ import SalesAgent from './components/SalesAgent';
 import AuditLogView from './components/AuditLogView';
 import AIAgents from './components/AIAgents';
 import AIChat from './components/AIChat';
-
+import AIMeetingRoom from './components/AIMeetingRoom';
+import MeetingChat from './components/MeetingChat';
+import MarketingHub from './components/MarketingHub';
 
 const App: React.FC = () => {
   // MODO OFFLINE: mude para true para testar sem internet
@@ -1337,6 +1339,19 @@ const App: React.FC = () => {
         payables={data.payables}
         scheduledOrders={data.scheduledOrders}
       />}
+      {currentView === 'marketing' && <MarketingHub data={data} />}
+      {currentView === 'ai_meeting' && <AIMeetingRoom
+        onBack={() => setCurrentView('menu')}
+        batches={data.batches}
+        stock={data.stock}
+        sales={data.sales}
+        clients={data.clients}
+        transactions={data.transactions}
+        suppliers={data.suppliers}
+        payables={data.payables}
+        scheduledOrders={data.scheduledOrders}
+      />}
+      {currentView === 'meeting_chat' && <MeetingChat onBack={() => setCurrentView('menu')} />}
       {currentView === 'system_reset' && <SystemReset onBack={() => setCurrentView('menu')} refreshData={fetchData} />}
 
       {/* SYSTEM STATUS BAR */}

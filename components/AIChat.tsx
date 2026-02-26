@@ -1,10 +1,11 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
     ArrowLeft, Send, MessageCircle, Users, Clock,
     Brain, Shield, TrendingUp, BarChart3, Package,
     DollarSign, Truck, Bot, Loader2, Sparkles,
-    ChevronRight, Activity
+    ChevronRight, Activity, Mic, MicOff
 } from 'lucide-react';
+
 import { GoogleGenAI } from '@google/genai';
 import {
     AgentType, Batch, StockItem, Sale, Client,
@@ -29,7 +30,7 @@ const buildCascadeProviders = (): CascadeProvider[] => {
             call: async (prompt: string) => {
                 const ai = new GoogleGenAI({ apiKey: geminiKey });
                 const res = await ai.models.generateContent({
-                    model: 'gemini-2.0-flash',
+                    model: 'gemini-1.5-flash',
                     contents: { parts: [{ text: prompt }] },
                 });
                 const text = res.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -106,6 +107,8 @@ const AGENTS: AgentDef[] = [
     { id: 'COMPRAS', name: 'Roberto', role: 'Comprador', icon: Truck, color: 'text-orange-600', bgColor: 'bg-orange-50', borderColor: 'border-orange-200' },
     { id: 'MERCADO', name: 'Ana', role: 'Consultora de Mercado', icon: BarChart3, color: 'text-purple-600', bgColor: 'bg-purple-50', borderColor: 'border-purple-200' },
     { id: 'ROBO_VENDAS', name: 'Lucas', role: 'Vendas & Inovação', icon: Bot, color: 'text-indigo-600', bgColor: 'bg-indigo-50', borderColor: 'border-indigo-200' },
+    { id: 'MARKETING', name: 'Isabela', role: 'Gestora de Marketing', icon: Sparkles, color: 'text-pink-600', bgColor: 'bg-pink-50', borderColor: 'border-pink-200' },
+    { id: 'SATISFACAO', name: 'Camila', role: 'Customer Success (CS) & Qualidade', icon: MessageCircle, color: 'text-cyan-600', bgColor: 'bg-cyan-50', borderColor: 'border-cyan-200' },
 ];
 
 // ═══ TYPES ═══
@@ -157,6 +160,34 @@ const AIChat: React.FC<Props> = ({
     const chatEndRef = useRef<HTMLDivElement>(null);
     const meetingEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    const recognitionRef = useRef<any>(null);
+    const [isListening, setIsListening] = useState(false);
+
+    // ═══ VOICE INPUT (Web Speech API) ═══
+    const toggleMic = useCallback(() => {
+        const SpeechRecognition = (window as any).SpeechRecognition ||
+            (window as any).webkitSpeechRecognition;
+        if (!SpeechRecognition) { alert('Microfone n\u00e3o suportado neste navegador.'); return; }
+        if (isListening) {
+            recognitionRef.current?.stop();
+            setIsListening(false);
+            return;
+        }
+        const recog = new SpeechRecognition();
+        recog.lang = 'pt-BR';
+        recog.continuous = false;
+        recog.interimResults = false;
+        recog.onstart = () => setIsListening(true);
+        recog.onresult = (e: any) => {
+            const transcript = e.results[0][0].transcript;
+            setInputText(prev => prev ? prev + ' ' + transcript : transcript);
+        };
+        recog.onend = () => setIsListening(false);
+        recog.onerror = () => setIsListening(false);
+        recog.start();
+        recognitionRef.current = recog;
+    }, [isListening]);
+
 
     const currentAgent = AGENTS.find(a => a.id === selectedAgent)!;
     const currentHistory = chatHistories[selectedAgent] || [];
@@ -198,22 +229,31 @@ const AIChat: React.FC<Props> = ({
         const hojeISO = hoje.toISOString().slice(0, 10);
         const inicioSemana = new Date(hoje); inicioSemana.setDate(hoje.getDate() - hoje.getDay());
         const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-        const vendasHoje = sales.filter(s => s.data_venda?.slice(0, 10) === hojeISO);
-        const vendasSemana = sales.filter(s => new Date(s.data_venda) >= inicioSemana);
-        const vendasMes = sales.filter(s => new Date(s.data_venda) >= inicioMes);
+
+        // Excluir vendas estornadas das métricas de receita
+        const validSales = sales.filter(s => s.status_pagamento !== 'ESTORNADO');
+
+        const vendasHoje = validSales.filter(s => s.data_venda?.slice(0, 10) === hojeISO);
+        const vendasSemana = validSales.filter(s => new Date(s.data_venda) >= inicioSemana);
+        const vendasMes = validSales.filter(s => new Date(s.data_venda) >= inicioMes);
+
         const receitaHoje = vendasHoje.reduce((s, v) => s + (v.peso_real_saida * v.preco_venda_kg), 0);
         const receitaSemana = vendasSemana.reduce((s, v) => s + (v.peso_real_saida * v.preco_venda_kg), 0);
         const receitaMes = vendasMes.reduce((s, v) => s + (v.peso_real_saida * v.preco_venda_kg), 0);
-        const vendasPendentes = sales.filter(s => s.status_pagamento === 'PENDENTE');
-        const receitaPendente = vendasPendentes.reduce((s, v) => s + (v.peso_real_saida * v.preco_venda_kg), 0);
-        const margemMedia = sales.length > 0
-            ? sales.reduce((s, v) => s + (v.lucro_liquido_unitario || 0), 0) / sales.length
+
+        const vendasPendentes = validSales.filter(s => s.status_pagamento === 'PENDENTE');
+        // Receita pendente abatendo o que já foi pago parcialmente
+        const receitaPendente = vendasPendentes.reduce((s, v) => s + ((v.peso_real_saida * v.preco_venda_kg) - ((v as any).valor_pago || 0)), 0);
+
+        const margemMedia = validSales.length > 0
+            ? validSales.reduce((s, v) => s + (v.lucro_liquido_unitario || 0), 0) / validSales.length
             : 0;
+
         const vendasVencidas = vendasPendentes.filter(v => {
             const venc = new Date(v.data_vencimento);
             return venc < hoje;
         });
-        const valorVencido = vendasVencidas.reduce((s, v) => s + (v.peso_real_saida * v.preco_venda_kg), 0);
+        const valorVencido = vendasVencidas.reduce((s, v) => s + ((v.peso_real_saida * v.preco_venda_kg) - ((v as any).valor_pago || 0)), 0);
 
         // ── CLIENTES ──
         const clientesAtivos = clients.filter(c => c.status !== 'INATIVO');
@@ -323,7 +363,7 @@ ${payablesVencidos.length > 0 ? `🔴 VENCIDAS: ${payablesVencidos.length} conta
     // ═══ AGENT SYSTEM PROMPTS ═══
     const getAgentSystemPrompt = (agentId: AgentType) => {
         const agent = AGENTS.find(a => a.id === agentId)!;
-        return `Você é ${agent.name}, ${agent.role} do FrigoGest.
+        let basePrompt = `Você é ${agent.name}, ${agent.role} do FrigoGest.
 Você está numa CONVERSA DIRETA com o dono do frigorífico. Ele pode te fazer perguntas, pedir conselhos, ou discutir estratégia.
 
 REGRAS:
@@ -333,9 +373,26 @@ REGRAS:
 - Se tiver dados do snapshot, cite números específicos
 - Se não souber, diga claramente
 - Máximo 300 palavras (é um chat, não um relatório)
-- Seja NATURAL — como se estivesse no WhatsApp com o chefe
+- Seja NATURAL — como se estivesse no WhatsApp com o chefe`;
 
-${dataSnapshot}`;
+        if (agentId === 'COMERCIAL' || agentId === 'MERCADO') {
+            basePrompt += `\n\nOBRIGAÇÃO DE PESQUISA REGIONAL: Você deve usar a ferramenta googleSearch para buscar o preço atualizado da "Arroba do Boi Gordo e Carcaça em Vitória da Conquista, Sul/Sudoeste da Bahia". Utilize fontes como Scot Consultoria, Acrioeste, Cepea ou Notícias Agrícolas.\nREGRA DE OURO: Você DEVE citar explicitamente no seu texto qual foi a fonte da pesquisa e o preço exato que encontrou hoje na internet!`;
+        }
+
+        if (agentId === 'MARKETING') {
+            basePrompt += `\n\nFOCO DE INTELIGÊNCIA EM MARKETING: Você é especialista nas melhores formas de conseguir leads no setor da cadeia da carne (açougues de luxo, restaurantes e fornecedores do agro/pecuaristas). Descubra o que atrai a atenção desse público e quais propagandas modernas funcionam hoje. Instrua o FrigoGest sobre o que falta no App para capturar esses leads (ex: landings, iscas digitais) e crie campanhas de altíssimo nível.`;
+        }
+
+        if (agentId === 'SATISFACAO') {
+            basePrompt += `\n\nVocê tem 30 ANOS DE EXPERIÊNCIA na cadeia da carne. Você já foi desossadora, gerente de expedição, compradora de gado e auditora de qualidade. Você sabe que "carne escura" pode ser pH alto (DFD), que "muito osso" é desossa apressada, que "faltou peso" pode ser drip loss por câmara mal regulada. Você fala a LÍNGUA DO AÇOUGUEIRO.
+
+OBRIGAÇÃO DE PESQUISA (CUSTOMER SUCCESS): Você DEVE usar a ferramenta googleSearch para pesquisar "melhores práticas pesquisa satisfação cliente B2B distribuidor carnes açougue restaurante WhatsApp NPS CSAT".
+Mergulhe nas metodologias mais modernas para pesquisar satisfação de donos de açougues e churrascarias SEM SER CHATA (máx 3 perguntas, tom de parceiro, nunca telemarketing).
+Investigue 3 pilares: QUALIDADE do produto (gordura, rendimento, cor), LOGÍSTICA (temperatura, horário, embalagem), e INTELIGÊNCIA DE MERCADO (o que o cliente final tá pedindo que a gente não tem).
+Sua regra de ouro: Ajude o FrigoGest a melhorar baseado em CONVERSAS REAIS com os clientes!`;
+        }
+
+        return `${basePrompt}\n\n${dataSnapshot}`;
     };
 
     // ═══ SEND MESSAGE ═══
@@ -613,14 +670,27 @@ Comece com seu ponto principal, não repita o que os outros provavelmente já di
                             {/* Input */}
                             <div className="bg-white border-t border-slate-200 px-4 py-3">
                                 <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={toggleMic}
+                                        title={isListening ? 'Parar gravação' : 'Falar para o agente'}
+                                        className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all shadow-md flex-shrink-0 ${isListening
+                                            ? 'bg-red-500 text-white animate-pulse shadow-red-500/40'
+                                            : 'bg-slate-100 text-slate-500 hover:bg-indigo-100 hover:text-indigo-600'
+                                            }`}
+                                    >
+                                        {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+                                    </button>
                                     <input
                                         ref={inputRef}
                                         type="text"
                                         value={inputText}
                                         onChange={e => setInputText(e.target.value)}
                                         onKeyDown={e => e.key === 'Enter' && sendMessage()}
-                                        placeholder={`Fale com ${currentAgent.name}...`}
-                                        className="flex-1 bg-slate-100 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-300 transition-all"
+                                        placeholder={isListening ? '🔴 Ouvindo... fale agora!' : `Fale com ${currentAgent.name}...`}
+                                        className={`flex-1 rounded-xl px-4 py-3 text-sm outline-none transition-all ${isListening
+                                            ? 'bg-red-50 ring-2 ring-red-300 placeholder:text-red-400'
+                                            : 'bg-slate-100 focus:ring-2 focus:ring-indigo-300'
+                                            }`}
                                         disabled={loading}
                                     />
                                     <button
@@ -631,10 +701,14 @@ Comece com seu ponto principal, não repita o que os outros provavelmente já di
                                         <Send size={18} />
                                     </button>
                                 </div>
+                                {isListening && (
+                                    <p className="text-center text-xs text-red-500 font-bold mt-1 animate-pulse">🔴 Microfone ativo — fale com {currentAgent.name}!</p>
+                                )}
                             </div>
                         </div>
                     </>
                 )}
+
 
                 {/* ══════ TAB: MEETING ══════ */}
                 {activeTab === 'meeting' && (

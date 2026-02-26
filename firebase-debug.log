@@ -1,0 +1,109 @@
+[debug] [2026-02-26T06:02:30.014Z] ----------------------------------------------------------------------
+[debug] [2026-02-26T06:02:30.032Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\Priscila\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js deploy --only hosting
+[debug] [2026-02-26T06:02:30.033Z] CLI Version:   15.5.1
+[debug] [2026-02-26T06:02:30.034Z] Platform:      win32
+[debug] [2026-02-26T06:02:30.034Z] Node Version:  v24.13.0
+[debug] [2026-02-26T06:02:30.034Z] Time:          Thu Feb 26 2026 03:02:30 GMT-0300 (Horário Padrão de Brasília)
+[debug] [2026-02-26T06:02:30.035Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-02-26T06:02:34.176Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-02-26T06:02:34.177Z] > authorizing via signed-in user (tportooliveira@gmail.com)
+[debug] [2026-02-26T06:02:34.177Z] [iam] checking project gestfri for permissions ["firebase.projects.get","firebasehosting.sites.update"]
+[debug] [2026-02-26T06:02:34.178Z] Checked if tokens are valid: true, expires at: 1772086854684
+[debug] [2026-02-26T06:02:34.179Z] Checked if tokens are valid: true, expires at: 1772086854684
+[debug] [2026-02-26T06:02:34.180Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/gestfri:testIamPermissions [none]
+[debug] [2026-02-26T06:02:34.180Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/gestfri:testIamPermissions  x-goog-user-project=gestfri
+[debug] [2026-02-26T06:02:34.180Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/gestfri:testIamPermissions {"permissions":["firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2026-02-26T06:02:35.238Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/gestfri:testIamPermissions 200
+[debug] [2026-02-26T06:02:35.238Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/gestfri:testIamPermissions {"permissions":["firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2026-02-26T06:02:35.239Z] Checked if tokens are valid: true, expires at: 1772086854684
+[debug] [2026-02-26T06:02:35.239Z] Checked if tokens are valid: true, expires at: 1772086854684
+[debug] [2026-02-26T06:02:35.239Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/gestfri [none]
+[debug] [2026-02-26T06:02:35.792Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/gestfri 200
+[debug] [2026-02-26T06:02:35.792Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/gestfri {"projectId":"gestfri","projectNumber":"389741054647","displayName":"GESTFRI","name":"projects/gestfri","resources":{"hostingSite":"gestfri"},"state":"ACTIVE","etag":"1_d6c4e031-4da9-43e2-9337-e4a99d6ca87a"}
+[info] 
+[info] === Deploying to 'gestfri'...
+[info] 
+[info] i  deploying hosting 
+[debug] [2026-02-26T06:02:35.804Z] Checked if tokens are valid: true, expires at: 1772086854684
+[debug] [2026-02-26T06:02:35.804Z] Checked if tokens are valid: true, expires at: 1772086854684
+[debug] [2026-02-26T06:02:35.804Z] >>> [apiv2][query] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/gestfri/versions [none]
+[debug] [2026-02-26T06:02:35.804Z] >>> [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/gestfri/versions {"status":"CREATED","labels":{"deployment-tool":"cli-firebase"}}
+[debug] [2026-02-26T06:02:37.704Z] <<< [apiv2][status] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/gestfri/versions 200
+[debug] [2026-02-26T06:02:37.704Z] <<< [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/gestfri/versions {"name":"projects/389741054647/sites/gestfri/versions/c4be4724c36fd6a4","status":"CREATED","config":{},"labels":{"deployment-tool":"cli-firebase"}}
+[info] i  hosting[gestfri]: beginning deploy... 
+[info] i  hosting[gestfri]: found 75 files in dist 
+[debug] [2026-02-26T06:02:37.738Z] [hosting] uploading with 200 concurrency
+[debug] [2026-02-26T06:02:37.904Z] Checked if tokens are valid: true, expires at: 1772086854684
+[debug] [2026-02-26T06:02:37.904Z] Checked if tokens are valid: true, expires at: 1772086854684
+[debug] [2026-02-26T06:02:37.906Z] [hosting] hash cache [ZGlzdA] stored for 75 files
+[debug] [2026-02-26T06:02:37.907Z] [hosting][hash queue][FINAL] {"max":145,"min":1,"avg":9.347182260186658,"active":0,"complete":75,"success":75,"errored":0,"retried":0,"total":75,"elapsed":167}
+[debug] [2026-02-26T06:02:37.907Z] >>> [apiv2][query] POST https://firebasehosting.googleapis.com/v1beta1/projects/389741054647/sites/gestfri/versions/c4be4724c36fd6a4:populateFiles [none]
+[debug] [2026-02-26T06:02:37.908Z] >>> [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/389741054647/sites/gestfri/versions/c4be4724c36fd6a4:populateFiles {"files":{"/serra_premium.png":"ff7e1cfe00ff83009a72d830c6826e88992be87e12120be90651ca5c3442c59e\r","/serra_pasto.png":"538ba045d7dc754faa363898ee0e1fd5fcdd76430177892c289402d586e11507\r","/serra_final.png":"9e2db59fd4c25519a9cc52a591d1fc244bd1125f474f975e7104be4822ebee21\r","/serra_70_30.png":"eca6db215ada835e0abb27e18da0146af2ea5b0bef6d07c8513dc4942412d4a6\r","/serra.png":"921adda875b2e6e673535793a56ee9170ff6fcecbf848471488eacd22586d133\r","/manifest-icon-512.maskable.png":"7bf21fc1215e81f939701c1a30cdb2b33b3d4f32a072e6d6805cf36b995a5752\r","/manifest-icon-192.maskable.png":"06e3a6df5576b765e0539b1bf34011ebd12d74660aeb40f3c63701e192239639\r","/logo.png":"4a22e05649f74619c7e61beb57d44a27d4e465a400c62de059c93882b8ffc056\r","/logo-thiago704.svg":"f558cfc5690d5eb577724e0d8ebb7b8c77e829a4326b247afc1a36213b1109de","/logo-thiago704-v3.svg":"4b122e8215676d2f72d7922113352c9488c5f132a2fd8fd968cfa6f4cb85b267","/logo-thiago704-v2.svg":"124fd546a323f19d4b9780e33f74f353bcdfeacfa252808c94fc9f271b07384f","/logo-thiago704-premium.png":"e89d97268f2995eda52818f6e89ea352f1f806a55b4c104367b2bf0d654669e2","/logo-thiago704-pdf.svg":"7c4ea1055339b5e6ca3e40cf77da7139f2ca140e86c2dd73b6af95101c97909e","/logo-thiago704-pb.png":"96b5069de1ba05ed6c3d836e19b7282a04e9f2c65fee601ca63c10ba70fe1ab3","/limpeza_premium.png":"ffc18c32660df9673629c7983aed0a9aed7032a6835b5498cb9069d5a61fb494\r","/icon.svg":"d9983cd22494e382e83b8fca1303897ea1433354876f44e53466b23d8e66556a\r","/hero.png":"28b7b0be3c1076e96f19deeedf83d0d109a2245596e8748811698c849d2068d4\r","/assinatura_real.png":"05e37d4bb07fd0350ea382fa0ecd576ddd75e2323a11ba2e9acfdc99c4358a79\r","/assinatura.png":"d45ad992c5d18e6acc0d5a2e46b9601342787720dfa49627e8b0ea839097c440\r","/apple-splash-828-1792.jpg":"8274f7b82772b6074fb419b5f29c41660208c4cdbcb6a43f6c6413b12cb1aca6\r","/apple-splash-750-1334.jpg":"f0a3e58664d4addbd142151d0d8f8814e2e413a353dcbe0edc526b86e3ff28e8\r","/apple-splash-640-1136.jpg":"354887b240bdacfbd4a76f41c15479b9c547abd1c10f5bd2546d4317a63d7dbe\r","/apple-splash-2868-1320.jpg":"0ced0d39bba8b8176d3004b07fb79bbdb33219abd569a37fd3462392c7dbc735\r","/apple-splash-2796-1290.jpg":"ec7b76f912c034e55b2e7bd0f6d678f6dce698b7ed768e10f973bf5818b6b603\r","/apple-splash-2778-1284.jpg":"3a43cd2c192dbc8364eec76ac1bfde7d62244f7d35e49eb8df0dbddb099c360f\r","/apple-splash-2736-1260.jpg":"22c5dbb8d10486574a9ab1d0d40bb1f970999ea428c9b78edde860010eb4d6af\r","/apple-splash-2732-2048.jpg":"0796d47521dff75c06fa3a5e368ca12350f88e17f5a050f212c94961bcb8a714\r","/apple-splash-2688-1242.jpg":"8efe5ee0a5e30fa240aa19ee01a7783415796826cb5615177a0ed87639267cc9\r","/apple-splash-2622-1206.jpg":"98c4bad508d89be4ae18c607f296d3667301a192c293a7338a9492def1c500d0\r","/apple-splash-2556-1179.jpg":"991f3f14eeda107446550165c020bbe139c165ad484c85517920ab7638d2f6e4\r","/apple-splash-2532-1170.jpg":"0197f0eba10976e9a50e93699fc8fbdbc06cb68db1c0464ab21cd15c83b78bcb\r","/apple-splash-2436-1125.jpg":"f8417d5ba5479d2de29fa92b582bd51de9be30f9e48961a6fafae8150cbfe9b8\r","/apple-splash-2388-1668.jpg":"b5d346f307f9aed7fb7fe989982b75c665a2a5c967b8f5c96fb38dc617223471\r","/apple-splash-2360-1640.jpg":"8816c4dbd656d0f2e07c483133b4570164a07be8b4f753f4a1034f56462f336b\r","/apple-splash-2266-1488.jpg":"43539fb242bdcbf485b0caaf635a6c4a6a2e91d8ca4cc4472dd7460ce99f887a\r","/apple-splash-2224-1668.jpg":"948a49dde896112c93c14ff1933694a19d167ff0ca7018789ad72b121ed963de\r","/apple-splash-2208-1242.jpg":"fd9bc0f9e12a23b34ce98304f9e8371e7bf629923b80ab170696d11da3388f83\r","/apple-splash-2160-1620.jpg":"f22ba8c8357aa5dd68e0b48ed10c02c81a3e4ad9ddf6897919d761400c2a8031\r","/apple-splash-2048-2732.jpg":"36f9bd05e3b290b255cfb31371be3dc62e2e95f05f8e1e5978cbb838e831db8c\r","/apple-splash-2048-1536.jpg":"07939ae624a48f6ce458ebefe756708a321f7111350244ce08721d6a64df2f39\r","/apple-splash-1792-828.jpg":"45dddfc4f99d447d8c02351ffa14e9530d4fe939c0ad4db89f8b1c33bdc91fc3\r","/apple-splash-1668-2388.jpg":"5f7d9dcafdf7d92d4256bf46e04b214e53102b707d1c0d008a49e1001d383594\r","/apple-splash-1668-2224.jpg":"62691f338ba1434ef1a87002c516794e55b092a6e1e282ff4b3b9df2200c2b03\r","/apple-splash-1640-2360.jpg":"a50d054a3f10a4803b9c6115c29e667fc6262320a33c2bb24899427f7e0375a5\r","/apple-splash-1620-2160.jpg":"406c99fafc7f7e1b0fd92f5b1548eddd68beb5d80a51bbc4a8104e72bcfb6b26\r","/apple-splash-1536-2048.jpg":"d53723eaa1b20a948b8b137a2df8e4957d00bdba5029c3eb576eeed089ac8888\r","/apple-splash-1488-2266.jpg":"2348f82382bb36a3832e2c38780f074a16469bf323cb4c3b722683b81785b7ea\r","/apple-splash-1334-750.jpg":"43bc35d826563d6aa6c5c0281b1d9253f513813d16d8fc442d742a36a863b698\r","/apple-splash-1320-2868.jpg":"aa9a696f287bd28e5208ace1f3766cdaba4d23132b9264937e0c5963e508e445\r","/apple-splash-1290-2796.jpg":"56d297b9caddad53ad9c192fe7c53096b1fd7e9d09c2821a72395c418623ffbd\r","/apple-splash-1284-2778.jpg":"8e2305bbf3c96e6630d6eab30e031bc682c6d4de2dce97323b5eca3829cad411\r","/apple-splash-1260-2736.jpg":"b658eb1866e3013f6d5661682ebd351a8b3f25db480114ff25cdccb4378a4daf\r","/apple-splash-1242-2688.jpg":"fbebf562c71eeff48925038d2b11f69c44126b9e979a4fb3207bf828d830e9ff\r","/apple-splash-1242-2208.jpg":"b097cd5446acc6121a1723aa4ad3a5a5f51786dcb88a25d28f1d34e0047d43bb\r","/apple-splash-1206-2622.jpg":"d787950dacbd9cfe929309a652e8472ba4f972ff49b9f8b15941e0da92dd9673\r","/apple-splash-1179-2556.jpg":"da09fabd61d41668da98988a9eb933b0c67d1b784aab922dc31a10fa97c14f38\r","/apple-splash-1170-2532.jpg":"bbf29ae6ff67b54909f23418ae725faca89558c97f3e2d0bb3d3db6f02815901\r","/apple-splash-1136-640.jpg":"4423a30481998a4f7b41d6c3ffacac5b49d5682c236adf8bf99f87510324e1c8\r","/apple-splash-1125-2436.jpg":"70b9b5033303169140de8fd3a92c5e33655581bb3fd57882b13d48c25262b17a\r","/apple-icon-180.png":"f7dd6f386f765a1ecd0e134ec66f3bb5a90cc7cd38e2b6175057a70a37e27a0f\r","/abate_real.jpg":"e43be7d28d64acbb7fc248aa03ba064b501aa4df937c55a8d0c665f9c26ed709\r","/registerSW.js":"09e15d1438017c065a3281739cb5506aeaf7b3047bc3ada992da01d4497c2d43","/manifest.webmanifest":"b8cdbb20bbf05cdb4e9cb2c54e1d2fc44d1d3703ad355332ad523a9bc4cfd9cf","/index.html":"b18da1bf6518e5c6ed577b996b9d02ccdb1d7cf03b6202606105d6e8e694b2eb","/sw.js":"efbeaf39c28699748c2df972c7a156097d79ecff9492327ae9925ba2b9a23606","/workbox-8c29f6e4.js":"e6bbac10a436d0fc8e8d14a3e7e59223173b23235e990cb3b8d0e71003f4da09","/assets/purify.es-C_uT9hQ1.js":"9dbf175a5d4418eb66a031119d1424a8b8018745978fe8d761f22009d58944a4","/assets/apple-splash-1136-640-Yr5pXEQ2.jpg":"4423a30481998a4f7b41d6c3ffacac5b49d5682c236adf8bf99f87510324e1c8","/assets/apple-splash-750-1334-Beqo27G7.jpg":"f0a3e58664d4addbd142151d0d8f8814e2e413a353dcbe0edc526b86e3ff28e8","/assets/apple-splash-2208-1242-DpmrIEiv.jpg":"fd9bc0f9e12a23b34ce98304f9e8371e7bf629923b80ab170696d11da3388f83","/assets/apple-splash-1334-750-Bs8hVEy9.jpg":"43bc35d826563d6aa6c5c0281b1d9253f513813d16d8fc442d742a36a863b698","/assets/apple-splash-640-1136-B0EHFkhA.jpg":"354887b240bdacfbd4a76f41c15479b9c547abd1c10f5bd2546d4317a63d7dbe","/assets/index.es-DWrZN7R6.js":"a4e2ee09f35ae9a91c7942dd54e89b5399772b4cb275c61b8eb600f76bad9c8a","/assets/html2canvas.esm-QH1iLAAe.js":"f11fa059b23162cd079f9be9c5b6c29237e7393fcab5d04c6f2b2ac5bd7a38b3","/assets/index-DRYuzGCn.js":"a02549c731d300e39697fe314bb62e1844112818f38fa2e1724d4c8f05bc3e54"}}
+[debug] [2026-02-26T06:02:38.635Z] <<< [apiv2][status] POST https://firebasehosting.googleapis.com/v1beta1/projects/389741054647/sites/gestfri/versions/c4be4724c36fd6a4:populateFiles 200
+[debug] [2026-02-26T06:02:38.635Z] <<< [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/389741054647/sites/gestfri/versions/c4be4724c36fd6a4:populateFiles {"uploadRequiredHashes":["a4e2ee09f35ae9a91c7942dd54e89b5399772b4cb275c61b8eb600f76bad9c8a","a02549c731d300e39697fe314bb62e1844112818f38fa2e1724d4c8f05bc3e54","efbeaf39c28699748c2df972c7a156097d79ecff9492327ae9925ba2b9a23606","b18da1bf6518e5c6ed577b996b9d02ccdb1d7cf03b6202606105d6e8e694b2eb"],"uploadUrl":"https://upload-firebasehosting.googleapis.com/upload/sites/gestfri/versions/c4be4724c36fd6a4/files"}
+[debug] [2026-02-26T06:02:38.636Z] Checked if tokens are valid: true, expires at: 1772086854684
+[debug] [2026-02-26T06:02:38.636Z] Checked if tokens are valid: true, expires at: 1772086854684
+[debug] [2026-02-26T06:02:38.637Z] Checked if tokens are valid: true, expires at: 1772086854684
+[debug] [2026-02-26T06:02:38.637Z] Checked if tokens are valid: true, expires at: 1772086854684
+[debug] [2026-02-26T06:02:38.637Z] Checked if tokens are valid: true, expires at: 1772086854684
+[debug] [2026-02-26T06:02:38.637Z] Checked if tokens are valid: true, expires at: 1772086854684
+[debug] [2026-02-26T06:02:38.637Z] Checked if tokens are valid: true, expires at: 1772086854684
+[debug] [2026-02-26T06:02:38.637Z] Checked if tokens are valid: true, expires at: 1772086854684
+[debug] [2026-02-26T06:02:38.637Z] >>> [apiv2][query] POST https://upload-firebasehosting.googleapis.com/upload/sites/gestfri/versions/c4be4724c36fd6a4/files/a4e2ee09f35ae9a91c7942dd54e89b5399772b4cb275c61b8eb600f76bad9c8a [none]
+[debug] [2026-02-26T06:02:38.638Z] >>> [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/gestfri/versions/c4be4724c36fd6a4/files/a4e2ee09f35ae9a91c7942dd54e89b5399772b4cb275c61b8eb600f76bad9c8a [stream]
+[debug] [2026-02-26T06:02:38.640Z] >>> [apiv2][query] POST https://upload-firebasehosting.googleapis.com/upload/sites/gestfri/versions/c4be4724c36fd6a4/files/a02549c731d300e39697fe314bb62e1844112818f38fa2e1724d4c8f05bc3e54 [none]
+[debug] [2026-02-26T06:02:38.640Z] >>> [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/gestfri/versions/c4be4724c36fd6a4/files/a02549c731d300e39697fe314bb62e1844112818f38fa2e1724d4c8f05bc3e54 [stream]
+[debug] [2026-02-26T06:02:38.644Z] >>> [apiv2][query] POST https://upload-firebasehosting.googleapis.com/upload/sites/gestfri/versions/c4be4724c36fd6a4/files/efbeaf39c28699748c2df972c7a156097d79ecff9492327ae9925ba2b9a23606 [none]
+[debug] [2026-02-26T06:02:38.645Z] >>> [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/gestfri/versions/c4be4724c36fd6a4/files/efbeaf39c28699748c2df972c7a156097d79ecff9492327ae9925ba2b9a23606 [stream]
+[debug] [2026-02-26T06:02:38.648Z] >>> [apiv2][query] POST https://upload-firebasehosting.googleapis.com/upload/sites/gestfri/versions/c4be4724c36fd6a4/files/b18da1bf6518e5c6ed577b996b9d02ccdb1d7cf03b6202606105d6e8e694b2eb [none]
+[debug] [2026-02-26T06:02:38.648Z] >>> [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/gestfri/versions/c4be4724c36fd6a4/files/b18da1bf6518e5c6ed577b996b9d02ccdb1d7cf03b6202606105d6e8e694b2eb [stream]
+[debug] [2026-02-26T06:02:38.649Z] [hosting][populate queue][FINAL] {"max":734,"min":734,"avg":734,"active":0,"complete":1,"success":1,"errored":0,"retried":0,"total":1,"elapsed":746}
+[debug] [2026-02-26T06:02:38.649Z] [hosting] uploads queued: 4
+[info] i  hosting: uploading new files [0/4] (0%) 
+[debug] [2026-02-26T06:02:40.788Z] <<< [apiv2][status] POST https://upload-firebasehosting.googleapis.com/upload/sites/gestfri/versions/c4be4724c36fd6a4/files/efbeaf39c28699748c2df972c7a156097d79ecff9492327ae9925ba2b9a23606 200
+[debug] [2026-02-26T06:02:40.789Z] <<< [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/gestfri/versions/c4be4724c36fd6a4/files/efbeaf39c28699748c2df972c7a156097d79ecff9492327ae9925ba2b9a23606 [stream]
+[debug] [2026-02-26T06:02:41.053Z] <<< [apiv2][status] POST https://upload-firebasehosting.googleapis.com/upload/sites/gestfri/versions/c4be4724c36fd6a4/files/a4e2ee09f35ae9a91c7942dd54e89b5399772b4cb275c61b8eb600f76bad9c8a 200
+[debug] [2026-02-26T06:02:41.054Z] <<< [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/gestfri/versions/c4be4724c36fd6a4/files/a4e2ee09f35ae9a91c7942dd54e89b5399772b4cb275c61b8eb600f76bad9c8a [stream]
+[debug] [2026-02-26T06:02:41.221Z] <<< [apiv2][status] POST https://upload-firebasehosting.googleapis.com/upload/sites/gestfri/versions/c4be4724c36fd6a4/files/b18da1bf6518e5c6ed577b996b9d02ccdb1d7cf03b6202606105d6e8e694b2eb 200
+[debug] [2026-02-26T06:02:41.222Z] <<< [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/gestfri/versions/c4be4724c36fd6a4/files/b18da1bf6518e5c6ed577b996b9d02ccdb1d7cf03b6202606105d6e8e694b2eb [stream]
+[debug] [2026-02-26T06:02:41.355Z] <<< [apiv2][status] POST https://upload-firebasehosting.googleapis.com/upload/sites/gestfri/versions/c4be4724c36fd6a4/files/a02549c731d300e39697fe314bb62e1844112818f38fa2e1724d4c8f05bc3e54 200
+[debug] [2026-02-26T06:02:41.356Z] <<< [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/gestfri/versions/c4be4724c36fd6a4/files/a02549c731d300e39697fe314bb62e1844112818f38fa2e1724d4c8f05bc3e54 [stream]
+[debug] [2026-02-26T06:02:41.356Z] [hosting][upload queue][FINAL] {"max":2720,"min":2152,"avg":2469,"active":0,"complete":4,"success":4,"errored":0,"retried":0,"total":4,"elapsed":2721}
+[info] i  hosting: upload complete 
+[info] +  hosting[gestfri]: file upload complete 
+[debug] [2026-02-26T06:02:41.358Z] [hosting] deploy completed after 3649ms
+[debug] [2026-02-26T06:02:41.359Z] [
+  {
+    "config": {
+      "public": "dist",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "rewrites": [
+        {
+          "source": "**",
+          "destination": "/index.html"
+        }
+      ],
+      "site": "gestfri"
+    },
+    "version": "projects/389741054647/sites/gestfri/versions/c4be4724c36fd6a4"
+  }
+]
+[info] i  hosting[gestfri]: finalizing version... 
+[debug] [2026-02-26T06:02:41.363Z] Checked if tokens are valid: true, expires at: 1772086854684
+[debug] [2026-02-26T06:02:41.364Z] Checked if tokens are valid: true, expires at: 1772086854684
+[debug] [2026-02-26T06:02:41.364Z] >>> [apiv2][query] PATCH https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/gestfri/versions/c4be4724c36fd6a4 updateMask=status%2Cconfig
+[debug] [2026-02-26T06:02:41.364Z] >>> [apiv2][body] PATCH https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/gestfri/versions/c4be4724c36fd6a4 {"status":"FINALIZED","config":{"rewrites":[{"glob":"**","path":"/index.html"}]}}
+[debug] [2026-02-26T06:02:42.063Z] <<< [apiv2][status] PATCH https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/gestfri/versions/c4be4724c36fd6a4 200
+[debug] [2026-02-26T06:02:42.063Z] <<< [apiv2][body] PATCH https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/gestfri/versions/c4be4724c36fd6a4 {"name":"projects/389741054647/sites/gestfri/versions/c4be4724c36fd6a4","status":"FINALIZED","config":{"rewrites":[{"glob":"**","path":"/index.html"}]},"labels":{"deployment-tool":"cli-firebase"},"createTime":"2026-02-26T06:02:37.018842Z","createUser":{"email":"tportooliveira@gmail.com"},"finalizeTime":"2026-02-26T06:02:41.887924Z","finalizeUser":{"email":"tportooliveira@gmail.com"}}
+[debug] [2026-02-26T06:02:42.063Z] [hosting] finalized version for gestfri:[object Object]
+[info] +  hosting[gestfri]: version finalized 
+[info] i  hosting[gestfri]: releasing new version... 
+[debug] [2026-02-26T06:02:42.064Z] Checked if tokens are valid: true, expires at: 1772086854684
+[debug] [2026-02-26T06:02:42.064Z] Checked if tokens are valid: true, expires at: 1772086854684
+[debug] [2026-02-26T06:02:42.064Z] >>> [apiv2][query] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/gestfri/channels/live/releases versionName=projects%2F389741054647%2Fsites%2Fgestfri%2Fversions%2Fc4be4724c36fd6a4
+[debug] [2026-02-26T06:02:42.064Z] >>> [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/gestfri/channels/live/releases {}

@@ -61,7 +61,11 @@ const Clients: React.FC<ClientsProps> = ({ clients, addClient, updateClient, onB
     cep: '',
     observacoes: '',
     limite_credito: 0,
-    saldo_devedor: 0
+    saldo_devedor: 0,
+    perfil_compra: 'MISTO',
+    padrao_gordura: 'MEDIO',
+    objecoes_frequentes: '',
+    preferencias: ''
   });
 
   const [selectedClientForDetails, setSelectedClientForDetails] = useState<Client | null>(null);
@@ -80,7 +84,7 @@ const Clients: React.FC<ClientsProps> = ({ clients, addClient, updateClient, onB
     if (newClient.id_ferro && newClient.nome_social) {
       addClient(newClient as Client);
       setShowAddForm(false);
-      setNewClient({ id_ferro: '', nome_social: '', whatsapp: '', cpf_cnpj: '', telefone_residencial: '', endereco: '', bairro: '', cidade: '', cep: '', observacoes: '', limite_credito: 0, saldo_devedor: 0 });
+      setNewClient({ id_ferro: '', nome_social: '', whatsapp: '', cpf_cnpj: '', telefone_residencial: '', endereco: '', bairro: '', cidade: '', cep: '', observacoes: '', limite_credito: 0, saldo_devedor: 0, perfil_compra: 'MISTO', padrao_gordura: 'MEDIO', objecoes_frequentes: '', preferencias: '' });
     }
   };
 
@@ -319,6 +323,35 @@ const Clients: React.FC<ClientsProps> = ({ clients, addClient, updateClient, onB
                 </div>
               </div>
 
+              {/* ═══ CAMPOS CRM ═══ */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-gray-50">
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 block">Perfil de Compra (Boi/Novilha)</label>
+                  <select className="modern-input" value={newClient.perfil_compra} onChange={e => setNewClient({ ...newClient, perfil_compra: e.target.value as any })}>
+                    <option value="BOI">Boi</option>
+                    <option value="NOVILHA">Novilha</option>
+                    <option value="MISTO">Misto</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 block">Padrão de Gordura</label>
+                  <select className="modern-input" value={newClient.padrao_gordura} onChange={e => setNewClient({ ...newClient, padrao_gordura: e.target.value as any })}>
+                    <option value="MAGRO">Magro</option>
+                    <option value="MEDIO">Médio</option>
+                    <option value="GORDO">Gordo</option>
+                    <option value="EXPORTACAO">Exportação</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 block">Objeções Frequentes</label>
+                  <input type="text" className="modern-input" placeholder="Ex: Acha o preço caro, reclama de osso" value={newClient.objecoes_frequentes} onChange={e => setNewClient({ ...newClient, objecoes_frequentes: e.target.value })} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 block">Preferências Especiais</label>
+                  <input type="text" className="modern-input" placeholder="Ex: Só compra maturada, cortes específicos" value={newClient.preferencias} onChange={e => setNewClient({ ...newClient, preferencias: e.target.value })} />
+                </div>
+              </div>
+
               <div className="flex justify-end gap-3 mt-8">
                 <button type="button" onClick={() => setShowAddForm(false)} className="btn-modern bg-gray-100 text-gray-500 hover:bg-gray-200 px-8">Cancelar</button>
                 <button type="submit" className="btn-modern btn-brand px-12 bg-emerald-600 hover:bg-emerald-700">Finalizar Registro</button>
@@ -358,7 +391,14 @@ const Clients: React.FC<ClientsProps> = ({ clients, addClient, updateClient, onB
                     </td>
                     <td>
                       <div onClick={() => { setSelectedClientForDetails(client); setIsEditing(false); setDetailTab('overview'); }} className="cursor-pointer">
-                        <p className="font-bold text-gray-900 group-hover:text-blue-600 transition-colors">{client.nome_social}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-bold text-gray-900 group-hover:text-blue-600 transition-colors uppercase">{client.nome_social}</p>
+                          {['HEITOR PEDRO DA SILVA NETO', 'GILNEI BRITO SANTOS', 'JOÃO BATISTA TEIXEIRA DE OLIVEIRA', 'JOAO BATISTA TEIXEIRA DE OLIVEIRA'].includes(client.nome_social.toUpperCase()) && (
+                            <span className="bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full text-[8px] font-black tracking-widest uppercase flex items-center gap-1">
+                              <Award size={10} /> VIP
+                            </span>
+                          )}
+                        </div>
                         <p className="text-[10px] text-gray-400 font-medium tracking-wider">{client.cpf_cnpj || 'SEM DOCUMENTO'}</p>
                       </div>
                     </td>
@@ -430,7 +470,14 @@ const Clients: React.FC<ClientsProps> = ({ clients, addClient, updateClient, onB
                   {selectedClientForDetails.id_ferro}
                 </div>
                 <div>
-                  <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">{selectedClientForDetails.nome_social}</h2>
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight uppercase">{selectedClientForDetails.nome_social}</h2>
+                    {['HEITOR PEDRO DA SILVA NETO', 'GILNEI BRITO SANTOS', 'JOÃO BATISTA TEIXEIRA DE OLIVEIRA', 'JOAO BATISTA TEIXEIRA DE OLIVEIRA'].includes(selectedClientForDetails.nome_social.toUpperCase()) && (
+                      <span className="bg-gradient-to-r from-amber-400 to-amber-600 text-white px-3 py-1 rounded-full text-[10px] font-black tracking-[0.2em] uppercase flex items-center gap-1 shadow-lg shadow-amber-500/30">
+                        <Award size={12} /> Cliente VIP
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">
                     {isEditing ? 'Editor de Registro Master' : `Matrícula #${selectedClientForDetails.cpf_cnpj || '---'}`}
                   </p>
@@ -472,6 +519,32 @@ const Clients: React.FC<ClientsProps> = ({ clients, addClient, updateClient, onB
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold text-emerald-600 uppercase">Limite de Crédito</label>
                     <input type="text" inputMode="decimal" className="modern-input bg-emerald-50 border-emerald-100 font-bold text-emerald-700" placeholder="Limite" value={editingClient?.limite_credito || ''} onChange={e => { const v = e.target.value.replace(',', '.'); if (v === '' || /^\d*\.?\d*$/.test(v)) setEditingClient(prev => prev ? ({ ...prev, limite_credito: Number(v) || 0 }) : null); }} />
+                  </div>
+                  {/* CRM FIELDS */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">Perfil de Compra</label>
+                    <select className="modern-input" value={editingClient?.perfil_compra || 'MISTO'} onChange={e => setEditingClient(prev => prev ? ({ ...prev, perfil_compra: e.target.value as any }) : null)}>
+                      <option value="BOI">Boi</option>
+                      <option value="NOVILHA">Novilha</option>
+                      <option value="MISTO">Misto</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">Padrão de Gordura</label>
+                    <select className="modern-input" value={editingClient?.padrao_gordura || 'MEDIO'} onChange={e => setEditingClient(prev => prev ? ({ ...prev, padrao_gordura: e.target.value as any }) : null)}>
+                      <option value="MAGRO">Magro</option>
+                      <option value="MEDIO">Médio</option>
+                      <option value="GORDO">Gordo</option>
+                      <option value="EXPORTACAO">Exportação</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">Objeções</label>
+                    <input type="text" className="modern-input" value={editingClient?.objecoes_frequentes || ''} onChange={e => setEditingClient(prev => prev ? ({ ...prev, objecoes_frequentes: e.target.value }) : null)} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">Preferências</label>
+                    <input type="text" className="modern-input" value={editingClient?.preferencias || ''} onChange={e => setEditingClient(prev => prev ? ({ ...prev, preferencias: e.target.value }) : null)} />
                   </div>
                 </form>
               ) : clientAnalytics && (
@@ -576,6 +649,29 @@ const Clients: React.FC<ClientsProps> = ({ clients, addClient, updateClient, onB
                               </div>
                             );
                           })()}
+                        </div>
+                      </div>
+
+                      {/* CRM & PREFERÊNCIAS */}
+                      <div className="bg-indigo-50/50 rounded-[24px] p-6 border border-indigo-100/50">
+                        <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-4 flex items-center gap-2"><Star size={14} /> CRM & Inteligência Comercial</h4>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <div>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Perfil de Compra</p>
+                            <p className="text-sm font-black text-indigo-900">{selectedClientForDetails.perfil_compra || 'MISTO'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Padrão de Gordura</p>
+                            <p className="text-sm font-black text-indigo-900">{selectedClientForDetails.padrao_gordura || 'MEDIO'}</p>
+                          </div>
+                          <div className="md:col-span-2">
+                            <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Objeções Anotadas</p>
+                            <p className="text-xs font-semibold text-slate-700">{selectedClientForDetails.objecoes_frequentes || 'Nenhuma objeção registrada.'}</p>
+                          </div>
+                          <div className="col-span-2 md:col-span-4 mt-2">
+                            <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Preferências Especiais</p>
+                            <p className="text-xs font-semibold text-slate-700">{selectedClientForDetails.preferencias || 'Nenhuma preferência registrada.'}</p>
+                          </div>
                         </div>
                       </div>
 

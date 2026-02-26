@@ -23,6 +23,8 @@ const Sidebar: React.FC<SidebarProps> = ({ setView, onLogout, onSyncSheets, shee
     { id: 'heifers', label: 'Gestão Abate', description: 'Novilhas Diárias', icon: Beef, color: 'text-emerald-700', bg: 'bg-emerald-100', glow: 'group-hover:shadow-lg' },
     { id: 'ai_agents', label: 'Central IA', description: 'Agentes Inteligentes', icon: Brain, color: 'text-purple-600', bg: 'bg-purple-50', glow: 'group-hover:shadow-lg' },
     { id: 'ai_chat', label: 'Chat IA', description: 'Fale com Gerentes', icon: MessageCircle, color: 'text-indigo-600', bg: 'bg-indigo-50', glow: 'group-hover:shadow-lg' },
+    { id: 'ai_meeting', label: 'Sala de Guerra', description: 'Reunião Diretoria', icon: Users, color: 'text-rose-600', bg: 'bg-rose-100', glow: 'group-hover:shadow-rose-500/50' },
+    { id: 'meeting_chat', label: 'Chat Equipe', description: 'Fale com Funcionários', icon: MessageCircle, color: 'text-emerald-600', bg: 'bg-emerald-100', glow: 'group-hover:shadow-emerald-500/50' },
     { id: 'sales_agent', label: 'Agente IA', description: 'Robô de Vendas', icon: Bot, color: 'text-purple-600', bg: 'bg-purple-100', glow: 'group-hover:shadow-lg' },
     { id: 'report', label: 'Relatório', description: 'Resumo Diário', icon: FileText, color: 'text-emerald-600', bg: 'bg-emerald-50', glow: 'group-hover:shadow-lg' },
     { id: 'audit', label: 'Auditoria', description: 'Quem Fez O Quê', icon: ShieldCheck, color: 'text-rose-600', bg: 'bg-rose-50', glow: 'group-hover:shadow-lg' },

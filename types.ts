@@ -15,6 +15,13 @@ export interface Client {
   cidade?: string;
   observacoes?: string;
   status?: 'ATIVO' | 'INATIVO'; // Para inativação em vez de delete
+  // ═══ CAMPOS CRM E INTELIGÊNCIA (FASE 3) ═══
+  perfil_compra?: 'BOI' | 'NOVILHA' | 'MISTO'; // Preferência do tipo de carne
+  padrao_gordura?: 'MAGRO' | 'MEDIO' | 'GORDO' | 'EXPORTACAO'; // Nível de exigência de acabamento
+  objecoes_frequentes?: string; // O que o cliente sempre reclama (ex: "acha o preço caro", "não gosta de osso")
+  preferencias?: string; // Observações extras de venda (ex: "só compra com 30 dias de prazo")
+  frequencia_ideal_dias?: number; // Para o CRM calcular churn e clientes esfriando
+  mimo_recebido_data?: string; // ISO date de quando ganhou o último mimo/brinde
 }
 
 export interface Supplier {
@@ -174,7 +181,7 @@ export interface Payable {
 
 // ═══ MULTI-AGENT AI SYSTEM ═══
 
-export type AgentType = 'ADMINISTRATIVO' | 'PRODUCAO' | 'COMERCIAL' | 'AUDITOR' | 'ESTOQUE' | 'COMPRAS' | 'MERCADO' | 'ROBO_VENDAS';
+export type AgentType = 'ADMINISTRATIVO' | 'PRODUCAO' | 'COMERCIAL' | 'AUDITOR' | 'ESTOQUE' | 'COMPRAS' | 'MERCADO' | 'ROBO_VENDAS' | 'MARKETING' | 'SATISFACAO';
 export type AlertSeverity = 'INFO' | 'ALERTA' | 'CRITICO' | 'BLOQUEIO';
 export type AlertStatus = 'NOVO' | 'VISTO' | 'RESOLVIDO' | 'IGNORADO';
 
