@@ -48,6 +48,7 @@ export interface Batch {
   // ═══ CAMPOS ESTÁGIO 1 — PRODUÇÃO & RAÇA ═══
   raca?: string; // Raça do lote (Nelore, Angus×Nelore, etc.)
   qtd_cabecas?: number; // Quantidade de cabeças no lote
+  qtd_mortos?: number; // Mortalidade no frete/descanso
   peso_vivo_medio?: number; // Peso vivo médio por cabeça (kg) na fazenda
   peso_gancho?: number; // Peso total no gancho do frigorífico (kg)
   rendimento_real?: number; // (peso_desossa / peso_gancho) × 100 — calculado

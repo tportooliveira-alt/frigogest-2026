@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
     ArrowLeft, Brain, Shield, TrendingUp, BarChart3,
     Bell, CheckCircle, AlertTriangle, XCircle, Eye,
@@ -8,6 +8,7 @@ import {
     Loader2, Send, Sparkles
 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
+import { fetchAllNews, formatNewsForAgent, NewsItem } from '../services/newsService';
 
 // ═══ AI CASCADE — Gemini → Groq → Cerebras ═══
 interface CascadeProvider {
@@ -181,12 +182,12 @@ const DEFAULT_AGENTS: AgentConfig[] = [
     {
         id: 'MERCADO',
         name: 'Ana',
-        description: 'Analista de Mercado — acompanha cotações CEPEA, tendências de preço, safra/entressafra e oportunidades de compra e venda.',
+        description: 'Diretora de Marketing e Inteligência Comercial — ESPM + MBA USP/ESALQ, 20 anos no setor de carnes. Domina CEPEA, precificação, CRM, programa de fidelidade, marketing digital (WhatsApp/Instagram/Google), e calendário sazonal.',
         icon: '📊',
         color: 'violet',
         enabled: true,
-        systemPrompt: 'Você é Ana, analista de mercado do FrigoGest. Especialista em CEPEA, tendências e inteligência regional.',
-        modules: ['MERCADO', 'LOTES'],
+        systemPrompt: 'Você é Ana, diretora de marketing do FrigoGest. Formada ESPM, MBA USP/ESALQ, 20 anos no setor. Expert em CEPEA, precificação, CRM, marketing digital e calendário sazonal.',
+        modules: ['MERCADO', 'LOTES', 'VENDAS', 'CLIENTES'],
         triggerCount: 3,
     },
     {
@@ -213,6 +214,28 @@ const AIAgents: React.FC<AIAgentsProps> = ({
     const [agentError, setAgentError] = useState<string | null>(null);
     const [consultingAgent, setConsultingAgent] = useState<AgentType | null>(null);
     const agentResultRef = useRef<HTMLDivElement>(null);
+
+    // ═══ AUTOMAÇÃO — ESTADO POR AGENTE ═══
+    const [agentDiagnostics, setAgentDiagnostics] = useState<Record<string, { text: string; provider: string; timestamp: Date }>>({});
+    const [bulkRunning, setBulkRunning] = useState(false);
+    const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number; currentAgent: string }>({ current: 0, total: 0, currentAgent: '' });
+    const [autoRunDone, setAutoRunDone] = useState(false);
+    const [expandedDiagnostic, setExpandedDiagnostic] = useState<string | null>(null);
+    const [marketNews, setMarketNews] = useState<NewsItem[]>([]);
+    const [newsLoading, setNewsLoading] = useState(false);
+
+    // ═══ BUSCAR NOTÍCIAS DO MERCADO ═══
+    useEffect(() => {
+        const loadNews = async () => {
+            setNewsLoading(true);
+            try {
+                const news = await fetchAllNews();
+                setMarketNews(news);
+            } catch { /* silencioso */ }
+            setNewsLoading(false);
+        };
+        loadNews();
+    }, []);
 
     // ═══ LIVE AUDIT: Generate real alerts from actual data ═══
     const liveAlerts = useMemo<AgentAlert[]>(() => {
@@ -501,7 +524,19 @@ const AIAgents: React.FC<AIAgentsProps> = ({
 
     // ═══ FINANCIAL SUMMARY FOR KPIs ═══
     const financialKPIs = useMemo(() => {
-        const validTx = transactions.filter(t => t.categoria !== 'ESTORNO');
+        const closedBatches = batches.filter(b => b.status === 'FECHADO');
+        const validLoteIds = new Set(closedBatches.map(b => b.id_lote));
+        const hasValidBatches = closedBatches.length > 0;
+        const validTx = transactions.filter(t => {
+            if (!t.referencia_id) return true;
+            if (validLoteIds.has(t.referencia_id)) return true;
+            if (t.id?.startsWith('TR-REC-') || t.id?.startsWith('TR-PAY-') || t.categoria === 'VENDA') return true;
+            if (t.id?.startsWith('TR-ESTORNO-') || t.categoria === 'ESTORNO') return true;
+            if (t.id?.startsWith('TR-DESC-') || t.categoria === 'DESCONTO') return true;
+            if (!t.referencia_id.includes('-')) return true;
+            if (hasValidBatches) return false;
+            return true;
+        });
         const entradas = validTx.filter(t => t.tipo === 'ENTRADA').reduce((s, t) => s + t.valor, 0);
         const saidas = validTx.filter(t => t.tipo === 'SAIDA').reduce((s, t) => s + t.valor, 0);
         const saldo = entradas - saidas;
@@ -546,7 +581,19 @@ const AIAgents: React.FC<AIAgentsProps> = ({
         try {
             // Cascade será chamado após montar prompt e data
 
-            const validTx = transactions.filter(t => t.categoria !== 'ESTORNO');
+            const closedBatches = batches.filter(b => b.status === 'FECHADO');
+            const validLoteIds = new Set(closedBatches.map(b => b.id_lote));
+            const hasValidBatches = closedBatches.length > 0;
+            const validTx = transactions.filter(t => {
+                if (!t.referencia_id) return true;
+                if (validLoteIds.has(t.referencia_id)) return true;
+                if (t.id?.startsWith('TR-REC-') || t.id?.startsWith('TR-PAY-') || t.categoria === 'VENDA') return true;
+                if (t.id?.startsWith('TR-ESTORNO-') || t.categoria === 'ESTORNO') return true;
+                if (t.id?.startsWith('TR-DESC-') || t.categoria === 'DESCONTO') return true;
+                if (!t.referencia_id.includes('-')) return true;
+                if (hasValidBatches) return false;
+                return true;
+            });
             const totalEntradas = validTx.filter(t => t.tipo === 'ENTRADA').reduce((s, t) => s + t.valor, 0);
             const totalSaidas = validTx.filter(t => t.tipo === 'SAIDA').reduce((s, t) => s + t.valor, 0);
             const vendasPagas = sales.filter(s => s.status_pagamento === 'PAGO');
@@ -554,6 +601,13 @@ const AIAgents: React.FC<AIAgentsProps> = ({
             const vendasEstornadas = sales.filter(s => s.status_pagamento === 'ESTORNADO');
             const payablesPendentes = payables.filter(p => p.status === 'PENDENTE' || p.status === 'PARCIAL');
             const payablesVencidos = payablesPendentes.filter(p => new Date(p.data_vencimento) < new Date());
+
+            // GAP 4: Projeção 7 dias
+            const pAgendados = payablesPendentes.filter(p => new Date(p.data_vencimento) >= new Date() && new Date(p.data_vencimento) <= new Date(Date.now() + 7 * 86400000));
+            const aPagar7d = pAgendados.reduce((s, p) => s + (p.valor - (p.valor_pago || 0)), 0);
+            const vFuturas = vendasPendentes.filter(v => new Date(v.data_vencimento) >= new Date() && new Date(v.data_vencimento) <= new Date(Date.now() + 7 * 86400000));
+            const aReceber7d = vFuturas.reduce((s, v) => s + ((v.peso_real_saida * v.preco_venda_kg) - ((v as any).valor_pago || 0)), 0);
+
             const estoqueDisp = stock.filter(s => s.status === 'DISPONIVEL');
             const agentAlerts = liveAlerts.filter(a => a.agent === agentType);
 
@@ -562,9 +616,10 @@ const AIAgents: React.FC<AIAgentsProps> = ({
                 ADMINISTRATIVO: `
 ## SNAPSHOT GERAL — FRIGOGEST (${new Date().toLocaleDateString('pt-BR')})
 Caixa: Entradas R$${totalEntradas.toFixed(2)} | Saídas R$${totalSaidas.toFixed(2)} | Saldo R$${(totalEntradas - totalSaidas).toFixed(2)}
+Projeção 7 Dias: A Receber R$${aReceber7d.toFixed(2)} | A Pagar R$${aPagar7d.toFixed(2)}
 Vendas: ${vendasPagas.length} pagas, ${vendasPendentes.length} pendentes, ${vendasEstornadas.length} estornadas
 Contas a Pagar: ${payablesPendentes.length} pendentes (R$${payablesPendentes.reduce((s, p) => s + p.valor, 0).toFixed(2)}), ${payablesVencidos.length} vencidas
-Estoque: ${estoqueDisp.length} peças, ${estoqueDisp.reduce((s, e) => s + e.peso_entrada, 0).toFixed(1)}kg
+Estoque: ${estoqueDisp.length} peças, ${estoqueDisp.reduce((s, e) => s + e.peso_entrada, 0).toFixed(1)}kg (Sendo: ${estoqueDisp.filter(s => s.tipo === 1).length} Inteiras, ${estoqueDisp.filter(s => s.tipo === 2).length} Diant., ${estoqueDisp.filter(s => s.tipo === 3).length} Tras.)
 Lotes: ${batches.length} total (${batches.filter(b => b.status === 'ABERTO').length} abertos, ${batches.filter(b => b.status === 'FECHADO').length} fechados)
 Clientes: ${clients.length} total, ${clients.filter(c => c.saldo_devedor > 0).length} com saldo devedor
 Fornecedores: ${suppliers.length} cadastrados
@@ -579,7 +634,7 @@ ${batches.filter(b => b.status !== 'ESTORNADO').slice(-10).map(b => {
                     const pecas = stock.filter(s => s.id_lote === b.id_lote);
                     const pesoTotal = pecas.reduce((s, p) => s + p.peso_entrada, 0);
                     const rend = b.peso_total_romaneio > 0 ? ((pesoTotal / b.peso_total_romaneio) * 100).toFixed(1) : 'N/A';
-                    return `- Lote ${b.id_lote} | Forn: ${b.fornecedor} | Raça: ${(b as any).raca || 'N/I'} | Cab: ${(b as any).qtd_cabecas || 'N/I'} | Romaneio: ${b.peso_total_romaneio}kg | Pesado: ${pesoTotal.toFixed(1)}kg | Rend: ${rend}% | Toalete: ${(b as any).toalete_kg || 'N/I'}kg | Peças: ${pecas.length}`;
+                    return `- Lote ${b.id_lote} | Forn: ${b.fornecedor} | Raça: ${(b as any).raca || 'N/I'} | Cab: ${(b as any).qtd_cabecas || 'N/I'} | Mortos: ${(b as any).qtd_mortos || 0} | Romaneio: ${b.peso_total_romaneio}kg | Pesado: ${pesoTotal.toFixed(1)}kg | Rend: ${rend}% | Toalete: ${(b as any).toalete_kg || 'N/I'}kg | Peças: ${pecas.length}`;
                 }).join('\n')}
 Estoque: ${estoqueDisp.length} peças, ${estoqueDisp.reduce((s, e) => s + e.peso_entrada, 0).toFixed(1)}kg disponível
 Fornecedores: ${suppliers.length}
@@ -601,7 +656,8 @@ ${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}
 
                 AUDITOR: `
 ## SNAPSHOT FINANCEIRO — FRIGOGEST (${new Date().toLocaleDateString('pt-BR')})
-Caixa: Entradas R$${totalEntradas.toFixed(2)} | Saídas R$${totalSaidas.toFixed(2)} | Saldo R$${(totalEntradas - totalSaidas).toFixed(2)}
+Caixa Atual: Entradas R$${totalEntradas.toFixed(2)} | Saídas R$${totalSaidas.toFixed(2)} | Saldo R$${(totalEntradas - totalSaidas).toFixed(2)}
+Projeção 7 dias: A Receber R$${aReceber7d.toFixed(2)} | A Pagar R$${aPagar7d.toFixed(2)} | Saldo Projetado R$${(aReceber7d - aPagar7d).toFixed(2)}
 Transações: ${transactions.length} total
 Vendas PAGAS sem Transaction ENTRADA: ${vendasPagas.filter(v => !transactions.some(t => t.referencia_id === v.id_venda && t.tipo === 'ENTRADA' && t.categoria !== 'ESTORNO')).length}
 Lotes sem saída financeira: ${batches.filter(b => b.status !== 'ESTORNADO' && !payables.some(p => p.id_lote === b.id_lote) && !transactions.some(t => t.referencia_id === b.id_lote && t.tipo === 'SAIDA')).length}
@@ -614,6 +670,7 @@ ${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}
 ## SNAPSHOT ESTOQUE — FRIGOGEST (${new Date().toLocaleDateString('pt-BR')})
 Peças disponíveis: ${estoqueDisp.length}
 Peso total: ${estoqueDisp.reduce((s, e) => s + e.peso_entrada, 0).toFixed(1)}kg
+Tipos: ${estoqueDisp.filter(s => s.tipo === 1).length} Inteiras | ${estoqueDisp.filter(s => s.tipo === 2).length} Dianteiros (A) | ${estoqueDisp.filter(s => s.tipo === 3).length} Traseiros (B)
 Peças >30 dias: ${estoqueDisp.filter(s => Math.floor((new Date().getTime() - new Date(s.data_entrada).getTime()) / 86400000) > 30).length}
 Peças >60 dias: ${estoqueDisp.filter(s => Math.floor((new Date().getTime() - new Date(s.data_entrada).getTime()) / 86400000) > 60).length}
 Detalhamento:
@@ -631,7 +688,11 @@ ${suppliers.slice(0, 10).map(s => {
                     const lotes = batches.filter(b => b.fornecedor === s.nome_fantasia);
                     const totalKg = lotes.reduce((sum, b) => sum + b.peso_total_romaneio, 0);
                     const totalR = lotes.reduce((sum, b) => sum + b.valor_compra_total, 0);
-                    return `- ${s.nome_fantasia} | Raça: ${s.raca_predominante || 'N/I'} | ${lotes.length} lotes | ${totalKg.toFixed(0)}kg | R$${totalR.toFixed(2)} | Banco: ${s.dados_bancarios ? 'SIM' : 'NÃO'}`;
+                    const mortos = lotes.reduce((sum, b) => sum + ((b as any).qtd_mortos || 0), 0);
+                    const rends = lotes.filter(b => b.rendimento_real && b.rendimento_real > 0);
+                    const avgRend = rends.length > 0 ? (rends.reduce((sum, b) => sum + (b.rendimento_real || 0), 0) / rends.length).toFixed(1) + '%' : 'N/A';
+                    const score = avgRend !== 'N/A' && parseFloat(avgRend) > 52 && mortos === 0 ? 'A (Excelente)' : (avgRend !== 'N/A' && parseFloat(avgRend) > 49 ? 'B (Bom)' : 'C (Atenção)');
+                    return `- ${s.nome_fantasia} | Score: ${score} | Raça: ${s.raca_predominante || 'N/I'} | ${lotes.length} lotes | Mortos: ${mortos} | Rend Médio: ${avgRend} | ${totalKg.toFixed(0)}kg | R$${totalR.toFixed(2)}`;
                 }).join('\n')}
 Contas a Pagar: ${payablesPendentes.length} (R$${payablesPendentes.reduce((s, p) => s + p.valor, 0).toFixed(2)})
 Vencidas: ${payablesVencidos.length} (R$${payablesVencidos.reduce((s, p) => s + p.valor, 0).toFixed(2)})
@@ -657,7 +718,7 @@ Clientes com compra no mês: ${clients.filter(c => sales.some(s => s.id_cliente 
 Clientes inativos (>30d): ${clients.filter(c => { const ls = sales.filter(s => s.id_cliente === c.id_ferro).sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())[0]; return ls && Math.floor((new Date().getTime() - new Date(ls.data_venda).getTime()) / 86400000) > 30; }).length}
 Clientes inativos (>60d): ${clients.filter(c => { const ls = sales.filter(s => s.id_cliente === c.id_ferro).sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())[0]; return ls && Math.floor((new Date().getTime() - new Date(ls.data_venda).getTime()) / 86400000) > 60; }).length}
 Top clientes por volume:
-${clients.sort((a, b) => { const va = sales.filter(s => s.id_cliente === a.id_ferro).reduce((s, v) => s + v.peso_real_saida, 0); const vb = sales.filter(s => s.id_cliente === b.id_ferro).reduce((s, v) => s + v.peso_real_saida, 0); return vb - va; }).slice(0, 8).map(c => { const cv = sales.filter(s => s.id_cliente === c.id_ferro); const kg = cv.reduce((s, v) => s + v.peso_real_saida, 0); return `- ${c.nome_social}: ${cv.length} compras, ${kg.toFixed(1)}kg`; }).join('\n')}
+${clients.sort((a, b) => { const va = sales.filter(s => s.id_cliente === a.id_ferro).reduce((s, v) => s + v.peso_real_saida, 0); const vb = sales.filter(s => s.id_cliente === b.id_ferro).reduce((s, v) => s + v.peso_real_saida, 0); return vb - va; }).slice(0, 8).map(c => { const cv = sales.filter(s => s.id_cliente === c.id_ferro); const kg = cv.reduce((s, v) => s + v.peso_real_saida, 0); const pag = cv.length > 0 ? cv[cv.length - 1].forma_pagamento : 'N/I'; return `- ${c.nome_social}: ${cv.length} compras, ${kg.toFixed(1)}kg | Pagamento ref: ${pag}`; }).join('\n')}
 Pedidos abertos: ${scheduledOrders.filter(o => o.status === 'ABERTO').length}
 Alertas Robô: ${agentAlerts.length}
 ${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}`.trim(),
@@ -802,7 +863,7 @@ ANÁLISE QUE VOCÊ DEVE FAZER:
 
 Organize em: 🚛 SCORECARD FORNECEDORES, 💰 ANÁLISE DE CUSTOS, ⚠️ PAGAMENTOS PENDENTES, 💡 OPORTUNIDADES`,
 
-                MERCADO: `Você é ANA, CONSULTORA ESTRATÉGICA DE MERCADO E MARKETING do FrigoGest — você traz inteligência do MUNDO REAL para dentro do negócio.
+                MERCADO: `Você é ANA, DIRETORA DE MARKETING E INTELIGÊNCIA COMERCIAL do FrigoGest — formada em Marketing pela ESPM, MBA em Agronegócio pela USP/ESALQ, e com 20 ANOS de experiência no setor de carnes. Você combina inteligência de mercado + marketing digital + CRM + precificação em um único cérebro.
 
 📍 LOCALIZAÇÃO: Vitória da Conquista - BA (Sudoeste Baiano)
 Praças de referência: Feira de Santana, Itapetinga, Ilhéus, Jequié, Itabuna
@@ -812,10 +873,11 @@ Praças de referência: Feira de Santana, Itapetinga, Ilhéus, Jequié, Itabuna
 ═══════════════════════════════════════════════
 
 1. COTAÇÃO DA ARROBA — BRASIL (CEPEA/ESALQ):
-   • Indicador Nacional CEPEA: R$340-350/@  (mais alto desde 2022)
+   • Indicador Nacional CEPEA: R$340-350/@ (mais alto desde 2022)
    • Alta de 7.7% vs final de 2025 (era R$319)
-   • Volatilidade 2025 caiu para 53.1% (metade de 2023/2024) = mercado mais estável
+   • Em 24/fev/2026: R$350,10/@
    • B3 futuros fev/2026: R$350,60/@ → mercado aposta em alta
+   • Oferta RESTRITA de animais + escalas de abate curtas = preços firmes
 
 2. COTAÇÃO BAHIA (Scot Consultoria, fev/2026):
    • BA Sul: R$308,50/@ vista | R$312,00/@ 30 dias
@@ -830,7 +892,15 @@ Praças de referência: Feira de Santana, Itapetinga, Ilhéus, Jequié, Itabuna
    • VALE: janeiro (pós-festas), março-abril (quaresma)
    • AGORA (fevereiro): SAFRA INICIANDO — janela para comprar mais barato
 
-4. TIPOS DE BOI E PRÊMIO/DESCONTO:
+4. CENÁRIO BRASIL 2025/2026:
+   • Brasil = MAIOR exportador E produtor mundial de carne bovina (superou EUA em 2025)
+   • Exportações 2025: 3.45M toneladas (+20.9%), receita US$ 18 bilhões
+   • China: cota 2026 = 1.106M ton (pode esgotar em setembro!)
+   • Consumo interno: 1.83 kg/pessoa/mês, preço médio R$56,14/kg
+   • Mercado doméstico absorve ~60% da produção
+   • EUA retirou tarifa em 2025 — novo mercado aberto
+
+5. TIPOS DE BOI E PRÊMIO/DESCONTO:
    • BOI COMUM (Nelore, pasto): preço base
    • BOI CHINA (habilitado exportação): +10-15% sobre o comum
    • NOVILHA: -5 a -10% vs boi inteiro (mas rendimento pode ser maior)
@@ -839,120 +909,231 @@ Praças de referência: Feira de Santana, Itapetinga, Ilhéus, Jequié, Itabuna
    • BOI ANGUS/CRUZAMENTO: +8-12% (demanda de restaurantes crescendo)
 
 ═══════════════════════════════════════════════
-💰 PREÇOS POR CORTE (REFERÊNCIA ATACADO/VAREJO)
+💰 PRECIFICAÇÃO INTELIGENTE (MARKUP & MARGEM)
 ═══════════════════════════════════════════════
 
-ATACADO (SP, fev/2026):
-   • Carcaça casada: R$23,00/kg
-   • Quarto Traseiro: R$26,50/kg (margem MAIOR)
-   • Quarto Dianteiro: R$20,00/kg (volume MAIOR)
+FÓRMULA DO MARKUP:
+   Markup = 100 / (100 - DV - DF - ML)
+   DV = Despesas Variáveis (impostos, comissões, frete)
+   DF = Despesas Fixas (aluguel, energia, salários — rateadas por kg)
+   ML = Margem de Lucro desejada
 
-VAREJO (preço médio por corte):
-   • PICANHA: R$73-81/kg (margem ALTÍSSIMA, vende pouco volume)
+EXEMPLO PRÁTICO:
+   Custo compra: R$20/kg. DV=8%, DF=7%, ML=15%
+   Markup = 100 / (100 - 8 - 7 - 15) = 100/70 = 1.4286
+   Preço venda: R$20 × 1.4286 = R$28,57/kg
+
+REFERÊNCIA MARGEM SETOR:
+   • Margem bruta açougue/supermercado: 18-20% (normal)
+   • Margem bruta frigorífico regional: 25-35% (alvo)
+   • Margem líquida saudável: 8-15%
+   • Grandes (JBS, Minerva, Frigol): 1.5-6% EBITDA
+
+PERDAS E QUEBRAS (reduzem margem real):
+   • Calcular sobre PESO VENDÁVEL, não peso comprado
+   • 100kg comprados → ~90kg vendáveis (osso, gordura, aparas)
+   • Refrigeração: perda de 1-2% por condensação
+   • Desossa: perda de 8-12% (osso, sebo, aparas)
+   • MONITORAR sempre: pesar osso + gordura + aparas separadamente
+
+PREÇOS POR CORTE (referência atacado/varejo, fev/2026):
+   ATACADO (SP):
+   • Carcaça casada: R$23,00/kg | Traseiro: R$26,50/kg | Dianteiro: R$20,00/kg
+   VAREJO:
+   • PICANHA: R$73-81/kg (margem ALTÍSSIMA, volume baixo)
    • FILÉ MIGNON: R$78-92/kg (nicho premium)
    • ALCATRA: R$51-54/kg (equilíbrio volume+margem)
-   • CONTRAFILÉ: R$45-58/kg (corte mais pedido em restaurantes)
+   • CONTRAFILÉ: R$45-58/kg (mais pedido em restaurantes)
    • FRALDINHA: R$38/kg (queridinha do churrasco)
-   • PATINHO: R$49/kg (dona de casa, dia a dia)
-   • MÚSCULO: R$41/kg (baixo custo, alto volume)
-   • PEITO/ACÉM: R$36/kg (popular, gira rápido)
+   • PATINHO: R$49/kg (dia a dia)
+   • MÚSCULO: R$41/kg (alto volume)
+   • PEITO/ACÉM: R$36/kg (gira rápido)
 
-LIÇÃO: O lucro está no MIX — vender só cortes populares dá volume mas margem baixa. 
-Combinar traseiro premium + dianteiro popular = margem ótima.
+REGRA DE OURO: O lucro está no MIX — dianteiro popular + traseiro premium = margem ótima.
 
 ═══════════════════════════════════════════════
 🏪 ESTRATÉGIAS DE MARKETING POR CANAL
 ═══════════════════════════════════════════════
 
-CANAL 1 — AÇOUGUES (varejo especializado):
-   • Representam 40-50% das vendas de frigorífico regional
-   • DECISOR: o próprio dono do açougue (relação pessoal é TUDO)
-   • FREQUÊNCIA: compra 2-3x por semana (perecível)
-   • ESTRATÉGIA: visita pessoal, WhatsApp direto, preço por fidelidade
-   • OPORTUNIDADE: kit pronto (sortido dianteiro+traseiro), entrega rápida
-   • DOR: prazo de pagamento, falta de produto, qualidade irregular
-   • TENDÊNCIA 2026: açougue gourmet, degustação em loja, cortes premium
+CANAL 1 — AÇOUGUES (40-50% das vendas):
+   • DECISOR: dono do açougue (relação pessoal é TUDO)
+   • FREQUÊNCIA: compra 2-3x/semana (perecível)
+   • ESTRATÉGIA: visita pessoal + WhatsApp + preço fidelidade
+   • OPORTUNIDADE: kit sortido (dianteiro+traseiro), entrega rápida
+   • DOR: prazo de pagamento, falta de produto
+   • AÇÃO: criar "Clube do Açougueiro" com desconto progressivo
 
 CANAL 2 — RESTAURANTES/CHURRASCARIAS:
-   • Margem MAIOR que açougue (pagam mais por qualidade)
+   • Margem MAIOR (pagam mais por qualidade/consistência)
    • DECISOR: chef ou gerente de compras
-   • FREQUÊNCIA: compra programada semanal
    • CORTES mais pedidos: picanha, contra-filé, fraldinha, costela
-   • ESTRATÉGIA: contrato mensal com preço fixo, garantia de fornecimento
-   • OPORTUNIDADE: carnes premium (Angus, maturada), cortes especiais
-   • DOR: consistência de qualidade, pontualidade na entrega
+   • ESTRATÉGIA: contrato mensal, preço fixo, garantia de fornecimento
+   • AÇÃO: oferecer maturação e cortes especiais como diferencial
 
-CANAL 3 — ATACADO (distribuidores, outros frigoríficos):
-   • Volume ALTO mas margem BAIXA (5-10%)
-   • DECISOR: comprador profissional (negocia centavos)
-   • ESTRATÉGIA: preço competitivo, volume mínimo, frete incluso
-   • OPORTUNIDADE: limpeza de estoque antigo com desconto progressivo
-   • RISCO: inadimplência alta — exigir garantias
+CANAL 3 — ATACADO (distribuidores):
+   • Volume ALTO, margem BAIXA (5-10%)
+   • ESTRATÉGIA: preço competitivo, frete incluso
+   • BÔNUS: limpar estoque antigo com desconto progressivo
 
 CANAL 4 — VENDA DIRETA (consumidor final):
    • Margem ALTÍSSIMA (40-60%) mas volume baixo
-   • ESTRATÉGIA: Instagram, WhatsApp, kits de churrasco, assinatura mensal
-   • TENDÊNCIA 2026: social commerce (+28% ao ano), delivery, kits prontos
-   • PÚBLICO: classes A/B que valorizam procedência e qualidade
-   • DOR: logística de última milha (frio), embalagem, marketing digital
+   • ESTRATÉGIA: Instagram + WhatsApp + kits churrasco + assinatura mensal
+   • PÚBLICO: classes A/B, valorizam procedência e qualidade
+   • TENDÊNCIA: social commerce (+28%/ano), delivery, kits prontos
 
 ═══════════════════════════════════════════════
-🌍 MERCADO DE EXPORTAÇÃO (inteligência estratégica)
+📱 MARKETING DIGITAL AVANÇADO (seu MBA em prática)
 ═══════════════════════════════════════════════
-   • Brasil = MAIOR exportador mundial de carne bovina (superou EUA em 2025)
-   • Exportações 2025: +20.9% volume, +39.3% receita vs 2024
-   • Destinos principais: China, EUA, Oriente Médio
-   • Habilitação China: frigorífico precisa de SIF + protocolo sanitário específico
-   • IMPACTO para frigorífico regional: boi habilitado China paga 10-15% a mais
-   • Se seu frigorífico NÃO é habilitado: foque no mercado interno com qualidade
+
+WHATSAPP BUSINESS (ferramenta #1 no Brasil):
+   • Catálogo de produtos com fotos e preços
+   • Listas de transmissão: ofertas semanais para cada segmento
+   • Mensagens automáticas: ausência, saudação, FAQ
+   • Pagamento direto pelo app (Cielo, Facebook Pay)
+   • FLUXO IDEAL: segunda = envia oferta → terça = follow-up → quarta = "promoção relâmpago"
+   • REGRA: NUNCA spammar. Máx 2-3 msgs/semana por lista
+
+INSTAGRAM PRO (segundo canal mais importante):
+   • CONTEÚDO: fotos suculentas dos cortes, vídeos de preparo, behind-the-scenes
+   • STORIES: enquetes ("Qual corte para o churrasco?"), bastidores do frigorífico
+   • REELS: receitas rápidas (30s), dicas de corte, "corte do dia"
+   • FREQUÊNCIA: 3-5 posts/semana + stories diários
+   • HASHTAGS regionais: #ChurrascoVCA #CarneDeQualidade #Frigorifico[Nome]
+   • HORÁRIOS: 11h-13h (almoço) e 18h-20h (jantar) = pico de engajamento
+   • HUMANIZAÇÃO: contar a história do negócio, mostrar quem faz
+
+GOOGLE MEU NEGÓCIO (gratuito e poderoso):
+   • Cadastrar URGENTE se ainda não tem
+   • Fotos profissionais dos produtos, do espaço
+   • Responder TODAS as avaliações (positivas e negativas)
+   • Horário de funcionamento atualizado
+   • Categoria: "Frigorífico", "Açougue", "Distribuidor de Carnes"
+   • ROI: clientes que procuram "açougue perto de mim" no Google
+
+MARKETING DE CONTEÚDO (médio-longo prazo):
+   • Blog/post: "Como escolher a carne ideal para churrasco"
+   • Vídeos: "Diferença entre picanha e alcatra — quando usar cada uma"
+   • E-book: "Guia do Churrasco Perfeito" (captura de leads via WhatsApp)
+   • SEO: palavras-chave "carnes frescas Vitória da Conquista", "açougue de qualidade BA"
 
 ═══════════════════════════════════════════════
-📈 TENDÊNCIAS DE CONSUMO 2025/2026
+🏆 CRM & PROGRAMA DE FIDELIDADE
+═══════════════════════════════════════════════
+
+PROGRAMA DE PONTOS (comprovadamente eficaz):
+   • R$1 gasto = 1 ponto
+   • 500 pontos = R$10 de desconto | 1000 = R$25 | 2500 = kit churrasco premium
+   • Cadastro pelo CPF no momento da compra (simples)
+   • Cartão ou consultável pelo WhatsApp
+   • RESULTADO MÉDIO: +15-20% de recompra em 90 dias
+
+SEGMENTAÇÃO RFM AVANÇADA:
+   • VIP (top 20% em gasto): atendimento preferencial, preview de novidades
+   • REGULARES: comunicação semanal, promoções padrão  
+   • ESFRIANDO (30-60 dias sem comprar): mensagem "sentimos sua falta" + cupom
+   • INATIVOS (60+ dias): ligação pessoal do dono/gerente
+   • COM DÉBITO: estratégia de cobrança gentil via WhatsApp antes de cortar crédito
+
+PÓS-VENDA INTELIGENTE:
+   • Mensagem de agradecimento 1h após a compra (automática)
+   • Dica de preparo da carne comprada (agrega valor percebido)
+   • Pesquisa de satisfação mensal (simples, 1 pergunta via WhatsApp)
+
+═══════════════════════════════════════════════
+📅 CALENDÁRIO SAZONAL DE MARKETING (12 MESES)
+═══════════════════════════════════════════════
+
+JANEIRO: Pós-festas, entressafra leve
+   → Promoção "Verão no Churrasco" — combos dianteiro econômico
+   → Instagram: "Receitas leves de verão com carne"
+
+FEVEREIRO: Carnaval + início da safra
+   → Kit Carnaval (picanha + fraldinha + linguiça)
+   → Ação de fidelidade: "compre no feriado, ganhe pontos em dobro"
+
+MARÇO: Dia da Mulher + Quaresma
+   → Promoção para casas e restaurantes que pedem menos cortes nobres
+   → Dica: vender mais miúdos/peixes como alternativa quaresmal
+
+ABRIL: Páscoa
+   → Combo pós-Páscoa "Volta da Carne" — preço agressivo
+   → Stories: "Acabou a quaresma! Hora do churrasco de verdade"
+
+MAIO: Dia das Mães
+   → Kit almoço especial (costela, paleta, acompanhamentos)
+   → Promoção "Presenteie com um kit churrasco para sua mãe"
+
+JUNHO: São João (FUNDAMENTAL para BA!)
+   → PICO DE VENDAS: carne de sol, buchada, picanha, espetinhos
+   → Kit São João (carnes + carvão + tempero) = OBRIGATÓRIO
+   → Decoração temática, envolvimento com festas juninas locais
+
+JULHO: Férias escolares + entressafra começa
+   → Kits família para férias em casa
+   → Promoção "Churrasco em Família" no Instagram/WhatsApp
+
+AGOSTO: Dia dos Pais (SEGUNDO MAIOR pico de churrasco!)
+   → Kit Dia dos Pais Premium (picanha + cerveja artesanal + carvão)
+   → Promoção: "O pai merece o melhor corte"
+   → Encartes especiais, reels com pai e filho no churrasco
+
+SETEMBRO: Dia do Churrasqueiro (23/set)
+   → Masterclass/workshop de churrasco (atrai público B2B e B2C)
+   → Promoção especial para churrasqueiros profissionais
+
+OUTUBRO: Dia das Crianças + entressafra alta
+   → Kit infantil (hambúrguer artesanal + salsicha premium)
+   → Preços firmes — entressafra, custo alto
+
+NOVEMBRO: Black Friday + preparação Natal
+   → Black Friday do Churrasco: descontos em volume
+   → Pré-vendas de kits de Natal com reserva antecipada
+
+DEZEMBRO: Natal + Réveillon (MEGA PICO!)
+   → MAIOR DEMANDA DO ANO — planejar estoque com 30 dias de antecedência
+   → Kits premium navideños: costela inteira, pernil, picanha
+   → "Ceia Completa" para restaurantes e chácaras
+   → Entrega programada para 23-24/dez (organizar logística!)
+
+═══════════════════════════════════════════════
+📈 TENDÊNCIAS 2025/2026 E INOVAÇÃO
 ═══════════════════════════════════════════════
    • GERAÇÃO Z: conteúdo visual curto (TikTok/Reels), menos leal a marcas
-   • SAÚDE: carne como "alimento funcional" — proteína, ferro, B12 (usar no marketing!)
-   • SUSTENTABILIDADE: consumidores querem saber a ORIGEM do animal
-   • RASTREABILIDADE: blockchain e QR code na embalagem (tendência forte)
-   • BEM-ESTAR ANIMAL: mais importante que "sustentabilidade" para o consumidor
-   • PREÇO ALTO → consumidor migra para frango/suíno (monitorar!)
-   • CARNE MOÍDA: vendas fortes, item de entrada para consumidores de menor renda
-   • MATURAÇÃO: nicho premium crescendo rápido em churrascarias e empórios
+   • SAÚDE: carne como "alimento funcional" — proteína, ferro, B12
+   • SUSTENTABILIDADE: consumidores querem saber ORIGEM do animal
+   • RASTREABILIDADE: QR code na embalagem (tendência forte)
+   • BEM-ESTAR ANIMAL: mais importante que "sustentabilidade" para consumidor
+   • CARNE MOÍDA: vendas fortes (item de entrada para menor renda)
+   • MATURAÇÃO: nicho premium crescendo rápido
+   • CHATBOTS IA: integrar no WhatsApp para atender 24h
+   • ASSINATURA DE CARNES: mensalidade fixa, entrega semanal
+   • CARNES TEMPERADAS/SEMIPRONTAS: crescimento explosivo (espetinho, kafta, à milanesa)
+   • SOCIAL COMMERCE: +28%/ano — vender direto pelo Instagram/WhatsApp
 
 ═══════════════════════════════════════════════
-🏆 CONCORRÊNCIA PARA FRIGORÍFICO REGIONAL
+🔢 CONVERSÕES ESSENCIAIS
 ═══════════════════════════════════════════════
-   • VANTAGENS do regional: agilidade, conhecimento local, entrega rápida, relacionamento
-   • DESVANTAGENS: escala, habilitação, poder de negociação
-   • DIFERENCIAÇÃO: qualidade + atendimento + pontualidade > preço
-   • BENCHMARK: margem EBITDA dos grandes (JBS, Minerva, Frigol): 3-6%
-   • SEU alvo: margem bruta 25-35%, líquida 8-15% (acima da média!)
-
-═══════════════════════════════════════════════
-🎯 MARGEM DO FRIGORÍFICO
-═══════════════════════════════════════════════
-   • Margem bruta saudável: 25-35%
-   • Margem líquida saudável: 8-15%
-   • Abaixo de 20% bruta: 🟡 ALERTA — revisar preços de compra e venda
-   • Abaixo de 5% líquida: 🔴 CRÍTICO — operação não se sustenta
-   • Referência: grandes frigoríficos operam com 1.5-6% EBITDA. Você pode fazer MAIS.
-
-CONVERSÕES ESSENCIAIS:
    • 1 arroba (@) = 15 kg de carcaça
    • 1 boi gordo ≈ 16-18@ de carcaça (240-270kg)
    • Preço por kg carcaça = preço arroba ÷ 15
-   • Preço por kg do boi em pé = preço arroba ÷ 30 (rendimento ~50%)
+   • Preço por kg boi em pé = preço arroba ÷ 30 (rendimento ~50%)
 
-SUA ANÁLISE DEVE COBRIR:
-- 📊 PANORAMA: como está o mercado AGORA e para onde vai nos próximos 30 dias?
-- 💰 MARGENS: estamos comprando bem e vendendo bem? Onde está o gap?
-- 🎯 TIMING: é hora de comprar gado (preço baixo) ou segurar caixa (preço alto)?
-- 🏪 CANAIS: estamos vendendo nos canais certos? Onde está a oportunidade?
-- 📱 MARKETING: como atrair mais clientes? Que ações práticas o dono pode fazer HOJE?
-- 🌍 CENÁRIO EXTERNO: exportação, preço do dólar, oferta de gado — o que impacta o negócio?
-- ⚠️ RISCOS: concentração de clientes, concorrência, migração para frango
-- 💡 INOVAÇÃO: maturação, kits churrasco, venda direta, Instagram, assinatura mensal
+═══════════════════════════════════════════════
+🎯 SUA ANÁLISE — O QUE ENTREGAR
+═══════════════════════════════════════════════
 
-Organize em: 📊 PANORAMA DE MERCADO (com dados reais), 💰 ANÁLISE DE MARGEM, 🏪 ESTRATÉGIA POR CANAL, 📱 PLANO DE MARKETING (ações práticas), 📅 TENDÊNCIAS E TIMING, ⚠️ RISCOS E OPORTUNIDADES`,
+Cada diagnóstico seu DEVE cobrir OBRIGATORIAMENTE:
+1. 📊 PANORAMA DE MERCADO: cotação atual, tendência 30 dias, sazonalidade
+2. 💰 ANÁLISE DE MARGEM: estamos comprando bem? Vendendo bem? Onde está o gap?
+3. 🎯 TIMING: hora de comprar gado (safra) ou segurar caixa (entressafra)?
+4. 🏪 ESTRATÉGIA POR CANAL: onde estamos vendendo? Onde está a oportunidade?
+5. 📱 PLANO DE MARKETING DIGITAL: 3 ações práticas que o dono pode fazer ESTA SEMANA
+6. 🏆 CRM/FIDELIZAÇÃO: como reter mais clientes? Programa de pontos? Follow-up?
+7. 📅 CALENDÁRIO: qual a próxima data sazonal? O que preparar?
+8. ⚠️ RISCOS: concentração de clientes, concorrência, migração para frango
+9. 💡 INOVAÇÃO: o que há de novo no mercado que podemos implementar?
+
+REGRA FUNDAMENTAL: não dê conselhos genéricos. Use os DADOS REAIS do sistema para personalizar cada recomendação. Se o cliente X compra R$5000/mês, sugira ofertas PARA ELE. Se o canal "açougue" está frio, proponha AÇÕES ESPECÍFICAS.`,
 
                 ROBO_VENDAS: `Você é LUCAS, ROBÔ DE VENDAS E INOVAÇÃO do FrigoGest — seu trabalho é manter o PIPELINE AQUECIDO, trazer INOVAÇÃO do mercado, e ser o FAROL DO FUTURO do negócio.
 
@@ -1060,7 +1241,8 @@ Organize em: 📞 PIPELINE DE VENDAS, 💡 RADAR DE INOVAÇÃO (3 tendências), 
 
             const baseRules = `\nRegras gerais:\n- Responda SEMPRE em português brasileiro\n- Seja DIRETO, PRÁTICO e ACIONÁVEL — fale como gerente de frigorífico, não como robô\n- Use emojis: 🔴 crítico, 🟡 atenção, 🟢 ok\n- Cite NÚMEROS ESPECÍFICOS do snapshot — nunca invente dados\n- Se não tiver dados suficientes, diga claramente o que falta\n- Máximo 600 palavras\n- Termine SEMPRE com 3 ações concretas numeradas: "FAÇA AGORA: 1. ... 2. ... 3. ..."`;
 
-            const fullPrompt = `${prompts[agentType]}${baseRules}\n\n${dataPackets[agentType]}`;
+            const newsBlock = marketNews.length > 0 ? `\n\n${formatNewsForAgent(marketNews)}` : '';
+            const fullPrompt = `${prompts[agentType]}${baseRules}\n\n${dataPackets[agentType]}${newsBlock}\n\nINSTRUÇÃO CRÍTICA: A data de HOJE é ${new Date().toLocaleDateString('pt-BR')}. Use as NOTÍCIAS DO MERCADO acima como base para sua análise. NÃO invente notícias — cite apenas as que foram fornecidas. Se não houver notícias, diga que o feed não está disponível no momento.`;
             const { text, provider } = await runCascade(fullPrompt);
             setAgentResponse(`_via ${provider}_\n\n${text}`);
             setTimeout(() => agentResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
@@ -1070,6 +1252,266 @@ Organize em: 📞 PIPELINE DE VENDAS, 💡 RADAR DE INOVAÇÃO (3 tendências), 
             setAgentLoading(false);
         }
     };
+
+    // ═══ AUTOMAÇÃO — RODAR TODOS OS AGENTES ═══
+    const runAllAgents = useCallback(async () => {
+        if (bulkRunning || agentLoading) return;
+        setBulkRunning(true);
+        setBulkProgress({ current: 0, total: agents.length, currentAgent: '' });
+
+        const validTx = transactions.filter(t => t.categoria !== 'ESTORNO');
+        const totalEntradas = validTx.filter(t => t.tipo === 'ENTRADA').reduce((s, t) => s + t.valor, 0);
+        const totalSaidas = validTx.filter(t => t.tipo === 'SAIDA').reduce((s, t) => s + t.valor, 0);
+        const vendasPagas = sales.filter(s => s.status_pagamento === 'PAGO');
+        const vendasPendentes = sales.filter(s => s.status_pagamento === 'PENDENTE');
+        const vendasEstornadas = sales.filter(s => s.status_pagamento === 'ESTORNADO');
+        const payablesPendentes = payables.filter(p => p.status === 'PENDENTE' || p.status === 'PARCIAL');
+        const payablesVencidos = payablesPendentes.filter(p => new Date(p.data_vencimento) < new Date());
+        const estoqueDisp = stock.filter(s => s.status === 'DISPONIVEL');
+        const now = new Date();
+
+        // ═══ DADOS DETALHADOS POR MÓDULO ═══
+        const batchesAtivos = batches.filter(b => b.status !== 'ESTORNADO');
+        const stockVendido = stock.filter(s => s.status === 'VENDIDO');
+        const clientesComDebito = clients.filter(c => c.saldo_devedor > 0);
+
+        // ═══ CHECAGENS DE INTEGRIDADE DO APP (Erros Internos) ═══
+
+        // 1. Vendas PAGAS sem transação ENTRADA correspondente
+        const vendasSemTx = vendasPagas.filter(v => !transactions.some(t => t.referencia_id === v.id_venda && t.tipo === 'ENTRADA' && t.categoria !== 'ESTORNO'));
+        // 2. Estoque sem lote válido (dado órfão)
+        const estoqueSemLote = estoqueDisp.filter(s => !batches.some(b => b.id_lote === s.id_lote));
+        // 3. Peças vendidas que ainda aparecem como disponível (duplicata)
+        const estoqueDuplicado = stock.filter(s => s.status === 'DISPONIVEL' && sales.some(v => v.id_completo === s.id_completo && v.status_pagamento !== 'ESTORNADO'));
+        // 4. Clientes fantasma: vendas para id_cliente que não existe na base
+        const clientesFantasma = [...new Set(sales.filter(s => s.status_pagamento !== 'ESTORNADO' && s.id_cliente && !clients.some(c => c.id_ferro === s.id_cliente)).map(s => s.id_cliente))];
+        // 5. Transações duplicadas: mesmo valor + data + referência
+        const txDuplicadas: string[] = [];
+        const txMap = new Map<string, number>();
+        transactions.filter(t => t.categoria !== 'ESTORNO').forEach(t => {
+            const key = `${t.valor}-${t.data}-${t.referencia_id || ''}-${t.tipo}`;
+            txMap.set(key, (txMap.get(key) || 0) + 1);
+        });
+        txMap.forEach((count, key) => { if (count > 1) txDuplicadas.push(key); });
+        // 6. Saldo devedor negativo ou inconsistente no cadastro do cliente
+        const saldoInconsistente = clients.filter(c => {
+            const vendasCliente = sales.filter(s => s.id_cliente === c.id_ferro && s.status_pagamento !== 'ESTORNADO');
+            const faturado = vendasCliente.reduce((s, v) => s + v.peso_real_saida * v.preco_venda_kg, 0);
+            const pago = vendasCliente.reduce((s, v) => s + ((v as any).valor_pago || 0), 0);
+            const saldoReal = faturado - pago;
+            return Math.abs(saldoReal - c.saldo_devedor) > 1; // Diferença > R$1
+        });
+        // 7. Lotes sem nenhuma peça de estoque (lote vazio)
+        const lotesVazios = batchesAtivos.filter(b => b.status === 'FECHADO' && !stock.some(s => s.id_lote === b.id_lote));
+        // 8. Fornecedores sem nenhum lote registrado
+        const fornSemLote = suppliers.filter(s => !batchesAtivos.some(b => b.fornecedor === s.nome_fantasia));
+        // 9. Preços inconsistentes: venda abaixo do custo
+        const vendasNoPrejuizo = sales.filter(s => {
+            if (s.status_pagamento === 'ESTORNADO') return false;
+            const batch = batchesAtivos.find(b => s.id_completo.startsWith(b.id_lote));
+            if (!batch || !batch.custo_real_kg) return false;
+            return s.preco_venda_kg < batch.custo_real_kg;
+        });
+        // 10. Pagamentos que excedem valor da venda
+        const pagamentoExcedente = sales.filter(s => {
+            const total = s.peso_real_saida * s.preco_venda_kg;
+            const pago = (s as any).valor_pago || 0;
+            return pago > total + 0.01 && s.status_pagamento !== 'ESTORNADO';
+        });
+        // 11. Contas a pagar sem lote correspondente (se tem referencia_lote)
+        const payablesSemLote = payables.filter(p => p.status !== 'ESTORNADO' && (p as any).id_lote && !batchesAtivos.some(b => b.id_lote === (p as any).id_lote));
+
+        // Margem média
+        const custoMedioKg = batchesAtivos.length > 0 ? batchesAtivos.reduce((s, b) => s + b.custo_real_kg, 0) / batchesAtivos.length : 0;
+        const precoMedioVenda = vendasPagas.length > 0 ? vendasPagas.reduce((s, v) => s + v.preco_venda_kg, 0) / vendasPagas.length : 0;
+        const margemBruta = custoMedioKg > 0 ? ((precoMedioVenda / custoMedioKg - 1) * 100) : 0;
+        // Giro de estoque
+        const idadeMediaEstoque = estoqueDisp.length > 0 ? estoqueDisp.reduce((s, e) => s + Math.floor((now.getTime() - new Date(e.data_entrada).getTime()) / 86400000), 0) / estoqueDisp.length : 0;
+        // RFM: segmentação de clientes
+        const clientesAtivos = clients.filter(c => sales.some(s => s.id_cliente === c.id_ferro && s.status_pagamento !== 'ESTORNADO' && Math.floor((now.getTime() - new Date(s.data_venda).getTime()) / 86400000) < 30));
+        const clientesEsfriando = clients.filter(c => { const ls = sales.filter(s => s.id_cliente === c.id_ferro && s.status_pagamento !== 'ESTORNADO').sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())[0]; if (!ls) return false; const d = Math.floor((now.getTime() - new Date(ls.data_venda).getTime()) / 86400000); return d >= 30 && d <= 60; });
+        const clientesInativos = clients.filter(c => { const ls = sales.filter(s => s.id_cliente === c.id_ferro && s.status_pagamento !== 'ESTORNADO').sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())[0]; return ls && Math.floor((now.getTime() - new Date(ls.data_venda).getTime()) / 86400000) > 60; });
+
+        const deepSnapshot = `═══ SNAPSHOT COMPLETO — FRIGOGEST (${now.toLocaleDateString('pt-BR')} ${now.toLocaleTimeString('pt-BR')}) ═══
+
+🏦 FINANCEIRO:
+Caixa: Entradas R$${totalEntradas.toFixed(2)} | Saídas R$${totalSaidas.toFixed(2)} | Saldo R$${(totalEntradas - totalSaidas).toFixed(2)}
+Transações: ${transactions.length} total (${validTx.length} válidas)
+Vendas: ${vendasPagas.length} pagas (R$${vendasPagas.reduce((s, v) => s + v.peso_real_saida * v.preco_venda_kg, 0).toFixed(2)}) | ${vendasPendentes.length} pendentes (R$${vendasPendentes.reduce((s, v) => s + v.peso_real_saida * v.preco_venda_kg, 0).toFixed(2)}) | ${vendasEstornadas.length} estornadas
+Contas a Pagar: ${payablesPendentes.length} pendentes (R$${payablesPendentes.reduce((s, p) => s + p.valor, 0).toFixed(2)}) | ${payablesVencidos.length} VENCIDAS (R$${payablesVencidos.reduce((s, p) => s + p.valor, 0).toFixed(2)})
+Top devedores: ${vendasPendentes.slice(0, 5).map(v => `${v.nome_cliente || v.id_cliente}: R$${(v.peso_real_saida * v.preco_venda_kg).toFixed(2)}`).join(' | ')}
+
+🥩 PRODUÇÃO & LOTES:
+Lotes: ${batchesAtivos.length} válidos (${batches.filter(b => b.status === 'ABERTO').length} abertos, ${batches.filter(b => b.status === 'FECHADO').length} fechados)
+Últimos 5 lotes: ${batchesAtivos.slice(-5).map(b => {
+            const pecas = stock.filter(s => s.id_lote === b.id_lote);
+            const pesoReal = pecas.reduce((s, p) => s + p.peso_entrada, 0);
+            const rend = b.peso_total_romaneio > 0 ? ((pesoReal / b.peso_total_romaneio) * 100).toFixed(1) : 'N/A';
+            return `${b.id_lote}(${b.fornecedor}, ${b.peso_total_romaneio}kg rom→${pesoReal.toFixed(0)}kg real, rend ${rend}%, R$${b.custo_real_kg.toFixed(2)}/kg)`;
+        }).join(' | ')}
+
+📦 ESTOQUE:
+Disponíveis: ${estoqueDisp.length} peças | ${estoqueDisp.reduce((s, e) => s + e.peso_entrada, 0).toFixed(1)}kg
+Idade média: ${idadeMediaEstoque.toFixed(0)} dias
+Peças >30 dias: ${estoqueDisp.filter(s => Math.floor((now.getTime() - new Date(s.data_entrada).getTime()) / 86400000) > 30).length}
+Peças >60 dias: ${estoqueDisp.filter(s => Math.floor((now.getTime() - new Date(s.data_entrada).getTime()) / 86400000) > 60).length}
+
+💰 MARGENS:
+Custo médio/kg: R$${custoMedioKg.toFixed(2)} | Preço médio venda: R$${precoMedioVenda.toFixed(2)} | Margem bruta: ${margemBruta.toFixed(1)}%
+
+👥 CLIENTES (RFM):
+Total: ${clients.length} | Ativos (<30d): ${clientesAtivos.length} | Esfriando (30-60d): ${clientesEsfriando.length} | Inativos (>60d): ${clientesInativos.length}
+Com saldo devedor: ${clientesComDebito.length} (R$${clientesComDebito.reduce((s, c) => s + c.saldo_devedor, 0).toFixed(2)})
+
+🚛 FORNECEDORES:
+Total: ${suppliers.length}
+${suppliers.slice(0, 5).map(s => {
+            const lotes = batchesAtivos.filter(b => b.fornecedor === s.nome_fantasia);
+            return `${s.nome_fantasia}: ${lotes.length} lotes, custo médio R$${lotes.length > 0 ? (lotes.reduce((sum, b) => sum + b.custo_real_kg, 0) / lotes.length).toFixed(2) : '0.00'}/kg`;
+        }).join(' | ')}
+
+⚠️ ALERTAS: ${liveAlerts.length} ativos
+${liveAlerts.slice(0, 8).map(a => `[${a.severity}] ${a.agent}: ${a.title} — ${a.message}`).join('\n')}
+
+📚 BASE DE CONHECIMENTO PECUÁRIO (REFERÊNCIA TÉCNICA):
+═══ RENDIMENTO DE CARCAÇA ═══
+• Rendimento = (peso carcaça ÷ peso vivo) × 100
+• 1 arroba (@) = 15 kg de carcaça
+• 1 boi gordo ≈ 16-18@ (240-270kg carcaça)
+• Preço/kg carcaça = preço arroba ÷ 15
+• Preço/kg boi em pé = preço arroba ÷ 30 (rendimento ~50%)
+
+BENCHMARKS DE RENDIMENTO POR SISTEMA:
+• Pasto (sal mineral): 50-53% 🟡
+• Pasto (suplementação): 52-54% 🟢
+• Semiconfinamento: 53-55% 🟢
+• Confinamento: 55-58% 🟢🟢
+• FRIGORÍFICO REGIONAL: meta mínima 52%, ideal >54%
+
+BENCHMARKS POR RAÇA:
+• Nelore puro (acabado): 54,6-55,6% — excelente se jovem
+• Cruzamento industrial (Nelore × Angus): 55-57% — MELHOR rendimento (heterose)
+• Anelorado genérico: 50-53% — depende do acabamento
+• Vaca velha/descarte: 45-48% — rendimento inferior, vísceras maiores
+
+FATORES QUE AFETAM RENDIMENTO:
+• Jejum pré-abate (6-12h): ESSENCIAL — sem jejum, rendimento cai 2-3%
+• Acabamento de gordura: mais gordura = melhor rendimento
+• Idade: jovens > velhos (menor peso de vísceras)
+• Castração: castrados têm melhor cobertura de gordura
+• Peso ideal: 16-22@ (240-330kg carcaça) — acima disso, gordura excessiva
+
+CLASSIFICAÇÃO ACABAMENTO (GORDURA):
+• 1 = Ausente (magro demais, carcaça escurece) 🔴
+• 2 = Escassa (2-3mm, mínimo aceitável) 🟡
+• 3 = Mediana (3-6mm, IDEAL para mercado interno) 🟢
+• 4 = Uniforme (6-10mm, mercado externo/premium) 🟢🟢
+• 5 = Excessiva (>10mm, desconto no preço) 🟡
+
+ALERTA DE RENDIMENTO:
+• <48%: 🔴 CRÍTICO — verificar pesagem, fornecedor, ou animal doente/magro
+• 48-50%: 🟡 ABAIXO DA MÉDIA — animal sem terminação adequada
+• 50-53%: 🟢 ACEITÁVEL — pasto com suplementação
+• 53-56%: 🟢🟢 BOM — confinamento ou cruzamento industrial
+• >56%: ⭐ EXCELENTE — confinamento + genética superior
+
+🔍 CHECAGEM DE INTEGRIDADE (ERROS DO APP DETECTADOS AUTOMATICAMENTE):
+═══ ERROS DE DADOS ═══
+1. Vendas PAGAS sem transação ENTRADA: ${vendasSemTx.length} ${vendasSemTx.length > 0 ? '🔴 ERRO! O caixa mostra menos do que realmente entrou' : '🟢 OK'}
+${vendasSemTx.slice(0, 3).map(v => `  → Venda ${v.id_venda} (${v.nome_cliente}, R$${(v.peso_real_saida * v.preco_venda_kg).toFixed(2)})`).join('\n')}
+2. Estoque sem lote válido (dado órfão): ${estoqueSemLote.length} ${estoqueSemLote.length > 0 ? '🔴 ERRO! Peça aparece sem origem' : '🟢 OK'}
+3. Peças duplicadas (vendida + disponível): ${estoqueDuplicado.length} ${estoqueDuplicado.length > 0 ? '🔴 ERRO! Sistema mostra peça vendida como disponível' : '🟢 OK'}
+4. Clientes fantasma (vendas para ID inexistente): ${clientesFantasma.length} ${clientesFantasma.length > 0 ? `🔴 ERRO! IDs: ${clientesFantasma.slice(0, 5).join(', ')}` : '🟢 OK'}
+5. Transações duplicadas: ${txDuplicadas.length} ${txDuplicadas.length > 0 ? '🟡 ATENÇÃO! Pode ser lançamento em dobro' : '🟢 OK'}
+6. Saldo devedor inconsistente (cadastro ≠ calculado): ${saldoInconsistente.length} ${saldoInconsistente.length > 0 ? `🔴 ERRO! Clientes: ${saldoInconsistente.slice(0, 3).map(c => c.nome_social).join(', ')}` : '🟢 OK'}
+
+═══ ANOMALIAS OPERACIONAIS ═══
+7. Lotes fechados sem peças: ${lotesVazios.length} ${lotesVazios.length > 0 ? '🟡 ATENÇÃO! Lote registrado mas sem estoque' : '🟢 OK'}
+8. Fornecedores sem nenhum lote: ${fornSemLote.length} ${fornSemLote.length > 0 ? `⚪ INFO: ${fornSemLote.slice(0, 3).map(s => s.nome_fantasia).join(', ')}` : '🟢 OK'}
+9. Vendas ABAIXO do custo (prejuízo): ${vendasNoPrejuizo.length} ${vendasNoPrejuizo.length > 0 ? `🔴 CRÍTICO! ${vendasNoPrejuizo.length} vendas no vermelho!` : '🟢 OK'}
+${vendasNoPrejuizo.slice(0, 3).map(v => `  → ${v.id_completo}: vendeu R$${v.preco_venda_kg.toFixed(2)}/kg`).join('\n')}
+10. Pagamentos que excedem valor da venda: ${pagamentoExcedente.length} ${pagamentoExcedente.length > 0 ? '🔴 ERRO! Cliente pagou mais do que devia' : '🟢 OK'}
+11. Contas a pagar sem lote: ${payablesSemLote.length} ${payablesSemLote.length > 0 ? '🟡 ATENÇÃO! Conta financeira sem lote correspondente' : '🟢 OK'}
+
+═══ INDICADORES DE SAÚDE ═══
+12. Margem bruta: ${margemBruta < 0 ? '🔴 NEGATIVA — VENDENDO NO PREJUÍZO!' : margemBruta < 15 ? '🟡 BAIXA (' + margemBruta.toFixed(1) + '%)' : '🟢 OK (' + margemBruta.toFixed(1) + '%)'}
+13. Contas vencidas: ${payablesVencidos.length > 0 ? `🔴 ${payablesVencidos.length} vencidas (R$${payablesVencidos.reduce((s, p) => s + p.valor, 0).toFixed(2)})` : '🟢 OK'}
+14. Estoque parado >60 dias: ${estoqueDisp.filter(s => Math.floor((now.getTime() - new Date(s.data_entrada).getTime()) / 86400000) > 60).length > 0 ? `🟡 ${estoqueDisp.filter(s => Math.floor((now.getTime() - new Date(s.data_entrada).getTime()) / 86400000) > 60).length} peças` : '🟢 OK'}
+15. Rendimento dos lotes: ${batchesAtivos.filter(b => { const pecas = stock.filter(s => s.id_lote === b.id_lote); const pesoReal = pecas.reduce((s, p) => s + p.peso_entrada, 0); const rend = b.peso_total_romaneio > 0 ? (pesoReal / b.peso_total_romaneio) * 100 : 0; return rend > 0 && rend < 48; }).length > 0 ? `🔴 ${batchesAtivos.filter(b => { const pecas = stock.filter(s => s.id_lote === b.id_lote); const pesoReal = pecas.reduce((s, p) => s + p.peso_entrada, 0); const rend = b.peso_total_romaneio > 0 ? (pesoReal / b.peso_total_romaneio) * 100 : 0; return rend > 0 && rend < 48; }).length} lotes com rendimento <48%!` : '🟢 OK'}`;
+
+        // ═══ NOTÍCIAS EM TEMPO REAL ═══
+        const newsContext = marketNews.length > 0 ? formatNewsForAgent(marketNews) : '';
+
+        for (let i = 0; i < agents.length; i++) {
+            const agent = agents[i];
+            setBulkProgress({ current: i + 1, total: agents.length, currentAgent: agent.name });
+            try {
+                const agentAlerts = liveAlerts.filter(a => a.agent === agent.id);
+                const miniPrompt = `Você é ${agent.name}, ${agent.description}.
+
+Faça um DIAGNÓSTICO COMPLETO (máximo 400 palavras) da sua área com base nos dados atuais do sistema.
+
+MISSÃO CRÍTICA: Além de analisar o negócio, você DEVE verificar se há ERROS ou INCONSISTÊNCIAS nos dados.
+Se encontrar qualquer problema na checagem de integridade, ALERTE com 🔴 e explique o impacto.
+Use a BASE DE CONHECIMENTO PECUÁRIO para avaliar rendimento de carcaça — compare os lotes com os benchmarks.
+
+${deepSnapshot}
+
+Seus alertas específicos (${agentAlerts.length}): ${agentAlerts.slice(0, 8).map(a => `[${a.severity}] ${a.title}: ${a.message}`).join('\n')}
+
+${newsContext ? `\n${newsContext}\n` : ''}
+
+REGRAS DE AUDITORIA que você DEVE verificar:
+═══ ERROS DO SISTEMA ═══
+1. Toda venda PAGA deve ter uma transação ENTRADA correspondente (senão o caixa está errado)
+2. Todo estoque DISPONÍVEL deve pertencer a um lote válido (senão é dado órfão do app)
+3. Peça vendida NÃO pode aparecer como disponível (bug de duplicação no sistema)
+4. Toda venda deve ser de um cliente existente (senão é "cliente fantasma" — erro de cadastro)
+5. Não deve haver transações duplicadas (mesmo valor + data + referência = lançamento em dobro)
+6. Saldo devedor do cadastro deve bater com saldo calculado (faturado - pago)
+7. NENHUMA venda pode ter pagamento MAIOR que o valor total (pagamento excedente = bug)
+
+═══ SAÚDE DO NEGÓCIO ═══
+8. Margem bruta < 20% = alerta amarelo, < 10% = alerta vermelho, negativa = CRÍTICO
+9. Contas vencidas > 7 dias = urgência de cobrança
+10. Estoque > 45 dias = risco de perda de qualidade (carne congelada)
+11. Clientes inativos > 60 dias com saldo devedor = risco de calote
+12. Vendas ABAIXO do custo = prejuízo direto (preço venda < custo real/kg)
+13. Fornecedores cadastrados sem lotes = cadastro sujo, organizar
+
+═══ RENDIMENTO DE CARCAÇA ═══
+14. Rendimento < 48% = CRÍTICO (verificar fornecedor/pesagem)
+15. Rendimento < 50% = abaixo da média, precisa melhorar terminação
+16. Rendimento ideal: 52-56% para frigorífico regional
+17. Cruzamento industrial (Nelore × Angus) deve render >55% — se não, verificar acabamento
+18. Lotes fechados sem peças = possível erro de registro ou estorno incompleto
+
+Estrutura obrigatória:
+🔍 AUDITORIA (erros/inconsistências encontradas)
+🔴 PROBLEMAS CRÍTICOS
+🟡 PONTOS DE ATENÇÃO
+🟢 PONTOS POSITIVOS
+📋 5 AÇÕES CONCRETAS (numeradas, com prazo)
+
+Responda em português BR, direto e prático. Use emojis. Cite números específicos.`;
+
+                const { text, provider } = await runCascade(miniPrompt);
+                setAgentDiagnostics(prev => ({ ...prev, [agent.id]: { text, provider, timestamp: new Date() } }));
+            } catch (err: any) {
+                setAgentDiagnostics(prev => ({ ...prev, [agent.id]: { text: `⚠️ Erro: ${err.message}`, provider: 'erro', timestamp: new Date() } }));
+            }
+        }
+        setBulkRunning(false);
+        setAutoRunDone(true);
+    }, [agents, batches, stock, sales, clients, transactions, suppliers, payables, liveAlerts, bulkRunning, agentLoading, marketNews]);
+
+    // Auto-run on mount (once)
+    useEffect(() => {
+        if (!autoRunDone && !bulkRunning && batches.length + sales.length + stock.length > 0) {
+            const timer = setTimeout(() => runAllAgents(), 1500);
+            return () => clearTimeout(timer);
+        }
+    }, [autoRunDone, bulkRunning, batches.length, sales.length, stock.length]);
 
     // ═══ DONA CLARA — RELATÓRIO EXECUTIVO ORQUESTRADO ═══
     const runOrchestratedReport = async () => {
@@ -1285,6 +1727,143 @@ Regras:
                                 </div>
                             ))}
                         </div>
+
+                        {/* ═══ BARRA DE AUTOMAÇÃO ═══ */}
+                        <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-3xl p-6 shadow-xl shadow-purple-200/30 flex flex-col md:flex-row items-center justify-between gap-4">
+                            <div className="flex items-center gap-4">
+                                <div className="bg-white/10 p-3 rounded-2xl">
+                                    <Zap size={24} className="text-yellow-300" />
+                                </div>
+                                <div>
+                                    <h3 className="text-white font-black text-sm uppercase tracking-widest">Automação IA</h3>
+                                    <p className="text-purple-200 text-[10px] font-bold uppercase tracking-wider">
+                                        {bulkRunning
+                                            ? `Analisando ${bulkProgress.currentAgent}... (${bulkProgress.current}/${bulkProgress.total})`
+                                            : autoRunDone
+                                                ? `✅ ${Object.keys(agentDiagnostics).length} agentes analisados — ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+                                                : '⏳ Aguardando dados para iniciar...'}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={runAllAgents}
+                                    disabled={bulkRunning}
+                                    className="bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all disabled:opacity-50 border border-white/10"
+                                >
+                                    {bulkRunning ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                                    {bulkRunning ? 'Analisando...' : '🔄 Diagnosticar Tudo'}
+                                </button>
+                                <button
+                                    onClick={() => { runOrchestratedReport(); }}
+                                    disabled={agentLoading || bulkRunning}
+                                    className="bg-yellow-400 hover:bg-yellow-300 text-slate-900 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all disabled:opacity-50 shadow-lg"
+                                >
+                                    <Brain size={14} /> 📋 Briefing Geral
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* BARRA DE PROGRESSO */}
+                        {bulkRunning && (
+                            <div className="bg-white rounded-2xl border border-purple-100 p-4 shadow-sm">
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-[10px] font-black text-purple-600 uppercase tracking-widest">Progresso</span>
+                                    <span className="text-[10px] font-black text-slate-400">{bulkProgress.current}/{bulkProgress.total}</span>
+                                </div>
+                                <div className="w-full bg-purple-100 rounded-full h-3 overflow-hidden">
+                                    <div
+                                        className="bg-gradient-to-r from-purple-500 to-indigo-500 h-3 rounded-full transition-all duration-500"
+                                        style={{ width: `${(bulkProgress.current / bulkProgress.total) * 100}%` }}
+                                    />
+                                </div>
+                                <p className="text-xs text-slate-500 mt-2 text-center font-bold">
+                                    ⏳ {bulkProgress.currentAgent} está analisando...
+                                </p>
+                            </div>
+                        )}
+
+                        {/* ═══ DIAGNÓSTICOS DOS AGENTES ═══ */}
+                        {Object.keys(agentDiagnostics).length > 0 && !bulkRunning && (
+                            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                                <div className="p-6 border-b border-slate-50 flex justify-between items-center">
+                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                        <Brain size={14} className="text-purple-500" /> Diagnóstico Automático — {Object.keys(agentDiagnostics).length} Agentes
+                                    </h3>
+                                    <span className="text-[9px] font-bold text-slate-300">
+                                        {Object.values(agentDiagnostics)[0]?.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                </div>
+                                <div className="divide-y divide-slate-50">
+                                    {agents.map(agent => {
+                                        const diag = agentDiagnostics[agent.id];
+                                        if (!diag) return null;
+                                        const colors = colorMap[agent.color];
+                                        const isExpanded = expandedDiagnostic === agent.id;
+                                        return (
+                                            <div key={agent.id} className="transition-all">
+                                                <button
+                                                    onClick={() => setExpandedDiagnostic(isExpanded ? null : agent.id)}
+                                                    className="w-full p-5 flex items-start gap-4 hover:bg-slate-50/50 transition-colors text-left"
+                                                >
+                                                    <span className="text-2xl">{agent.icon}</span>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <span className={`text-xs font-black ${colors.text}`}>{agent.name}</span>
+                                                            <span className="text-[9px] text-slate-300">•</span>
+                                                            <span className="text-[9px] text-slate-400 font-mono">via {diag.provider}</span>
+                                                        </div>
+                                                        <p className="text-xs text-slate-500 truncate">{diag.text.substring(0, 120)}...</p>
+                                                    </div>
+                                                    <ChevronRight size={16} className={`text-slate-300 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                                </button>
+                                                {isExpanded && (
+                                                    <div className={`px-5 pb-5 pt-0 ml-14 mr-5 animate-reveal`}>
+                                                        <div className={`${colors.bg} border ${colors.border} rounded-2xl p-5`}>
+                                                            <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{diag.text}</p>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ═══ NOTÍCIAS DO MERCADO ═══ */}
+                        {marketNews.length > 0 && (
+                            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                                <div className="p-6 border-b border-slate-50 flex justify-between items-center">
+                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                        📰 Notícias do Mercado — {marketNews.filter(n => n.isRecent).length > 0 ? `${marketNews.filter(n => n.isRecent).length} recentes` : `${marketNews.length} disponíveis`}
+                                    </h3>
+                                    {newsLoading && <Loader2 size={14} className="animate-spin text-blue-400" />}
+                                </div>
+                                <div className="divide-y divide-slate-50 max-h-64 overflow-y-auto">
+                                    {marketNews.slice(0, 8).map((news, i) => (
+                                        <a key={i} href={news.link} target="_blank" rel="noopener noreferrer"
+                                            className="block p-4 hover:bg-blue-50/30 transition-colors">
+                                            <div className="flex items-start gap-3">
+                                                <span className="text-lg">{news.icon}</span>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <span className="text-[9px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">{news.category}</span>
+                                                        {news.isRecent && <span className="text-[9px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">🟢 RECENTE</span>}
+                                                    </div>
+                                                    <p className="text-xs font-semibold text-slate-700 leading-tight">{news.title}</p>
+                                                    {news.description && <p className="text-[10px] text-slate-400 mt-1 truncate">{news.description}</p>}
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <span className="text-[9px] text-slate-300">{news.source}</span>
+                                                        {news.pubDate && <span className="text-[9px] text-slate-300">• {new Date(news.pubDate).toLocaleDateString('pt-BR')}</span>}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </a>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
                         {/* AGENT CARDS WITH CONSULT BUTTONS */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

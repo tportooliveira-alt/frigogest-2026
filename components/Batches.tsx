@@ -169,7 +169,8 @@ const Batches: React.FC<BatchesProps> = ({
     peso_vivo_medio: 0,
     peso_gancho: 0,
     toalete_kg: 0,
-    preco_arroba: 0
+    preco_arroba: 0,
+    qtd_mortos: 0
   } as any);
 
   // Rendimento esperado baseado na raça selecionada
@@ -659,14 +660,18 @@ const Batches: React.FC<BatchesProps> = ({
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-3">
                     <div>
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Qtd Cabeças</label>
                       <DecimalInput disabled={!!selectedBatch} className="modern-input" placeholder="Nº" value={selectedBatch ? (selectedBatch as any).qtd_cabecas || 0 : (newBatch.qtd_cabecas || 0)} onValueChange={v => setNewBatch({ ...newBatch, qtd_cabecas: v })} />
                     </div>
                     <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Mortos/Descarte</label>
+                      <DecimalInput disabled={!!selectedBatch} className="modern-input text-rose-600" placeholder="Nº" value={selectedBatch ? (selectedBatch as any).qtd_mortos || 0 : (newBatch.qtd_mortos || 0)} onValueChange={v => setNewBatch({ ...newBatch, qtd_mortos: v })} />
+                    </div>
+                    <div>
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Peso Gancho (kg)</label>
-                      <DecimalInput disabled={!!selectedBatch} className="modern-input" placeholder="Peso total gancho" value={selectedBatch ? (selectedBatch as any).peso_gancho || 0 : (newBatch.peso_gancho || 0)} onValueChange={v => setNewBatch({ ...newBatch, peso_gancho: v })} />
+                      <DecimalInput disabled={!!selectedBatch} className="modern-input" placeholder="Total" value={selectedBatch ? (selectedBatch as any).peso_gancho || 0 : (newBatch.peso_gancho || 0)} onValueChange={v => setNewBatch({ ...newBatch, peso_gancho: v })} />
                     </div>
                   </div>
 
