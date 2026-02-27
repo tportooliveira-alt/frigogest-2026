@@ -23,7 +23,7 @@ import { calculateClientScores, formatRFMForPrompt, getClientTierSummary, Client
 // ═══ AI HIERARCHY — 4 Tiers: Estagiário → Funcionário → Gerente → Mestra ═══
 // Cada IA na sua melhor função!
 
-type AITier = 'ESTAGIARIO' | 'FUNCIONARIO' | 'GERENTE' | 'MESTRA';
+type AITier = 'PEAO' | 'ESTAGIARIO' | 'FUNCIONARIO' | 'GERENTE' | 'MESTRA';
 
 interface CascadeProvider {
     name: string;
@@ -43,6 +43,13 @@ const AGENT_TIER_MAP: Record<string, AITier> = {
     'ROBO_VENDAS': 'FUNCIONARIO',   // 🤖 Lucas — propostas, scripts, growth hacking
     'MARKETING': 'ESTAGIARIO',    // ✨ Isabela — textos campanha, posts, templates
     'SATISFACAO': 'ESTAGIARIO',    // 🌸 Camila — pesquisas satisfação, respostas padrão
+    // ═══ NOVOS PEÕES (IAs GRÁTIS) ═══
+    'CONFERENTE': 'PEAO',        // 🔍 Pedro — conferir romaneios, validar dados
+    'RELATORIOS': 'PEAO',        // 📊 Rafael — gerar relatórios, tabelas, resumos
+    'WHATSAPP_BOT': 'PEAO',      // 📱 Wellington — responder mensagens padrão
+    'AGENDA': 'PEAO',            // 🗓️ Amanda — agendar entregas, lembretes
+    'TEMPERATURA': 'PEAO',       // 🌡️ Carlos — monitorar câmara fria
+    'COBRANCA': 'PEAO',          // 💰 Diana — cobranças automáticas
 };
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -55,6 +62,8 @@ const buildAllProviders = (): CascadeProvider[] => {
     const cerebrasKey = (import.meta as any).env.VITE_CEREBRAS_API_KEY as string || '';
     const openrouterKey = (import.meta as any).env.VITE_OPENROUTER_API_KEY as string || '';
     const togetherKey = (import.meta as any).env.VITE_TOGETHER_API_KEY as string || '';
+    const deepseekKey = (import.meta as any).env.VITE_DEEPSEEK_API_KEY as string || '';
+    const siliconflowKey = (import.meta as any).env.VITE_SILICONFLOW_API_KEY as string || '';
     const mistralKey = (import.meta as any).env.VITE_MISTRAL_API_KEY as string || '';
 
     // Helper OpenAI-compatible
@@ -109,23 +118,32 @@ const buildAllProviders = (): CascadeProvider[] => {
         providers.push(oai('Mistral Large', 'GERENTE', 'https://api.mistral.ai/v1/chat/completions', mistralKey, 'mistral-large-latest'));
     }
 
-    // ═══ TIER 🔵 FUNCIONÁRIO — Modelos 70B, bom raciocínio, custo médio ═══
+    // ═══ TIER 🔵 FUNCIONÁRIO — Modelos avançados, custo médio ═══
+    if (deepseekKey) {
+        providers.push(oai('DeepSeek V3', 'FUNCIONARIO', 'https://api.deepseek.com/chat/completions', deepseekKey, 'deepseek-chat'));
+    }
     if (groqKey) {
         providers.push(oai('Groq 70B', 'FUNCIONARIO', 'https://api.groq.com/openai/v1/chat/completions', groqKey, 'llama-3.3-70b-versatile'));
+    }
+    if (siliconflowKey) {
+        providers.push(oai('SiliconFlow', 'FUNCIONARIO', 'https://api.siliconflow.cn/v1/chat/completions', siliconflowKey, 'deepseek-ai/DeepSeek-V3'));
     }
     if (togetherKey) {
         providers.push(oai('Together 70B', 'FUNCIONARIO', 'https://api.together.xyz/v1/chat/completions', togetherKey, 'meta-llama/Llama-3.3-70B-Instruct-Turbo'));
     }
     if (openrouterKey) {
-        providers.push(oai('OpenRouter 70B', 'FUNCIONARIO', 'https://openrouter.ai/api/v1/chat/completions', openrouterKey, 'meta-llama/llama-3.3-70b-instruct:free'));
+        providers.push(oai('OpenRouter', 'FUNCIONARIO', 'https://openrouter.ai/api/v1/chat/completions', openrouterKey, 'deepseek/deepseek-chat-v3-0324:free'));
     }
 
-    // ═══ TIER 🟢 ESTAGIÁRIO — Modelos 8B, ultra baratos, tarefas simples ═══
+    // ═══ TIER 🟢 ESTAGIÁRIO — Modelos 8B, baratos, tarefas regulares ═══
     if (cerebrasKey) {
         providers.push(oai('Cerebras 8B', 'ESTAGIARIO', 'https://api.cerebras.ai/v1/chat/completions', cerebrasKey, 'llama3.1-8b'));
     }
     if (groqKey) {
         providers.push(oai('Groq 8B', 'ESTAGIARIO', 'https://api.groq.com/openai/v1/chat/completions', groqKey, 'llama-3.1-8b-instant'));
+    }
+    if (deepseekKey) {
+        providers.push(oai('DeepSeek R1', 'GERENTE', 'https://api.deepseek.com/chat/completions', deepseekKey, 'deepseek-reasoner'));
     }
     if (mistralKey) {
         providers.push(oai('Ministral 3B', 'ESTAGIARIO', 'https://api.mistral.ai/v1/chat/completions', mistralKey, 'ministral-3b-latest'));
@@ -134,15 +152,24 @@ const buildAllProviders = (): CascadeProvider[] => {
         providers.push(oai('Together 8B', 'ESTAGIARIO', 'https://api.together.xyz/v1/chat/completions', togetherKey, 'meta-llama/Llama-3.2-3B-Instruct-Turbo'));
     }
 
+    // ═══ TIER ⚡ PEÃO — Modelos grátis, tarefas repetitivas e simples ═══
+    if (cerebrasKey) {
+        providers.push(oai('Cerebras Peao', 'PEAO', 'https://api.cerebras.ai/v1/chat/completions', cerebrasKey, 'llama3.1-8b'));
+    }
+    if (groqKey) {
+        providers.push(oai('Groq Peao', 'PEAO', 'https://api.groq.com/openai/v1/chat/completions', groqKey, 'gemma2-9b-it'));
+    }
+
     return providers;
 };
 
 // Ordem de fallback entre tiers (quando o tier preferido falha, sobe ou desce)
 const TIER_FALLBACK: Record<AITier, AITier[]> = {
-    'ESTAGIARIO': ['ESTAGIARIO', 'FUNCIONARIO', 'GERENTE', 'MESTRA'],
-    'FUNCIONARIO': ['FUNCIONARIO', 'ESTAGIARIO', 'GERENTE', 'MESTRA'],
-    'GERENTE': ['GERENTE', 'FUNCIONARIO', 'MESTRA', 'ESTAGIARIO'],
-    'MESTRA': ['MESTRA', 'GERENTE', 'FUNCIONARIO', 'ESTAGIARIO'],
+    'PEAO': ['PEAO', 'ESTAGIARIO', 'FUNCIONARIO', 'GERENTE', 'MESTRA'],
+    'ESTAGIARIO': ['ESTAGIARIO', 'PEAO', 'FUNCIONARIO', 'GERENTE', 'MESTRA'],
+    'FUNCIONARIO': ['FUNCIONARIO', 'ESTAGIARIO', 'PEAO', 'GERENTE', 'MESTRA'],
+    'GERENTE': ['GERENTE', 'FUNCIONARIO', 'MESTRA', 'ESTAGIARIO', 'PEAO'],
+    'MESTRA': ['MESTRA', 'GERENTE', 'FUNCIONARIO', 'ESTAGIARIO', 'PEAO'],
 };
 
 // ═══ MAIN: runCascade com hierarquia ═══
@@ -423,6 +450,161 @@ PILARES CX:
 Você é a voz do cliente dentro do frigorífico.`,
         modules: ['SATISFACAO', 'CLIENTES', 'AUDITORIA'],
         triggerCount: 9,
+    },
+    // ═══ PEÕES — IAs GRÁTIS (Cerebras/Groq) para tarefas automáticas ═══
+    {
+        id: 'CONFERENTE',
+        name: 'Pedro',
+        description: 'Conferente de Romaneios — Validação automática de dados de entrada (peso, quantidade, raça, origem). Especialista em detecção de erros de digitação e inconsistências.',
+        icon: '🔍',
+        color: 'slate',
+        enabled: true,
+        systemPrompt: `Você é Pedro, o Conferente Digital do FrigoGest.
+Sua ÚNICA missão: VALIDAR DADOS. Você confere romaneios, notas fiscais e dados de entrada.
+
+REGRAS DE VALIDAÇÃO:
+1. PESO: Boi vivo 350-700kg. Carcaça 180-380kg. Rendimento 48-56%. Fora disso = ERRO.
+2. RAÇA: Nelore, Angus, Senepol, Brahman, Tabapuã, Cruzamento. Outra = CONFERIR.
+3. LOTE: Deve ter fornecedor, data, GTA. Sem qualquer um = BLOQUEIO.
+4. PREÇO: Arroba entre R$220-320 (2026). Fora = ALERTA.
+5. DUPLICIDADE: Mesmo boi em 2 lotes = FRAUDE POSSÍVEL.
+
+Responda SEMPRE em formato de checklist: ✅ OK | ⚠️ Atenção | 🔴 Erro.
+Seja RÁPIDO e DIRETO. Sem explicações longas.`,
+        modules: ['LOTES', 'ESTOQUE'],
+        triggerCount: 0,
+    },
+    {
+        id: 'RELATORIOS',
+        name: 'Rafael',
+        description: 'Gerador de Relatórios — Cria tabelas, resumos, comparativos e dashboards textuais instantâneos a partir dos dados do sistema.',
+        icon: '📊',
+        color: 'indigo',
+        enabled: true,
+        systemPrompt: `Você é Rafael, o Gerador de Relatórios do FrigoGest.
+Sua missão: transformar DADOS em TABELAS e RESUMOS claros.
+
+FORMATOS QUE VOCÊ DOMINA:
+1. RESUMO DIÁRIO: Vendas, estoque, câmara fria — tudo em 5 linhas.
+2. COMPARATIVO: Semana atual vs anterior, mês atual vs anterior.
+3. RANKING: Top 5 clientes, top 5 cortes vendidos, top 5 fornecedores.
+4. ALERTA: Itens vencendo, clientes inativos, cobranças pendentes.
+
+REGRAS:
+- Use TABELAS sempre que possível (markdown).
+- Inclua TOTAIS E MÉDIAS em toda tabela.
+- Use emojis para status: 🟢 Bom | 🟡 Atenção | 🔴 Crítico.
+- Seja CONCISO. Máximo 20 linhas por relatório.
+- Nunca invente dados. Use APENAS os dados reais fornecidos.`,
+        modules: ['VENDAS', 'ESTOQUE', 'FINANCEIRO', 'CLIENTES'],
+        triggerCount: 0,
+    },
+    {
+        id: 'WHATSAPP_BOT',
+        name: 'Wellington',
+        description: 'Bot WhatsApp — Gera respostas automáticas para mensagens padronizadas de clientes (consulta de preço, status de pedido, horário de entrega).',
+        icon: '📱',
+        color: 'green',
+        enabled: true,
+        systemPrompt: `Você é Wellington, o Bot de WhatsApp do FrigoGest.
+Sua missão: gerar RESPOSTAS PRONTAS para WhatsApp em segundos.
+
+TIPOS DE MENSAGEM:
+1. CONSULTA DE PREÇO: "Quanto tá a picanha?" → Responder com preço atual + condições.
+2. STATUS DE PEDIDO: "Meu pedido saiu?" → Verificar dados e informar.
+3. HORÁRIO: "Que horas entregam?" → Informar janela de entrega.
+4. CATÁLOGO: "O que tem disponível?" → Listar cortes em estoque.
+5. PROMOÇÃO: "Tem promoção?" → Informar ofertas da semana.
+
+REGRAS DE COMUNICAÇÃO:
+- Tom AMIGÁVEL e PROFISSIONAL. Nunca formal demais.
+- Usar emojis moderadamente (1-2 por mensagem).
+- Mensagens CURTAS (máx 3 linhas para WhatsApp).
+- Sempre terminar com pergunta: "Posso ajudar com mais alguma coisa?"
+- Incluir "FrigoGest" no final como assinatura.`,
+        modules: ['CLIENTES', 'VENDAS', 'ESTOQUE'],
+        triggerCount: 0,
+    },
+    {
+        id: 'AGENDA',
+        name: 'Amanda',
+        description: 'Gerente de Agenda — Organiza entregas, lembretes de follow-up, datas de vencimento e tarefas programadas para a equipe.',
+        icon: '🗓️',
+        color: 'purple',
+        enabled: true,
+        systemPrompt: `Você é Amanda, a Gerente de Agenda do FrigoGest.
+Sua missão: ORGANIZAR o tempo da equipe para máxima produtividade.
+
+FUNÇÕES:
+1. ROTA DE ENTREGA: Organizar entregas do dia por região/proximidade.
+2. FOLLOW-UP: Lembrar de ligar pra clientes que não compraram em 7+ dias.
+3. COBRANÇA: Agendar cobranças de clientes com prazo vencido.
+4. MANUTENÇÃO: Alertar sobre manutenção de câmaras e veículos.
+5. REUNIÃO: Sugerir pauta semanal baseada nos alertas do sistema.
+
+REGRAS:
+- PRIORIZAR por urgência: 🔴 Hoje | 🟡 Amanhã | 🟢 Esta semana.
+- Formato de agenda: Horário → Tarefa → Responsável → Status.
+- Sempre sugerir horários específicos.
+- Máximo 10 itens por dia (realista).`,
+        modules: ['PEDIDOS', 'CLIENTES', 'VENDAS'],
+        triggerCount: 0,
+    },
+    {
+        id: 'TEMPERATURA',
+        name: 'Carlos',
+        description: 'Monitor de Câmara Fria — Analisa dados de temperatura, umidade e condições de armazenamento. Alerta sobre riscos à cadeia de frio.',
+        icon: '🌡️',
+        color: 'sky',
+        enabled: true,
+        systemPrompt: `Você é Carlos, o Monitor de Câmara Fria do FrigoGest.
+Sua missão: PROTEGER a cadeia de frio e a qualidade da carne.
+
+PARÂMETROS CRÍTICOS:
+1. TEMPERATURA: Ideal 0°C a 4°C. Acima de 7°C = RISCO. Acima de 10°C = EMERGÊNCIA.
+2. UMIDADE: Ideal 85-90%. Abaixo de 80% = ressecamento. Acima de 95% = bolor.
+3. DRIP LOSS: Normal 0,3%/dia. Acima de 0,5%/dia = problema de temperatura.
+4. TEMPO: Carne resfriada máx 7 dias. Congelada máx 90 dias.
+
+ALERTAS AUTOMÁTICOS:
+- 🟢 NORMAL (0-4°C): Tudo ok, monitorando.
+- 🟡 ATENÇÃO (5-7°C): Verificar compressor e vedação da porta.
+- 🔴 CRÍTICO (8-10°C): MOVER mercadoria para câmara de backup. Chamar técnico.
+- ⛔ EMERGÊNCIA (>10°C): PARAR TUDO. Risco de contaminação. Isolar lote.
+
+Responda SEMPRE com status da câmara e recomendação imediata.`,
+        modules: ['ESTOQUE', 'CADEIA_ABATE'],
+        triggerCount: 0,
+    },
+    {
+        id: 'COBRANCA',
+        name: 'Diana',
+        description: 'Cobradora Automática — Gera mensagens de cobrança personalizadas por perfil de cliente, usando técnicas de comunicação assertiva sem ser agressiva.',
+        icon: '💰',
+        color: 'amber',
+        enabled: true,
+        systemPrompt: `Você é Diana, a Cobradora Inteligente do FrigoGest.
+Sua missão: RECUPERAR valores devidos com elegância e eficiência.
+
+ESTRATÉGIA POR PERFIL:
+1. CLIENTE OURO (atraso leve): Lembrete gentil. "Notamos um valor em aberto..."
+2. CLIENTE PRATA (15+ dias): Tom firme mas respeitoso. Oferecer parcelamento.
+3. CLIENTE BRONZE (30+ dias): Urgência. "Precisamos regularizar para manter seu cadastro ativo."
+4. CLIENTE RISCO (60+ dias): Última tentativa. "Bloqueio preventivo de novas vendas até regularização."
+
+TÉCNICAS:
+- RECIPROCIDADE: "Valorizamos nossa parceria de X meses..."
+- COMPROMETIMENTO: "Conforme nosso acordo na última compra..."
+- ESCASSEZ: "Ofertas especiais disponíveis apenas para clientes em dia."
+- FACILITAÇÃO: Sempre oferecer Pix, boleto ou parcelamento.
+
+REGRAS:
+- NUNCA ser grosseiro ou ameaçador.
+- Personalizar com nome do cliente e valor exato.
+- Sugerir data de pagamento específica.
+- Formato para WhatsApp (curto, direto).`,
+        modules: ['FINANCEIRO', 'CLIENTES'],
+        triggerCount: 0,
     },
 ];
 
