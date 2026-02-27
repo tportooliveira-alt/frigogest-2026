@@ -148,6 +148,7 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
   const [pesoUnit, setPesoUnit] = useState<'KG' | 'G'>('KG');
   const [pagoNoAto, setPagoNoAto] = useState(false);
   const [pagoMetodo, setPagoMetodo] = useState<'PIX' | 'DINHEIRO' | 'CARTAO'>('PIX');
+  const [saleSuccess, setSaleSuccess] = useState<{ clientName: string; totalKg: number; totalValue: number; items: number } | null>(null);
 
   // Conversor de unidade para exibição/entrada
   const toDisplayWeight = (kg: number) => pesoUnit === 'G' ? Math.round(kg * 1000) : kg;
@@ -403,6 +404,11 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
       generateReceipt();
     }
 
+    const totalKg = getTotalWeight();
+    const totalValue = totalKg * pricePerKg;
+    const clientName = selectedClient.nome_social;
+    const itemCount = selectedItems.length;
+
     const itemsWithWeights = selectedItems.map(item => ({
       ...item,
       peso_saida: itemWeights[item.id_completo] !== undefined ? itemWeights[item.id_completo] : item.peso_entrada
@@ -416,10 +422,81 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
       pagoNoAto,
       metodoPagamento: pagoNoAto ? pagoMetodo : undefined
     });
-    setSelectedClient(null); setSelectedItems([]); setPricePerKg(0); setExtrasCost(0);
+
+    // Resetar form
+    setSelectedClient(null);
+    setSelectedItems([]);
+    setPricePerKg(0);
+    setExtrasCost(0);
     setPagoNoAto(false);
-    setShowHistory(true); // Automatically go to history after sale
+    setItemWeights({});
+
+    // Mostrar tela de sucesso DENTRO da expedição (não navega para outro lugar)
+    setSaleSuccess({ clientName, totalKg, totalValue, items: itemCount });
   };
+
+  // ═══ TELA DE SUCESSO APÓS VENDA ═══
+  if (saleSuccess) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50 flex flex-col items-center justify-center p-6 text-center">
+        <div className="max-w-md w-full">
+          {/* Ícone de sucesso */}
+          <div className="w-24 h-24 bg-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-emerald-200 animate-bounce">
+            <CheckCircle size={48} className="text-white" />
+          </div>
+
+          <h1 className="text-3xl font-black text-slate-900 mb-2">Venda Registrada! 🎉</h1>
+          <p className="text-slate-500 text-sm mb-8">A venda foi confirmada com sucesso.</p>
+
+          {/* Resumo da venda */}
+          <div className="bg-white rounded-3xl shadow-xl shadow-slate-100 p-6 mb-8 text-left space-y-4 border border-slate-100">
+            <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
+              <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center">
+                <User size={20} className="text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Cliente</p>
+                <p className="text-sm font-black text-slate-800">{saleSuccess.clientName}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-slate-50 rounded-2xl p-3 text-center">
+                <p className="text-2xl font-black text-slate-800">{saleSuccess.items}</p>
+                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wide">Peças</p>
+              </div>
+              <div className="bg-emerald-50 rounded-2xl p-3 text-center">
+                <p className="text-2xl font-black text-emerald-700">{saleSuccess.totalKg.toFixed(1)}</p>
+                <p className="text-[9px] text-emerald-500 font-bold uppercase tracking-wide">kg saída</p>
+              </div>
+              <div className="bg-blue-50 rounded-2xl p-3 text-center">
+                <p className="text-lg font-black text-blue-700">{formatCurrency(saleSuccess.totalValue)}</p>
+                <p className="text-[9px] text-blue-400 font-bold uppercase tracking-wide">Total</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Botões de ação */}
+          <div className="space-y-3">
+            <button
+              onClick={() => setSaleSuccess(null)}
+              className="w-full py-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-emerald-200 transition-all active:scale-95 flex items-center justify-center gap-3"
+            >
+              <ShoppingCart size={20} />
+              🛒 Nova Venda
+            </button>
+            <button
+              onClick={() => { setSaleSuccess(null); setShowHistory(true); }}
+              className="w-full py-3 bg-white border border-slate-200 text-slate-600 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
+            >
+              <ClipboardList size={16} />
+              Ver Histórico de Expedição
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (showHistory) {
     return (

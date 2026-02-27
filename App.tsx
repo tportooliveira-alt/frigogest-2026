@@ -20,6 +20,7 @@ import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, onSnaps
 import { Cloud, CloudOff, Loader2, ShieldCheck, Activity, RefreshCw } from 'lucide-react';
 import { logAction } from './utils/audit';
 import { syncAllToSheets, forceSyncToSheets, isSheetsConfigured } from './utils/sheetsSync';
+import { todayBR } from './utils/helpers';
 import CollaboratorReport from './components/CollaboratorReport';
 import HeiferManager from './components/HeiferManager';
 import SalesAgent from './components/SalesAgent';
@@ -1260,12 +1261,12 @@ const App: React.FC = () => {
               id_completo: idCompleto,
               peso_real_saida: pesoSaidaTotal,
               preco_venda_kg: pricePerKg,
-              data_venda: new Date().toISOString().split('T')[0],
+              data_venda: todayBR(),
               quebra_kg: quebraTotal,
               lucro_liquido_unitario: profit,
               custo_extras_total: groupExtraCost,
               prazo_dias: pagoNoAto ? 0 : 30,
-              data_vencimento: new Date(Date.now() + (pagoNoAto ? 0 : 30) * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+              data_vencimento: (() => { const d = new Date(); d.setDate(d.getDate() + (pagoNoAto ? 0 : 30)); return d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); })(),
               forma_pagamento: pagoNoAto ? metodo : 'OUTROS',
               // PAGO NO ATO: já marca como PAGO e registra valor
               status_pagamento: pagoNoAto ? 'PAGO' : 'PENDENTE',
@@ -1283,7 +1284,7 @@ const App: React.FC = () => {
             const metodo = metodoPagamento || 'OUTROS';
             await addTransaction({
               id: `TR-VISTA-${Date.now()}`,
-              data: new Date().toISOString().split('T')[0],
+              data: todayBR(),
               descricao: `Venda à Vista (${metodo}): ${client.nome_social} — ${newSales.length} item(s)`,
               tipo: 'ENTRADA',
               categoria: 'VENDA',
@@ -1293,7 +1294,8 @@ const App: React.FC = () => {
             } as any);
           }
 
-          setCurrentView('sales_history');
+          // Não navega para outra tela — Expedition mostra tela de sucesso internamente
+          // e o usuário pode fazer nova venda sem sair da área de vendas
         }} onBack={() => setCurrentView('menu')} />
       }
       {currentView === 'sales_history' && <SalesHistory stock={closedStock} batches={closedBatches} sales={data.sales} clients={data.clients} initialSearchTerm={viewParams?.searchTerm} onBack={() => setCurrentView('menu')} onGoToSales={() => setCurrentView('expedition')} estornoSale={estornoSale} />}
