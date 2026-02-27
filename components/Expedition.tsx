@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from 'react';
 import { StockItem, Client, Sale, Batch } from '../types';
-import DecimalInput from './DecimalInput';
 import {
   Search,
   ShoppingCart,
@@ -32,7 +31,7 @@ import {
   BoxSelect,
   MoreHorizontal
 } from 'lucide-react';
-import { formatWeight, formatCurrency, todayBR, formatDateBR } from '../utils/helpers';
+import { formatWeight, formatCurrency } from '../utils/helpers';
 import { jsPDF } from 'jspdf';
 
 interface ExpeditionProps {
@@ -57,42 +56,12 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
   const [showHistory, setShowHistory] = useState(false);
   const [showLoadPlanner, setShowLoadPlanner] = useState(false);
 
-  // Helper: calcular dias em câmara
-  const getDaysInChamber = (item: StockItem) => {
-    const entrada = (item as any).data_entrada || (item as any).data_recebimento;
-    if (!entrada) return 0;
-    return Math.floor((Date.now() - new Date(entrada).getTime()) / 86400000);
-  };
-
-  // CORREÇÃO SANITÁRIA (MAPA/SIF): Filtrar lotes FECHADOS + excluir peças > 8 dias
+  // CORREÇÃO: Filtrar apenas stock de lotes FECHADOS (válidos)
   const availableStock = useMemo(() => {
     if (!batches || batches.length === 0) return [];
     const closedBatchIds = new Set(batches.filter(b => b.status === 'FECHADO').map(b => b.id_lote));
-    return stock
-      .filter(item => item.status === 'DISPONIVEL' && closedBatchIds.has(item.id_lote))
-      // FIFO: ordenar pelo mais antigo primeiro (legislação sanitária)
-      .sort((a, b) => {
-        const aDate = (a as any).data_entrada || '';
-        const bDate = (b as any).data_entrada || '';
-        return aDate.localeCompare(bDate);
-      });
+    return stock.filter(item => item.status === 'DISPONIVEL' && closedBatchIds.has(item.id_lote));
   }, [stock, batches]);
-
-  // Peças bloqueadas (>= 12 dias) — removidas completamente da lista
-  const expiredItems = useMemo(() =>
-    availableStock.filter(item => getDaysInChamber(item) >= 12),
-    [availableStock]
-  );
-  // Peças em atenção (8-11 dias) — podem vender mas com aviso laranja
-  const warningItems = useMemo(() =>
-    availableStock.filter(item => { const d = getDaysInChamber(item); return d >= 8 && d < 12; }),
-    [availableStock]
-  );
-  // Estoque seguro (< 12 dias) — inclui os de aviso (8-11d), mas REMOVE os bloqueados
-  const safeStock = useMemo(() =>
-    availableStock.filter(item => getDaysInChamber(item) < 12),
-    [availableStock]
-  );
 
   const [expandedLots, setExpandedLots] = useState<Set<string>>(new Set());
 
@@ -106,8 +75,7 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
   };
 
   const groupedStock = useMemo(() => {
-    // Usar safeStock (sem expirados) para seleção, mas mostrar expirados em vermelho
-    const filtered = safeStock.filter(item =>
+    const filtered = availableStock.filter(item =>
       item.id_completo.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.id_lote.toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -137,23 +105,11 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
         })).sort((a, b) => b.sequencia - a.sequencia),
         totalWeight: items.reduce((acc, i) => acc + i.peso_entrada, 0),
         supplier: getSupplierName(loteId),
-        expiredCount: expiredItems.filter(e => e.id_lote === loteId).length,
-        warningCount: warningItems.filter(e => e.id_lote === loteId).length,
       };
     }).sort((a, b) => b.lote.localeCompare(a.lote));
-  }, [safeStock, searchTerm, batches, expiredItems, warningItems]);
-
+  }, [availableStock, searchTerm, batches]);
 
   const [itemWeights, setItemWeights] = useState<Record<string, number>>({});
-  const [pesoUnit, setPesoUnit] = useState<'KG' | 'G'>('KG');
-  const [pagoNoAto, setPagoNoAto] = useState(false);
-  const [pagoMetodo, setPagoMetodo] = useState<'PIX' | 'DINHEIRO' | 'CARTAO'>('PIX');
-  const [saleSuccess, setSaleSuccess] = useState<{ clientName: string; totalKg: number; totalValue: number; items: number } | null>(null);
-  const [cartOpen, setCartOpen] = useState(false);
-
-  // Conversor de unidade para exibição/entrada
-  const toDisplayWeight = (kg: number) => pesoUnit === 'G' ? Math.round(kg * 1000) : kg;
-  const toKg = (v: number) => pesoUnit === 'G' ? v / 1000 : v;
 
   const getTotalWeight = () => {
     return selectedItems.reduce((acc, item) => {
@@ -405,99 +361,15 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
       generateReceipt();
     }
 
-    const totalKg = getTotalWeight();
-    const totalValue = totalKg * pricePerKg;
-    const clientName = selectedClient.nome_social;
-    const itemCount = selectedItems.length;
-
     const itemsWithWeights = selectedItems.map(item => ({
       ...item,
       peso_saida: itemWeights[item.id_completo] !== undefined ? itemWeights[item.id_completo] : item.peso_entrada
     }));
 
-    onConfirmSale({
-      client: selectedClient,
-      items: itemsWithWeights,
-      pricePerKg,
-      extrasCost,
-      pagoNoAto,
-      metodoPagamento: pagoNoAto ? pagoMetodo : undefined
-    });
-
-    // Resetar form
-    setSelectedClient(null);
-    setSelectedItems([]);
-    setPricePerKg(0);
-    setExtrasCost(0);
-    setPagoNoAto(false);
-    setItemWeights({});
-
-    // Mostrar tela de sucesso DENTRO da expedição (não navega para outro lugar)
-    setSaleSuccess({ clientName, totalKg, totalValue, items: itemCount });
+    onConfirmSale({ client: selectedClient, items: itemsWithWeights, pricePerKg, extrasCost });
+    setSelectedClient(null); setSelectedItems([]); setPricePerKg(0); setExtrasCost(0);
+    setShowHistory(true); // Automatically go to history after sale
   };
-
-  // ═══ TELA DE SUCESSO APÓS VENDA ═══
-  if (saleSuccess) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50 flex flex-col items-center justify-center p-6 text-center">
-        <div className="max-w-md w-full">
-          {/* Ícone de sucesso */}
-          <div className="w-24 h-24 bg-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-emerald-200 animate-bounce">
-            <CheckCircle size={48} className="text-white" />
-          </div>
-
-          <h1 className="text-3xl font-black text-slate-900 mb-2">Venda Registrada! 🎉</h1>
-          <p className="text-slate-500 text-sm mb-8">A venda foi confirmada com sucesso.</p>
-
-          {/* Resumo da venda */}
-          <div className="bg-white rounded-3xl shadow-xl shadow-slate-100 p-6 mb-8 text-left space-y-4 border border-slate-100">
-            <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
-              <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center">
-                <User size={20} className="text-emerald-600" />
-              </div>
-              <div>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Cliente</p>
-                <p className="text-sm font-black text-slate-800">{saleSuccess.clientName}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3">
-              <div className="bg-slate-50 rounded-2xl p-3 text-center">
-                <p className="text-2xl font-black text-slate-800">{saleSuccess.items}</p>
-                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wide">Peças</p>
-              </div>
-              <div className="bg-emerald-50 rounded-2xl p-3 text-center">
-                <p className="text-2xl font-black text-emerald-700">{saleSuccess.totalKg.toFixed(1)}</p>
-                <p className="text-[9px] text-emerald-500 font-bold uppercase tracking-wide">kg saída</p>
-              </div>
-              <div className="bg-blue-50 rounded-2xl p-3 text-center">
-                <p className="text-lg font-black text-blue-700">{formatCurrency(saleSuccess.totalValue)}</p>
-                <p className="text-[9px] text-blue-400 font-bold uppercase tracking-wide">Total</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Botões de ação */}
-          <div className="space-y-3">
-            <button
-              onClick={() => setSaleSuccess(null)}
-              className="w-full py-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-emerald-200 transition-all active:scale-95 flex items-center justify-center gap-3"
-            >
-              <ShoppingCart size={20} />
-              🛒 Nova Venda
-            </button>
-            <button
-              onClick={() => { setSaleSuccess(null); setShowHistory(true); }}
-              className="w-full py-3 bg-white border border-slate-200 text-slate-600 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
-            >
-              <ClipboardList size={16} />
-              Ver Histórico de Expedição
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   if (showHistory) {
     return (
@@ -666,18 +538,6 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
                             <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-0.5">LOTE: {group.lote}</p>
                             <p className="text-xs font-extrabold text-slate-900 uppercase tracking-tighter italic">"{group.supplier || 'CARGA PADRÃO'}"</p>
                           </div>
-                          {(group as any).expiredCount > 0 && (
-                            <div className="flex items-center gap-1.5 bg-rose-100 border border-rose-200 text-rose-700 px-3 py-1 rounded-full">
-                              <AlertCircle size={12} />
-                              <span className="text-[9px] font-black uppercase">{(group as any).expiredCount} VENCIDA{(group as any).expiredCount > 1 ? 'S' : ''} — BLOQUEADA{(group as any).expiredCount > 1 ? 'S' : ''} +12d</span>
-                            </div>
-                          )}
-                          {(group as any).warningCount > 0 && (
-                            <div className="flex items-center gap-1.5 bg-amber-100 border border-amber-300 text-amber-700 px-3 py-1 rounded-full">
-                              <AlertCircle size={12} />
-                              <span className="text-[9px] font-black uppercase">{(group as any).warningCount} EM ATENÇÃO — 8-11d</span>
-                            </div>
-                          )}
                         </div>
 
                         <div className="flex items-center gap-6">
@@ -783,238 +643,9 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
             )}
           </div>
         </div>
-      </div>
 
-      {/* ══════════════════════════════════════════
-          FLOATING CART BUTTON (estilo iFood/Rappi)
-          aparece quando tem itens no carrinho
-      ══════════════════════════════════════════ */}
-      {selectedItems.length > 0 && !cartOpen && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 p-4 pointer-events-none">
-          <button
-            onClick={() => setCartOpen(true)}
-            className="w-full max-w-lg mx-auto flex pointer-events-auto bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-2xl shadow-2xl shadow-emerald-900/30 transition-all items-center justify-between px-5 py-4"
-          >
-            {/* Badge de qtd */}
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <ShoppingCart size={22} />
-                <span className="absolute -top-2 -right-2 bg-white text-emerald-700 text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow">
-                  {selectedItems.length}
-                </span>
-              </div>
-              <span className="text-sm font-black uppercase tracking-wider">Ver Carrinho</span>
-            </div>
-
-            {/* Resumo do peso */}
-            <div className="text-right">
-              <p className="text-[10px] font-bold text-emerald-200 uppercase tracking-wide">{totalWeight.toFixed(1)} kg</p>
-              {pricePerKg > 0 && <p className="text-base font-black">{formatCurrency(totalValue)}</p>}
-            </div>
-          </button>
-        </div>
-      )}
-
-      {/* ══════════════════════════════════════════
-          BOTTOM SHEET CART (slide-up)
-      ══════════════════════════════════════════ */}
-      {cartOpen && (
-        <>
-          {/* Overlay escuro */}
-          <div
-            className="fixed inset-0 bg-black/60 z-40 backdrop-blur-sm"
-            onClick={() => setCartOpen(false)}
-          />
-
-          {/* Panel deslizando de baixo */}
-          <div className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl shadow-2xl flex flex-col" style={{ maxHeight: '90vh' }}>
-
-            {/* Handle de arrastar + header */}
-            <div className="flex flex-col items-center pt-3 pb-2 border-b border-slate-100 shrink-0">
-              <div className="w-10 h-1 bg-slate-200 rounded-full mb-3" />
-              <div className="w-full px-5 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="bg-emerald-600 p-2 rounded-xl text-white">
-                    <ShoppingCart size={16} />
-                  </div>
-                  <div>
-                    <h2 className="text-sm font-black text-slate-900">Carrinho de Venda</h2>
-                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{selectedItems.length} peça(s) · {totalWeight.toFixed(2)} kg</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {selectedItems.length > 0 && (
-                    <button
-                      onClick={() => { setSelectedItems([]); setItemWeights({}); }}
-                      className="text-[10px] font-black text-rose-500 px-3 py-1.5 rounded-lg hover:bg-rose-50 transition-all uppercase"
-                    >
-                      Limpar
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setCartOpen(false)}
-                    className="p-2 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200 transition-all"
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Cliente */}
-            <div className="px-5 py-3 shrink-0 border-b border-slate-50">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Cliente</label>
-              <select
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-800 outline-none"
-                value={selectedClient ? JSON.stringify(selectedClient) : ''}
-                onChange={(e) => { if (e.target.value) setSelectedClient(JSON.parse(e.target.value)); else setSelectedClient(null); }}
-              >
-                <option value="">-- Selecione o cliente --</option>
-                {clients.sort((a, b) => a.nome_social.localeCompare(b.nome_social)).map(client => (
-                  <option key={client.id_ferro} value={JSON.stringify(client)}>{client.id_ferro} // {client.nome_social}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Lista de itens com PESO DE SAÍDA */}
-            <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3">
-              {groupedSelectedItems.map((group, groupIdx) => {
-                const isGroup = group.length > 1;
-                const groupItemsWeight = group.reduce((acc, item) => acc + (itemWeights[item.id_completo] || item.peso_entrada), 0);
-                const groupEntryWeight = group.reduce((acc, item) => acc + item.peso_entrada, 0);
-                const quebra = groupEntryWeight - groupItemsWeight;
-
-                return (
-                  <div key={groupIdx} className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-3">
-                    {/* Cabeçalho */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        {isGroup ? (
-                          <><div className="bg-blue-600 p-1 rounded-lg text-white"><ShieldCheck size={10} /></div>
-                          <span className="text-[10px] font-black text-slate-800">Carcaça Inteira · {group.length} cortes</span></>
-                        ) : (
-                          <span className="text-[10px] font-black text-slate-800">
-                            {group[0].tipo === 1 ? 'Inteiro' : group[0].tipo === 2 ? 'Banda A' : 'Banda B'} · #{group[0].sequencia}
-                          </span>
-                        )}
-                      </div>
-                      <button onClick={() => { group.forEach(item => handleToggleItem(item)); }} className="text-rose-400 hover:text-rose-600 p-1">
-                        <X size={14} />
-                      </button>
-                    </div>
-
-                    {/* Peso entrada */}
-                    <div className="flex items-center justify-between text-[9px]">
-                      <span className="text-slate-400 font-bold uppercase">Entrou na câmara:</span>
-                      <span className="font-black text-slate-500">{groupEntryWeight.toFixed(2)} kg</span>
-                    </div>
-
-                    {/* PESO DE SAÍDA — DESTAQUE */}
-                    <div>
-                      <label className="text-[9px] font-black text-orange-600 uppercase tracking-widest block mb-1">📦 Peso de Saída (kg reais)</label>
-                      <div className="flex items-center gap-2 bg-white border-2 border-orange-400 rounded-2xl px-4 py-3 shadow-sm">
-                        <Scale size={18} className="text-orange-500 flex-shrink-0" />
-                        <DecimalInput
-                          className="flex-1 bg-transparent font-black text-2xl text-orange-700 outline-none"
-                          placeholder={groupEntryWeight.toFixed(2)}
-                          value={groupItemsWeight}
-                          onValueChange={(v) => {
-                            if (isGroup) handleGroupWeightChange(group, v);
-                            else handleWeightChange(group[0].id_completo, v);
-                          }}
-                        />
-                        <span className="text-base font-black text-orange-400">kg</span>
-                      </div>
-                      {quebra > 0.01 && (
-                        <p className="text-[9px] text-amber-600 font-bold mt-1">
-                          ↓ Quebra: {quebra.toFixed(2)} kg ({((quebra / groupEntryWeight) * 100).toFixed(1)}%)
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* RODAPÉ: preço + confirmar */}
-            <div className="shrink-0 border-t border-slate-100 px-5 py-4 space-y-3 bg-white">
-              {/* Preço/kg */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">R$ Preço / kg</label>
-                  <DecimalInput
-                    className="w-full bg-slate-50 border-2 border-slate-200 focus:border-blue-400 rounded-xl px-4 py-3 font-black text-xl text-slate-900 outline-none"
-                    placeholder="0,00"
-                    value={pricePerKg}
-                    onValueChange={setPricePerKg}
-                  />
-                </div>
-                <div>
-                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Extras (R$)</label>
-                  <DecimalInput
-                    className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-4 py-3 font-black text-slate-900 outline-none"
-                    placeholder="0"
-                    value={extrasCost}
-                    onValueChange={setExtrasCost}
-                  />
-                </div>
-              </div>
-
-              {/* Total e pagamento */}
-              <div className="flex items-center justify-between bg-slate-900 rounded-2xl px-5 py-3">
-                <span className="text-[9px] font-bold text-slate-400 uppercase">Total da venda</span>
-                <span className="text-xl font-black text-white">{formatCurrency(totalValue + extrasCost)}</span>
-              </div>
-
-              {/* Pagamento */}
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setPagoNoAto(!pagoNoAto)}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border-2 ${
-                    pagoNoAto ? 'bg-green-600 border-green-600 text-white shadow-lg' : 'bg-white border-slate-200 text-slate-500'
-                  }`}
-                >
-                  <DollarSign size={14} /> Pago no Ato
-                </button>
-                {pagoNoAto && (
-                  <div className="flex gap-1 flex-1">
-                    {(['PIX', 'DINHEIRO', 'CARTAO'] as const).map(m => (
-                      <button key={m} onClick={() => setPagoMetodo(m)}
-                        className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-wide transition-all ${
-                          pagoMetodo === m ? 'bg-green-100 text-green-700 border-2 border-green-400' : 'bg-slate-100 text-slate-400'
-                        }`}
-                      >
-                        {m === 'PIX' ? '🟢 PIX' : m === 'DINHEIRO' ? '💵 Dinheiro' : '💳 Cartão'}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {!pagoNoAto && <span className="text-[9px] text-slate-400 font-bold uppercase">Prazo/Fiado</span>}
-              </div>
-
-              {/* Botão confirmar */}
-              <button
-                onClick={() => { setCartOpen(false); handleConfirm(); }}
-                disabled={!selectedClient || selectedItems.length === 0 || pricePerKg <= 0}
-                className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-blue-100 transition-all active:scale-95 flex items-center justify-center gap-2"
-              >
-                <CheckCircle size={18} />
-                Confirmar Entrega {pagoNoAto ? '[Pago ✔]' : '[Fiado]'}
-              </button>
-              {(!selectedClient || pricePerKg <= 0) && (
-                <p className="text-[9px] text-amber-600 font-bold text-center">
-                  {!selectedClient ? '⚠️ Selecione o cliente' : '⚠️ Informe o preço por kg'}
-                </p>
-              )}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-};
-
-export default Expedition;
+        {/* RIGHT: SHOPPING CART OPERATIONAL */}
+        <div className="w-full md:w-[420px] bg-white border-l border-slate-100 flex flex-col shadow-2xl z-40 relative">
 
           {/* CART HEADER - CONDENSED */}
           <div className="p-6 pb-2 shrink-0 border-b border-slate-50">
@@ -1061,71 +692,78 @@ export default Expedition;
               groupedSelectedItems.map((group, groupIdx) => {
                 const isGroup = group.length > 1;
                 const groupItemsWeight = group.reduce((acc, item) => acc + (itemWeights[item.id_completo] || item.peso_entrada), 0);
-                const groupEntryWeight = group.reduce((acc, item) => acc + item.peso_entrada, 0);
-                const quebra = groupEntryWeight - groupItemsWeight;
 
                 return (
                   <div key={groupIdx} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                    {/* Header do animal */}
-                    <div className="bg-slate-800 px-4 py-2 flex justify-between items-center">
-                      <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">Animal #{group[0].sequencia} // Lote {group[0].id_lote}</span>
-                      <button
-                        onClick={() => { group.forEach(item => handleToggleItem(item)); }}
-                        className="text-[8px] font-black text-rose-400 hover:bg-rose-900/30 px-2 py-1 rounded transition-all uppercase"
-                      >
-                        <X size={12} />
-                      </button>
+                    <div className="bg-slate-50/50 px-4 py-2 flex justify-between items-center border-b border-slate-100">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Animal #{group[0].sequencia} // Lote {group[0].id_lote}</span>
+                      {!isGroup && (
+                        <button onClick={() => handleToggleItem(group[0])} className="p-1 text-slate-300 hover:text-rose-500 transition-colors">
+                          <X size={12} />
+                        </button>
+                      )}
+                      {isGroup && (
+                        <button onClick={() => { group.forEach(item => handleToggleItem(item)); }} className="text-[8px] font-black text-rose-500 hover:bg-rose-100 px-2 py-1 rounded transition-all uppercase tracking-tighter">
+                          Remover Carcaça
+                        </button>
+                      )}
                     </div>
 
-                    <div className="p-3 space-y-3">
-                      {/* Tipo de item */}
-                      <div className="flex items-center gap-2">
-                        {isGroup ? (
-                          <div className="flex items-center gap-2">
-                            <div className="bg-blue-600 p-1.5 rounded-lg text-white"><ShieldCheck size={12} /></div>
-                            <span className="text-[10px] font-black text-blue-900 uppercase">Carcaça Inteira · {group.length} cortes</span>
-                          </div>
-                        ) : (
-                          group.map((item, idx) => (
-                            <div key={idx} className="flex items-center gap-2">
-                              <div className="bg-slate-100 px-2 py-0.5 rounded text-[8px] font-bold text-slate-600 font-mono">{item.id_completo.split('-').pop()}</div>
-                              <span className="text-[10px] font-black text-slate-800 uppercase">{item.tipo === 1 ? 'Inteiro' : item.tipo === 2 ? 'Banda A (Dianteiro)' : 'Banda B (Traseiro)'}</span>
+                    <div className="p-3">
+                      {isGroup ? (
+                        /* CARCASSA INTEIRA - COLLAPSED VIEW */
+                        <div className="flex items-center justify-between bg-blue-50/30 p-3 rounded-xl border border-blue-100/50">
+                          <div className="flex items-center gap-3">
+                            <div className="bg-blue-600 p-2 rounded-lg text-white shadow-sm">
+                              <ShieldCheck size={14} />
                             </div>
-                          ))
-                        )}
-                      </div>
-
-                      {/* Peso de entrada (referência) */}
-                      <div className="flex items-center justify-between">
-                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wide">⚖️ Peso entrada (câmara):</span>
-                        <span className="text-[9px] font-black text-slate-500">{groupEntryWeight.toFixed(2)} kg</span>
-                      </div>
-
-                      {/* PESO DE SAÍDA — DESTAQUE PRINCIPAL */}
-                      <div>
-                        <label className="text-[9px] font-black text-orange-600 uppercase tracking-widest block mb-1.5">📦 PESO DE SAÍDA (kg reais saindo)</label>
-                        <div className="flex items-center gap-2 bg-orange-50 border-2 border-orange-400 rounded-2xl px-4 py-3 shadow-sm shadow-orange-100">
-                          <Scale size={20} className="text-orange-500 flex-shrink-0" />
-                          <DecimalInput
-                            className="flex-1 bg-transparent font-black text-2xl text-orange-700 outline-none"
-                            placeholder={groupEntryWeight.toFixed(2)}
-                            value={toDisplayWeight(Number(groupItemsWeight.toFixed(2))) || 0}
-                            onValueChange={(v) => {
-                              if (isGroup) {
-                                handleGroupWeightChange(group, toKg(v));
-                              } else {
-                                handleWeightChange(group[0].id_completo, toKg(v));
-                              }
-                            }}
-                          />
-                          <span className="text-base font-black text-orange-500">{pesoUnit}</span>
+                            <div>
+                              <p className="text-[10px] font-black text-blue-900 uppercase leading-none mb-1">Carcassa Inteira</p>
+                              <p className="text-[8px] font-bold text-blue-400 uppercase tracking-widest">{group.length} Cortes Vinculados</p>
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end">
+                            <span className="text-[9px] font-black text-blue-600 uppercase tracking-wide mb-1">PESO SAÍDA</span>
+                            <div className="flex items-center gap-2 bg-blue-100 border-2 border-blue-400 rounded-xl px-3 py-2">
+                              <Scale size={18} className="text-blue-600" />
+                              <input
+                                type="number"
+                                step="0.01"
+                                className="w-24 bg-transparent text-right font-black text-lg text-blue-700 outline-none"
+                                value={Number(groupItemsWeight.toFixed(2))}
+                                onChange={(e) => handleGroupWeightChange(group, parseFloat(e.target.value) || 0)}
+                              />
+                              <span className="text-xs font-black text-blue-500">KG</span>
+                            </div>
+                          </div>
                         </div>
-                        {quebra > 0.01 && (
-                          <p className="text-[9px] text-amber-600 font-bold mt-1 px-1">
-                            ↓ Quebra: {quebra.toFixed(2)} kg ({((quebra/groupEntryWeight)*100).toFixed(1)}%) — normal até 3%
-                          </p>
-                        )}
-                      </div>
+                      ) : (
+                        /* SINGLE ITEM VIEW */
+                        group.map((item, idx) => {
+                          const currentWeight = itemWeights[item.id_completo] || item.peso_entrada;
+                          return (
+                            <div key={idx} className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-lg transition-colors group/item">
+                              <div className="flex items-center gap-3">
+                                <div className="bg-slate-100 px-1.5 py-0.5 rounded text-[8px] font-bold text-slate-500 font-mono">{item.id_completo.split('-').pop()}</div>
+                                <span className="text-[9px] font-black text-slate-900 uppercase">{item.tipo === 1 ? 'INT' : item.tipo === 2 ? 'B-A' : 'B-B'}</span>
+                              </div>
+                              <div className="flex flex-col items-end">
+                                <span className="text-[8px] font-black text-blue-500 uppercase mb-1">PESO SAÍDA</span>
+                                <div className="flex items-center gap-1 bg-blue-50 border-2 border-blue-300 rounded-lg px-2 py-1">
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    className="w-20 bg-transparent text-right font-black text-base text-blue-700 outline-none"
+                                    value={currentWeight}
+                                    onChange={e => handleWeightChange(item.id_completo, parseFloat(e.target.value) || 0)}
+                                  />
+                                  <span className="text-[10px] font-black text-blue-400">KG</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
                     </div>
                   </div>
                 );
@@ -1133,53 +771,37 @@ export default Expedition;
             )}
           </div>
 
-          {/* TOGGLE KG/GRAMAS para pesos de saída */}
-          {selectedItems.length > 0 && (
-            <div className="flex items-center gap-2 px-4 py-2 bg-slate-800 border-t border-slate-700">
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Unidade peso saída:</span>
-              <button
-                onClick={() => setPesoUnit(u => u === 'KG' ? 'G' : 'KG')}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
-                  pesoUnit === 'G'
-                    ? 'bg-orange-500 text-white shadow-lg shadow-orange-900'
-                    : 'bg-slate-600 text-slate-300 hover:bg-slate-500'
-                }`}
-              >
-                {pesoUnit === 'KG' ? '⚖️ KG' : '🔢 GRAMAS'}
-              </button>
-              {pesoUnit === 'G' && (
-                <span className="text-[9px] text-orange-400 font-bold">Digite em gramas → converte para KG</span>
-              )}
-            </div>
-          )}
-
           {/* CHECKOUT ACTION AREA - CONDENSED */}
-          <div className="shrink-0 bg-slate-900 text-white p-4 relative overflow-hidden">
+          <div className="shrink-0 bg-slate-900 text-white p-6 relative overflow-hidden">
             <div className="absolute top-0 right-0 opacity-5 pointer-events-none">
               <ShoppingCart size={200} className="rotate-12 translate-x-20 translate-y-20" />
             </div>
 
-            <div className="relative z-10 space-y-3">
+            <div className="relative z-10 space-y-5">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest px-1">R$ Preço / KG</label>
                   <div className="flex items-center bg-white/10 border border-white/10 rounded-xl px-4 h-12 focus-within:bg-white/20 transition-all">
-                    <DecimalInput
+                    <input
+                      type="number"
+                      step="0.01"
                       className="w-full bg-transparent text-white font-black text-xl outline-none"
-                      value={pricePerKg || 0}
-                      onValueChange={v => setPricePerKg(v)}
-                      placeholder="Preço/kg"
+                      value={pricePerKg || ''}
+                      onChange={e => setPricePerKg(parseFloat(e.target.value))}
+                      placeholder="0.00"
                     />
                   </div>
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest px-1">Custos Extras</label>
                   <div className="flex items-center bg-white/10 border border-white/10 rounded-xl px-4 h-12 focus-within:bg-white/20 transition-all">
-                    <DecimalInput
+                    <input
+                      type="number"
+                      step="0.01"
                       className="w-full bg-transparent text-white font-black text-lg outline-none"
-                      value={extrasCost || 0}
-                      onValueChange={v => setExtrasCost(v)}
-                      placeholder="Extras"
+                      value={extrasCost || ''}
+                      onChange={e => setExtrasCost(parseFloat(e.target.value))}
+                      placeholder="0.00"
                     />
                   </div>
                 </div>
@@ -1199,50 +821,12 @@ export default Expedition;
 
                 <div className="flex flex-col gap-3">
 
-                  {/* PAGO NO ATO TOGGLE */}
-                  <div className={`rounded-xl border p-3 transition-all ${pagoNoAto ? 'bg-emerald-500/20 border-emerald-400/40' : 'bg-white/5 border-white/10'}`}>
-                    <button
-                      onClick={() => setPagoNoAto(p => !p)}
-                      className="w-full flex items-center justify-between"
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className={`w-4 h-4 rounded-full border-2 transition-all flex items-center justify-center ${pagoNoAto ? 'bg-emerald-400 border-emerald-400' : 'border-white/30'}`}>
-                          {pagoNoAto && <div className="w-2 h-2 bg-white rounded-full" />}
-                        </div>
-                        <span className="text-[10px] font-black uppercase tracking-wider text-white">💵 Pago no Ato</span>
-                      </div>
-                      <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-md ${pagoNoAto ? 'bg-emerald-400 text-white' : 'bg-white/10 text-slate-400'}`}>
-                        {pagoNoAto ? 'ATIVADO → Entrará no Caixa' : 'PRAZO'}
-                      </span>
-                    </button>
-                    {pagoNoAto && (
-                      <div className="mt-3 flex gap-2">
-                        {(['PIX', 'DINHEIRO', 'CARTAO'] as const).map(m => (
-                          <button
-                            key={m}
-                            onClick={() => setPagoMetodo(m)}
-                            className={`flex-1 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
-                              pagoMetodo === m ? 'bg-emerald-400 text-white shadow-sm' : 'bg-white/10 text-slate-300 hover:bg-white/20'
-                            }`}
-                          >
-                            {m === 'PIX' ? '⚡ PIX' : m === 'DINHEIRO' ? '💵 Dinheiro' : '💳 Cartão'}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
                   <button
                     onClick={handleConfirm}
                     disabled={selectedItems.length === 0 || !selectedClient || pricePerKg <= 0}
-                    className={`w-full py-4 rounded-xl text-white font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 transition-all disabled:opacity-20 active:scale-95 shadow-xl ${
-                      pagoNoAto
-                        ? 'bg-emerald-500 hover:bg-emerald-400 shadow-emerald-500/30'
-                        : 'bg-blue-600 hover:bg-white hover:text-slate-900 shadow-blue-500/20'
-                    }`}
+                    className="w-full py-4 bg-blue-600 rounded-xl text-white font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-white hover:text-slate-900 transition-all disabled:opacity-20 active:scale-95 shadow-xl shadow-blue-500/20"
                   >
-                    <ShieldCheck size={20} />
-                    {pagoNoAto ? `✅ Confirmar + Receber ${pagoMetodo}` : 'Confirmar Entrega [FIADO]'}
+                    <ShieldCheck size={20} /> Confirmar Entrega [THIAGO 704]
                   </button>
 
                   <button

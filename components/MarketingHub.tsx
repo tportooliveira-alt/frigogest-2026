@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { AppState, Client, StockItem, Batch } from '../types';
-import { Bot, Megaphone, Target, MessageCircle, Gift, TrendingUp, AlertTriangle, Search, Filter, Phone, Star, Settings, CheckCircle2, Instagram, Link, PlayCircle, BookOpen, Video, QrCode, Sparkles, Wand2, ArrowRight, Zap, Plus, Contact, FileText, Grid } from 'lucide-react';
+import { Bot, Megaphone, Target, MessageCircle, Gift, TrendingUp, AlertTriangle, Search, Filter, Phone, Star, Settings, CheckCircle2, Instagram, Link, PlayCircle, BookOpen, Video, QrCode, Sparkles, Wand2, ArrowRight, Zap, Plus, Contact, FileText, Grid, Image, Download, Loader2, Paintbrush, RefreshCw } from 'lucide-react';
+import { GoogleGenAI } from '@google/genai';
 
 interface MarketingHubProps {
     data: AppState;
@@ -8,6 +9,32 @@ interface MarketingHubProps {
 
 const MarketingHub: React.FC<MarketingHubProps> = ({ data }) => {
     const [activeTab, setActiveTab] = useState<'campaigns' | 'clients' | 'supplier-vip' | 'stitch' | 'academy' | 'studio'>('studio');
+    const [imagenPrompt, setImagenPrompt] = useState('');
+    const [imagenLoading, setImagenLoading] = useState(false);
+    const [generatedImages, setGeneratedImages] = useState<{ url: string; prompt: string; ts: Date }[]>([]);
+    const [imagenError, setImagenError] = useState('');
+    const IMAGEN_TEMPLATES = [
+        { label: '🥩 Promo Carne', prompt: 'Professional food photography of premium Brazilian beef cuts beautifully arranged on dark wooden board, warm lighting, appetizing' },
+        { label: '📦 Kit Churrasco', prompt: 'BBQ kit: premium beef cuts, charcoal, chimichurri in rustic crate, top-down view, professional' },
+        { label: '📱 Banner WhatsApp', prompt: 'Clean horizontal banner for Brazilian meat distributor, bold red black, premium feel, minimalist' },
+        { label: '🏪 Post Instagram', prompt: 'Square Instagram post: juicy grilled steak on cast iron with smoke, food photography, vibrant' },
+        { label: '🎉 Natal/Festas', prompt: 'Christmas promo for meat company: premium beef basket with red ribbons, festive, elegant' },
+        { label: '📋 Catalogo Cortes', prompt: 'Professional catalog showing Brazilian beef cuts labeled: Picanha, Alcatra, Patinho, Acem, Costela' },
+    ];
+    const generateImage = useCallback(async (prompt: string) => {
+        const key = (import.meta as any).env.VITE_AI_API_KEY as string || '';
+        if (!key) { setImagenError('Chave Gemini nao configurada'); return; }
+        if (!prompt.trim()) { setImagenError('Digite um prompt'); return; }
+        setImagenLoading(true); setImagenError('');
+        try {
+            const ai = new GoogleGenAI({ apiKey: key });
+            const r = await ai.models.generateContent({ model: 'gemini-2.0-flash-exp', contents: { parts: [{ text: `Generate image: ${prompt}. High quality, professional, marketing.` }] }, config: { responseModalities: ['TEXT', 'IMAGE'] as any } });
+            const parts = r.candidates?.[0]?.content?.parts || [];
+            let found = false;
+            for (const p of parts) { if ((p as any).inlineData) { const { mimeType, data: b64 } = (p as any).inlineData; setGeneratedImages(prev => [{ url: `data:${mimeType};base64,${b64}`, prompt, ts: new Date() }, ...prev].slice(0, 12)); found = true; break; } }
+            if (!found) setImagenError('IA nao gerou imagem. Tente reformular.');
+        } catch (e: any) { setImagenError(`Erro: ${e.message}`); } finally { setImagenLoading(false); }
+    }, []);
 
     // ============================================
     // LOGIC: AI Data Processing (The "Isabela" Brain)
@@ -447,40 +474,88 @@ const MarketingHub: React.FC<MarketingHubProps> = ({ data }) => {
                 </div>
             </div>
 
-            {/* Video Generation Card */}
+            {/* GEMINI IMAGEN - Gerador de Artes IA */}
             <div className="mb-8">
                 <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-slate-500 font-bold uppercase tracking-widest text-xs">Geração de Vídeos IA</h3>
-                    <span className="bg-[#e11d48] text-white text-[9px] font-black px-3 py-1 rounded-full tracking-widest uppercase">Pro Live</span>
+                    <h3 className="text-slate-500 font-bold uppercase tracking-widest text-xs">Gerador de Artes IA</h3>
+                    <span className="bg-gradient-to-r from-violet-600 to-fuchsia-500 text-white text-[9px] font-black px-3 py-1 rounded-full tracking-widest uppercase shadow-lg shadow-violet-500/30">Gemini Imagen</span>
                 </div>
 
-                <div className="bg-white rounded-3xl p-6 shadow-[0_10px_40px_rgba(225,29,72,0.1)] border border-rose-50 relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-rose-400 to-[#e11d48]" />
-
-                    <div className="flex justify-between items-start mb-6">
+                <div className="bg-white rounded-3xl p-6 shadow-[0_10px_40px_rgba(139,92,246,0.12)] border border-violet-50 relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-violet-400 via-fuchsia-500 to-rose-500" />
+                    <div className="flex justify-between items-start mb-4">
                         <div>
-                            <h4 className="text-2xl font-black text-slate-900 tracking-tight leading-none mb-2">Criador Cinema</h4>
-                            <p className="text-slate-500 text-sm">Vídeos virais para seu frigorífico</p>
+                            <h4 className="text-xl font-black text-slate-900 tracking-tight leading-none mb-1 flex items-center gap-2">
+                                <Paintbrush size={18} className="text-violet-500" /> Arte Instantanea
+                            </h4>
+                            <p className="text-slate-400 text-xs">Crie imagens profissionais para marketing</p>
                         </div>
-                        <div className="w-12 h-12 rounded-2xl bg-rose-50 flex items-center justify-center">
-                            <Video size={20} className="text-[#e11d48]" />
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-100 to-fuchsia-100 flex items-center justify-center">
+                            <Image size={18} className="text-violet-600" />
                         </div>
                     </div>
 
-                    <div className="flex justify-between gap-3">
-                        <button className="flex-1 flex flex-col items-center justify-center py-4 bg-slate-50 rounded-2xl hover:bg-slate-100 transition-colors">
-                            <MessageCircle size={20} className="text-[#e11d48] mb-2" />
-                            <span className="text-[9px] font-black text-slate-700 tracking-widest uppercase">WhatsApp</span>
-                        </button>
-                        <button className="flex-1 flex flex-col items-center justify-center py-4 bg-slate-50 rounded-2xl hover:bg-slate-100 transition-colors">
-                            <Instagram size={20} className="text-[#e11d48] mb-2" />
-                            <span className="text-[9px] font-black text-slate-700 tracking-widest uppercase">Social</span>
-                        </button>
-                        <button className="flex-1 flex flex-col items-center justify-center py-4 bg-[#e11d48] rounded-2xl hover:bg-rose-700 transition-colors shadow-lg shadow-rose-500/30">
-                            <Video size={20} className="text-white mb-2" />
-                            <span className="text-[9px] font-black text-white tracking-widest uppercase">Criar IA</span>
+                    {/* Templates */}
+                    <div className="flex flex-wrap gap-2 mb-4">
+                        {IMAGEN_TEMPLATES.map((t, i) => (
+                            <button key={i} onClick={() => { setImagenPrompt(t.prompt); generateImage(t.prompt); }}
+                                className="px-3 py-1.5 bg-slate-50 hover:bg-violet-50 border border-slate-200 hover:border-violet-300 rounded-full text-[10px] font-bold text-slate-600 hover:text-violet-700 transition-all">
+                                {t.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Prompt Input */}
+                    <div className="flex gap-2 mb-4">
+                        <input value={imagenPrompt} onChange={e => setImagenPrompt(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && generateImage(imagenPrompt)}
+                            placeholder="Descreva a imagem que deseja criar..."
+                            className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm text-slate-700 placeholder:text-slate-300 focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100" />
+                        <button onClick={() => generateImage(imagenPrompt)} disabled={imagenLoading}
+                            className="px-5 py-3 bg-gradient-to-r from-violet-600 to-fuchsia-500 text-white font-black text-xs uppercase tracking-widest rounded-2xl hover:shadow-lg hover:shadow-violet-500/30 transition-all disabled:opacity-50 flex items-center gap-2">
+                            {imagenLoading ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
+                            {imagenLoading ? 'Criando...' : 'Gerar'}
                         </button>
                     </div>
+
+                    {/* Error */}
+                    {imagenError && <div className="mb-3 px-4 py-2 bg-red-50 border border-red-200 rounded-xl text-red-600 text-xs font-bold">{imagenError}</div>}
+
+                    {/* Preview */}
+                    {generatedImages.length > 0 && (
+                        <div className="mb-4">
+                            <div className="relative rounded-2xl overflow-hidden border border-violet-100 shadow-lg">
+                                <img src={generatedImages[0].url} alt="Arte gerada" className="w-full object-cover" />
+                                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4">
+                                    <p className="text-white text-[10px] font-bold truncate mb-2">{generatedImages[0].prompt}</p>
+                                    <div className="flex gap-2">
+                                        <a href={generatedImages[0].url} download={`arte-${Date.now()}.png`}
+                                            className="flex items-center gap-1 px-3 py-1.5 bg-white/20 backdrop-blur-sm rounded-full text-white text-[9px] font-black uppercase tracking-widest hover:bg-white/30 transition-all">
+                                            <Download size={12} /> Baixar
+                                        </a>
+                                        <button onClick={() => generateImage(imagenPrompt)}
+                                            className="flex items-center gap-1 px-3 py-1.5 bg-violet-500/50 backdrop-blur-sm rounded-full text-white text-[9px] font-black uppercase tracking-widest hover:bg-violet-500/70 transition-all">
+                                            <RefreshCw size={12} /> Nova
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* History Grid */}
+                    {generatedImages.length > 1 && (
+                        <div>
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Historico ({generatedImages.length})</p>
+                            <div className="grid grid-cols-3 gap-2">
+                                {generatedImages.slice(1, 7).map((img, i) => (
+                                    <div key={i} className="aspect-square rounded-xl overflow-hidden border border-slate-100 cursor-pointer hover:shadow-md transition-all">
+                                        <img src={img.url} alt="" className="w-full h-full object-cover" />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 
