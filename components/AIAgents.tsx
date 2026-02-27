@@ -34,8 +34,26 @@ const buildCascadeProviders = (): CascadeProvider[] => {
     const geminiKey = (import.meta as any).env.VITE_AI_API_KEY as string || '';
     const groqKey = (import.meta as any).env.VITE_GROQ_API_KEY as string || '';
     const cerebrasKey = (import.meta as any).env.VITE_CEREBRAS_API_KEY as string || '';
+    const openrouterKey = (import.meta as any).env.VITE_OPENROUTER_API_KEY as string || '';
+    const togetherKey = (import.meta as any).env.VITE_TOGETHER_API_KEY as string || '';
+    const mistralKey = (import.meta as any).env.VITE_MISTRAL_API_KEY as string || '';
 
-    // 1. GEMINI (primário)
+    // Helper para chamadas OpenAI-compatible
+    const openAICompatible = (name: string, url: string, key: string, model: string): CascadeProvider => ({
+        name,
+        call: async (prompt: string) => {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+                body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], max_tokens: 2048 }),
+            });
+            if (!res.ok) throw new Error(`${name} ${res.status}`);
+            const data = await res.json();
+            return data.choices?.[0]?.message?.content || '';
+        },
+    });
+
+    // 1. GEMINI (primário — Google)
     if (geminiKey) {
         providers.push({
             name: 'Gemini',
@@ -52,54 +70,61 @@ const buildCascadeProviders = (): CascadeProvider[] => {
         });
     }
 
-    // 2. GROQ (fallback 1 — Llama 3.3 70B)
+    // 2. GROQ (fallback 1 — Llama 3.3 70B, ultra-rápido)
     if (groqKey) {
-        providers.push({
-            name: 'Groq',
-            call: async (prompt: string) => {
-                const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${groqKey}` },
-                    body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 2048 }),
-                });
-                if (!res.ok) throw new Error(`Groq ${res.status}`);
-                const data = await res.json();
-                return data.choices?.[0]?.message?.content || '';
-            },
-        });
+        providers.push(openAICompatible('Groq', 'https://api.groq.com/openai/v1/chat/completions', groqKey, 'llama-3.3-70b-versatile'));
     }
 
-    // 3. CEREBRAS (fallback 2 — Llama 3.3 70B)
+    // 3. CEREBRAS (fallback 2 — Llama 3.3 70B, inferência rápida)
     if (cerebrasKey) {
-        providers.push({
-            name: 'Cerebras',
-            call: async (prompt: string) => {
-                const res = await fetch('https://api.cerebras.ai/v1/chat/completions', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cerebrasKey}` },
-                    body: JSON.stringify({ model: 'llama-3.3-70b', messages: [{ role: 'user', content: prompt }], max_tokens: 2048 }),
-                });
-                if (!res.ok) throw new Error(`Cerebras ${res.status}`);
-                const data = await res.json();
-                return data.choices?.[0]?.message?.content || '';
-            },
-        });
+        providers.push(openAICompatible('Cerebras', 'https://api.cerebras.ai/v1/chat/completions', cerebrasKey, 'llama3.1-8b'));
+    }
+
+    // 4. OPENROUTER (fallback 3 — acesso a múltiplos modelos, escolhe o melhor gratuito)
+    if (openrouterKey) {
+        providers.push(openAICompatible('OpenRouter', 'https://openrouter.ai/api/v1/chat/completions', openrouterKey, 'meta-llama/llama-3.3-70b-instruct:free'));
+    }
+
+    // 5. TOGETHER AI (fallback 4 — Llama 3.3 70B Turbo)
+    if (togetherKey) {
+        providers.push(openAICompatible('Together', 'https://api.together.xyz/v1/chat/completions', togetherKey, 'meta-llama/Llama-3.3-70B-Instruct-Turbo'));
+    }
+
+    // 6. MISTRAL AI (fallback 5 — Mistral Small, europeu)
+    if (mistralKey) {
+        providers.push(openAICompatible('Mistral', 'https://api.mistral.ai/v1/chat/completions', mistralKey, 'mistral-small-latest'));
     }
 
     return providers;
 };
 
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 const runCascade = async (prompt: string): Promise<{ text: string; provider: string }> => {
     const providers = buildCascadeProviders();
-    if (providers.length === 0) throw new Error('Nenhuma API Key configurada (VITE_AI_API_KEY, VITE_GROQ_API_KEY, VITE_CEREBRAS_API_KEY)');
+    if (providers.length === 0) throw new Error('Nenhuma API Key configurada. Adicione pelo menos uma: VITE_AI_API_KEY, VITE_GROQ_API_KEY, VITE_CEREBRAS_API_KEY, VITE_OPENROUTER_API_KEY, VITE_TOGETHER_API_KEY, VITE_MISTRAL_API_KEY');
     const errors: string[] = [];
     for (const provider of providers) {
         try {
             const text = await provider.call(prompt);
             if (text) return { text, provider: provider.name };
         } catch (err: any) {
-            errors.push(`${provider.name}: ${err.message}`);
-            console.warn(`[CASCADE] ${provider.name} falhou:`, err.message);
+            const is429 = err.message?.includes('429');
+            // Se for rate limit (429), espera 25s e tenta de novo UMA vez
+            if (is429) {
+                console.warn(`[CASCADE] ${provider.name} rate limited (429). Aguardando 25s...`);
+                await delay(25000);
+                try {
+                    const retryText = await provider.call(prompt);
+                    if (retryText) return { text: retryText, provider: `${provider.name} (retry)` };
+                } catch (retryErr: any) {
+                    errors.push(`${provider.name} (retry): ${retryErr.message}`);
+                    console.warn(`[CASCADE] ${provider.name} retry falhou:`, retryErr.message);
+                }
+            } else {
+                errors.push(`${provider.name}: ${err.message}`);
+                console.warn(`[CASCADE] ${provider.name} falhou:`, err.message);
+            }
         }
     }
     throw new Error(`Todas as IAs falharam:\n${errors.join('\n')}`);
@@ -381,7 +406,7 @@ const AIAgents: React.FC<AIAgentsProps> = ({
     const [debateRunning, setDebateRunning] = useState(false);
     // FASE 5: WhatsApp Commerce
     const [selectedWaTemplate, setSelectedWaTemplate] = useState<TemplateType | null>(null);
-    const [selectedWaClient, setSelectedWaClient] = useState<string>('');  
+    const [selectedWaClient, setSelectedWaClient] = useState<string>('');
     const [waPreview, setWaPreview] = useState<string>('');
     // FASE 6: Compliance & DRE
     const [drePeriodo, setDrePeriodo] = useState<'SEMANA' | 'MES' | 'TOTAL'>('MES');
@@ -614,7 +639,7 @@ const AIAgents: React.FC<AIAgentsProps> = ({
             }
             // Se não tem peso vivo: não calcula rendimento (não dá para calcular sem essa informação)
         });
-        
+
         // ── SEU ANTÔNIO: Vision Audit Revision Needed ──
         batches.filter(b => b.vision_audit_status === 'REVISAO').forEach(b => {
             alerts.push({
@@ -713,7 +738,7 @@ const AIAgents: React.FC<AIAgentsProps> = ({
         // ── ISABELA (MARKETING 2026): ABM, Escassez, Churn, Growth ──
         const msDay = 86400000;
         const validSalesForMkt = sales.filter(s => s.status_pagamento !== 'ESTORNADO');
-        
+
         // ABM: Clientes esfriando (30-60d sem compra)
         clients.forEach(c => {
             const cs = validSalesForMkt.filter(s => s.id_cliente === c.id_ferro);
@@ -738,7 +763,7 @@ const AIAgents: React.FC<AIAgentsProps> = ({
                 }
             }
         });
-        
+
         // Escassez: Estoque velho = campanha urgente
         const estoqueVelho = stock.filter(s => s.status === 'DISPONIVEL' && Math.floor((now.getTime() - new Date(s.data_entrada).getTime()) / msDay) > 6);
         if (estoqueVelho.length > 2) {
@@ -749,7 +774,7 @@ const AIAgents: React.FC<AIAgentsProps> = ({
                 timestamp: now.toISOString(), status: 'NOVO'
             });
         }
-        
+
         // Desequilíbrio: Excesso de dianteiro vs traseiro
         const dianteirosD = stock.filter(s => s.status === 'DISPONIVEL' && s.tipo === 2);
         const traseirosD = stock.filter(s => s.status === 'DISPONIVEL' && s.tipo === 3);
@@ -761,7 +786,7 @@ const AIAgents: React.FC<AIAgentsProps> = ({
                 timestamp: now.toISOString(), status: 'NOVO'
             });
         }
-        
+
         // Gifting VIPs
         const topClients = clients.map(c => ({
             ...c,
@@ -1155,7 +1180,7 @@ ${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}
                     const revenue30d = sales30d.reduce((s, v) => s + (v.peso_real_saida * v.preco_venda_kg), 0);
                     const revenue7d = sales7d.reduce((s, v) => s + (v.peso_real_saida * v.preco_venda_kg), 0);
                     const kg30d = sales30d.reduce((s, v) => s + v.peso_real_saida, 0);
-                    
+
                     // RFM SEGMENTATION
                     const clientRFM = clients.filter(c => c.status !== 'INATIVO').map(c => {
                         const cs = validSales.filter(s => s.id_cliente === c.id_ferro);
@@ -1171,16 +1196,16 @@ ${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}
                     const emRisco = clientRFM.filter(c => c.segmento === 'EM_RISCO');
                     const perdidos = clientRFM.filter(c => c.segmento === 'PERDIDO');
                     const nuncaComprou = clientRFM.filter(c => c.segmento === 'NUNCA_COMPROU');
-                    
+
                     // ESTOQUE PARA CAMPANHAS DE ESCASSEZ
                     const estoqueVelho = estoqueDisp.filter(s => Math.floor((now.getTime() - new Date(s.data_entrada).getTime()) / msDay) > 6);
                     const dianteirosDisp = estoqueDisp.filter(s => s.tipo === 2);
                     const traseirosDisp = estoqueDisp.filter(s => s.tipo === 3);
                     const inteirosDisp = estoqueDisp.filter(s => s.tipo === 1);
-                    
+
                     // LTV (Lifetime Value) por segmento
                     const ltvVip = vips.length > 0 ? vips.reduce((s, c) => s + c.valor, 0) / vips.length : 0;
-                    
+
                     return `
 ## SNAPSHOT GROWTH MARKETING 2026 — FRIGOGEST (${now.toLocaleDateString('pt-BR')})
 
@@ -1521,7 +1546,7 @@ Organize em: 🤝 SAÚDE DO CLIENTE (NPS), 🥩 QUALIDADE PERCEBIDA, 🚚 FEEDBA
             try {
                 const detected = parseActionsFromResponse(text, clients);
                 setDetectedActions(detected);
-            } catch(e) { setDetectedActions([]); }
+            } catch (e) { setDetectedActions([]); }
 
             setTimeout(() => agentResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
 
@@ -1818,7 +1843,7 @@ Responda em português BR, direto e prático.Use emojis.Cite números específic
                 try {
                     const mems = await getAgentMemories(agent.id as any, 3);
                     memBlock = formatMemoriesForPrompt(mems);
-                } catch(e) {}
+                } catch (e) { }
                 const promptWithMemory = miniPrompt + memBlock;
 
                 const { text, provider } = await runCascade(promptWithMemory);
@@ -1830,7 +1855,7 @@ Responda em português BR, direto e prático.Use emojis.Cite números específic
                     const memData = extractInsightsFromResponse(text, agent.id as any, provider, liveAlerts.filter(a => a.agent === agent.id).length, 'REUNIAO');
                     await saveAgentMemory(memData);
                     setMemoryCounts(prev => ({ ...prev, [agent.id]: (prev[agent.id] || 0) + 1 }));
-                } catch(e) {}
+                } catch (e) { }
             } catch (err: any) {
                 setAgentDiagnostics(prev => ({ ...prev, [agent.id]: { text: `⚠️ Erro: ${err.message} `, provider: 'erro', timestamp: new Date() } }));
             }
@@ -1905,9 +1930,9 @@ Responda em português BR. Máximo 500 palavras.`;
                     const memData = extractInsightsFromResponse(text, 'ADMINISTRATIVO', provider, liveAlerts.length, 'REUNIAO');
                     memData.summary = 'REUNIÃO DE DIRETORIA - Debate entre ' + allDiags.length + ' diretores com votação';
                     await saveAgentMemory(memData);
-                } catch(e) {}
+                } catch (e) { }
             }
-        } catch(e) {
+        } catch (e) {
             console.warn('[Debate] Falha na síntese:', e);
         } finally {
             setDebateRunning(false);
@@ -2364,9 +2389,8 @@ Regras:
                                     <div className="flex gap-1">
                                         {(['SEMANA', 'MES', 'TOTAL'] as const).map(p => (
                                             <button key={p} onClick={() => setDrePeriodo(p)}
-                                                className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
-                                                    drePeriodo === p ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
-                                                }`}>
+                                                className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${drePeriodo === p ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                                                    }`}>
                                                 {p === 'SEMANA' ? '7d' : p === 'MES' ? '30d' : 'Total'}
                                             </button>
                                         ))}
@@ -2391,7 +2415,7 @@ Regras:
                                 {/* DRE Detalhada */}
                                 <div className="bg-slate-900 rounded-xl p-4 mb-5 overflow-x-auto">
                                     <pre className="text-[10px] text-emerald-400 font-mono leading-relaxed whitespace-pre-wrap">
-{formatDREText(dreReport)}
+                                        {formatDREText(dreReport)}
                                     </pre>
                                     <button onClick={() => { navigator.clipboard.writeText(formatDREText(dreReport)); alert('📋 DRE copiada!'); }}
                                         className="mt-3 px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 text-[8px] font-black uppercase tracking-widest hover:bg-emerald-500/30 transition-all">
@@ -2427,9 +2451,8 @@ Regras:
                                                 <div key={item.id} className="flex items-center gap-2 text-[9px]">
                                                     <span>{item.icon}</span>
                                                     <span className="font-bold text-slate-700 flex-1">{item.item}</span>
-                                                    <span className={`text-[7px] font-black px-2 py-0.5 rounded-full ${
-                                                        item.obrigatorio ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'
-                                                    }`}>{item.obrigatorio ? 'OBRIG.' : 'REC.'}</span>
+                                                    <span className={`text-[7px] font-black px-2 py-0.5 rounded-full ${item.obrigatorio ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'
+                                                        }`}>{item.obrigatorio ? 'OBRIG.' : 'REC.'}</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -2458,11 +2481,10 @@ Regras:
                                                 setSelectedWaTemplate(t.id);
                                                 setWaPreview('');
                                             }}
-                                            className={`px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all ${
-                                                selectedWaTemplate === t.id
-                                                    ? `bg-gradient-to-r ${t.color} text-white shadow-lg scale-[1.02]`
-                                                    : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
-                                            }`}
+                                            className={`px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all ${selectedWaTemplate === t.id
+                                                ? `bg-gradient-to-r ${t.color} text-white shadow-lg scale-[1.02]`
+                                                : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
+                                                }`}
                                         >
                                             <span>{t.icon}</span> {t.name}
                                         </button>
@@ -2553,7 +2575,7 @@ Regras:
                                         <div>
                                             <h3 className="text-sm font-black text-yellow-300 uppercase tracking-widest">🤝 Síntese Executiva — Multi-Agent Debate</h3>
                                             <p className="text-[9px] font-bold text-amber-500">
-                                                Dona Clara analisou {Object.keys(agentDiagnostics).length} relatórios • via {debateSynthesis.provider} • {debateSynthesis.timestamp.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'})}
+                                                Dona Clara analisou {Object.keys(agentDiagnostics).length} relatórios • via {debateSynthesis.provider} • {debateSynthesis.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                                             </p>
                                         </div>
                                     </div>
@@ -2945,7 +2967,7 @@ Regras:
                                             </div>
                                             {actionLog.length > 0 && (
                                                 <div className="mt-3 pt-3 border-t border-white/5">
-                                                    <p className="text-[9px] text-slate-500 font-bold">Histórico: {actionLog.slice(-3).map(l => `${l.action} (às ${l.time.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'})})`).join(' • ')}</p>
+                                                    <p className="text-[9px] text-slate-500 font-bold">Histórico: {actionLog.slice(-3).map(l => `${l.action} (às ${l.time.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})`).join(' • ')}</p>
                                                 </div>
                                             )}
                                         </div>

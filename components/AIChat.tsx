@@ -491,6 +491,30 @@ Responda a última mensagem do DONO de forma natural e útil.`;
     };
 
     // ═══ MEETING MODE ═══
+    const [meetingAgents, setMeetingAgents] = useState<Set<AgentType>>(new Set(['ADMINISTRATIVO']));
+
+    const toggleMeetingAgent = (agentId: AgentType) => {
+        setMeetingAgents(prev => {
+            const next = new Set(prev);
+            if (next.has(agentId)) {
+                // Dona Clara é obrigatória
+                if (agentId === 'ADMINISTRATIVO') return next;
+                next.delete(agentId);
+            } else {
+                next.add(agentId);
+            }
+            return next;
+        });
+    };
+
+    const selectAllMeetingAgents = () => {
+        setMeetingAgents(new Set(AGENTS.map(a => a.id)));
+    };
+
+    const selectOnlyClara = () => {
+        setMeetingAgents(new Set(['ADMINISTRATIVO']));
+    };
+
     const startMeeting = async () => {
         if (!inputText.trim() || meetingLoading) return;
         const topic = inputText.trim();
@@ -505,19 +529,25 @@ Responda a última mensagem do DONO de forma natural e útil.`;
         };
         setMeetingMessages(prev => [...prev, userMsg]);
 
-        // Each agent responds in sequence
-        for (const agent of AGENTS) {
+        // Só chama os agentes selecionados (default: Dona Clara)
+        const activeAgents = AGENTS.filter(a => meetingAgents.has(a.id));
+
+        for (const agent of activeAgents) {
             try {
+                const isClara = agent.id === 'ADMINISTRATIVO';
                 const meetingPrompt = `Você é ${agent.name}, ${agent.role} do FrigoGest.
-Você está numa REUNIÃO com o dono e os outros 7 gerentes. O assunto é:
+${isClara && activeAgents.length === 1
+                        ? `Você é a ADMINISTRADORA-GERAL respondendo SOZINHA ao dono. Considere TODOS os aspectos do negócio: produção, vendas, estoque, financeiro, clientes. Dê uma visão 360° completa.`
+                        : `Você está numa REUNIÃO com o dono${activeAgents.length > 1 ? ` e ${activeAgents.length - 1} outro(s) gerente(s)` : ''}. O assunto é:`
+                    }
 
 "${topic}"
 
 ${dataSnapshot}
 
-Dê sua opinião do ponto de vista da sua especialidade em NO MÁXIMO 150 palavras.
+Dê sua opinião do ponto de vista da sua especialidade em NO MÁXIMO ${isClara && activeAgents.length === 1 ? '300' : '150'} palavras.
 Seja direto, prático, e fale como se estivesse numa mesa de reunião.
-Comece com seu ponto principal, não repita o que os outros provavelmente já disseram.`;
+Comece com seu ponto principal.`;
 
                 const { text, provider } = await runCascade(meetingPrompt);
 
@@ -740,15 +770,58 @@ Comece com seu ponto principal, não repita o que os outros provavelmente já di
                                 <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">
                                     <Users size={20} className="text-amber-600" />
                                 </div>
-                                <div>
+                                <div className="flex-1">
                                     <p className="text-sm font-black text-amber-800">Reunião de IA</p>
-                                    <p className="text-[10px] text-amber-600 font-bold">Todos os 8 gerentes discutem um tema</p>
+                                    <p className="text-[10px] text-amber-600 font-bold">
+                                        {meetingAgents.size === 1 ? '🧠 Dona Clara responde (economia de tokens)' : `${meetingAgents.size} gerente(s) selecionado(s)`}
+                                    </p>
                                 </div>
                                 {meetingLoading && (
                                     <div className="ml-auto flex items-center gap-2 text-amber-600">
                                         <Loader2 size={14} className="animate-spin" />
                                         <span className="text-xs font-bold">Em andamento...</span>
                                     </div>
+                                )}
+                            </div>
+
+                            {/* AGENT SELECTOR */}
+                            <div className="mt-3 space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest">Quem participa?</p>
+                                    <div className="flex gap-1">
+                                        <button onClick={selectOnlyClara} className={`px-2 py-1 rounded-lg text-[9px] font-black transition-all ${meetingAgents.size === 1 ? 'bg-amber-600 text-white' : 'bg-amber-100 text-amber-600 hover:bg-amber-200'}`}>
+                                            Só Dona Clara
+                                        </button>
+                                        <button onClick={selectAllMeetingAgents} className={`px-2 py-1 rounded-lg text-[9px] font-black transition-all ${meetingAgents.size === AGENTS.length ? 'bg-amber-600 text-white' : 'bg-amber-100 text-amber-600 hover:bg-amber-200'}`}>
+                                            Todos ({AGENTS.length})
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="flex flex-wrap gap-1">
+                                    {AGENTS.map(agent => {
+                                        const Icon = agent.icon;
+                                        const isSelected = meetingAgents.has(agent.id);
+                                        const isClara = agent.id === 'ADMINISTRATIVO';
+                                        return (
+                                            <button
+                                                key={agent.id}
+                                                onClick={() => toggleMeetingAgent(agent.id)}
+                                                disabled={meetingLoading}
+                                                className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-black transition-all ${isSelected
+                                                        ? `${agent.bgColor} ${agent.color} ${agent.borderColor} border shadow-sm`
+                                                        : 'bg-white text-slate-300 border border-slate-100 hover:border-slate-300'
+                                                    } ${isClara ? 'ring-1 ring-amber-300' : ''}`}
+                                                title={isClara ? 'Dona Clara sempre participa' : `Toggle ${agent.name}`}
+                                            >
+                                                <Icon size={10} />
+                                                {agent.name.split(' ').pop()}
+                                                {isClara && ' ★'}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                {meetingAgents.size > 3 && (
+                                    <p className="text-[9px] text-amber-500 font-bold">⚡ {meetingAgents.size} agentes = {meetingAgents.size} chamadas de IA</p>
                                 )}
                             </div>
                         </div>
@@ -759,7 +832,11 @@ Comece com seu ponto principal, não repita o que os outros provavelmente já di
                                 <div className="flex flex-col items-center justify-center h-full text-center opacity-50">
                                     <Users size={48} className="text-amber-400 mb-4" />
                                     <p className="text-sm font-bold text-slate-500">Inicie uma reunião</p>
-                                    <p className="text-xs text-slate-400 mt-1">Digite um tema e todos os gerentes darão sua opinião</p>
+                                    <p className="text-xs text-slate-400 mt-1">
+                                        {meetingAgents.size === 1
+                                            ? 'Dona Clara responde sozinha — visão 360° com economia de tokens'
+                                            : `${meetingAgents.size} gerente(s) darão sua opinião`}
+                                    </p>
                                     <div className="mt-6 space-y-2 text-left max-w-sm">
                                         <p className="text-[10px] font-black text-slate-400 uppercase">Sugestões:</p>
                                         {[
