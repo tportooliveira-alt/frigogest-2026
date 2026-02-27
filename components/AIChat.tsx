@@ -12,76 +12,88 @@ import {
     Transaction, Supplier, Payable, ScheduledOrder
 } from '../types';
 
-// ═══ CASCADE (same as AIAgents) ═══
-interface CascadeProvider {
-    name: string;
-    call: (prompt: string) => Promise<string>;
-}
+// ═══ AI HIERARCHY — 4 Tiers (same as AIAgents) ═══
+type AITier = 'ESTAGIARIO' | 'FUNCIONARIO' | 'GERENTE' | 'MESTRA';
+interface CascadeProvider { name: string; tier: AITier; call: (prompt: string) => Promise<string>; }
 
-const buildCascadeProviders = (): CascadeProvider[] => {
+const AGENT_TIER_MAP: Record<string, AITier> = {
+    'ADMINISTRATIVO': 'MESTRA', 'PRODUCAO': 'FUNCIONARIO', 'COMERCIAL': 'GERENTE',
+    'AUDITOR': 'GERENTE', 'ESTOQUE': 'ESTAGIARIO', 'COMPRAS': 'FUNCIONARIO',
+    'MERCADO': 'GERENTE', 'ROBO_VENDAS': 'FUNCIONARIO', 'MARKETING': 'ESTAGIARIO', 'SATISFACAO': 'ESTAGIARIO',
+};
+
+const TIER_FALLBACK: Record<AITier, AITier[]> = {
+    'ESTAGIARIO': ['ESTAGIARIO', 'FUNCIONARIO', 'GERENTE', 'MESTRA'],
+    'FUNCIONARIO': ['FUNCIONARIO', 'ESTAGIARIO', 'GERENTE', 'MESTRA'],
+    'GERENTE': ['GERENTE', 'FUNCIONARIO', 'MESTRA', 'ESTAGIARIO'],
+    'MESTRA': ['MESTRA', 'GERENTE', 'FUNCIONARIO', 'ESTAGIARIO'],
+};
+
+const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+const buildAllProviders = (): CascadeProvider[] => {
     const providers: CascadeProvider[] = [];
     const geminiKey = (import.meta as any).env.VITE_AI_API_KEY as string || '';
     const groqKey = (import.meta as any).env.VITE_GROQ_API_KEY as string || '';
     const cerebrasKey = (import.meta as any).env.VITE_CEREBRAS_API_KEY as string || '';
+    const openrouterKey = (import.meta as any).env.VITE_OPENROUTER_API_KEY as string || '';
+    const togetherKey = (import.meta as any).env.VITE_TOGETHER_API_KEY as string || '';
+    const mistralKey = (import.meta as any).env.VITE_MISTRAL_API_KEY as string || '';
 
-    if (geminiKey) {
-        providers.push({
-            name: 'Gemini',
-            call: async (prompt: string) => {
-                const ai = new GoogleGenAI({ apiKey: geminiKey });
-                const res = await ai.models.generateContent({
-                    model: 'gemini-2.5-flash',
-                    contents: { parts: [{ text: prompt }] },
-                });
-                const text = res.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (!text) throw new Error('Gemini sem resposta');
-                return text;
-            },
-        });
-    }
-    if (groqKey) {
-        providers.push({
-            name: 'Groq',
-            call: async (prompt: string) => {
-                const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${groqKey}` },
-                    body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 2048 }),
-                });
-                if (!res.ok) throw new Error(`Groq ${res.status}`);
-                const data = await res.json();
-                return data.choices?.[0]?.message?.content || '';
-            },
-        });
-    }
-    if (cerebrasKey) {
-        providers.push({
-            name: 'Cerebras',
-            call: async (prompt: string) => {
-                const res = await fetch('https://api.cerebras.ai/v1/chat/completions', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cerebrasKey}` },
-                    body: JSON.stringify({ model: 'llama-3.3-70b', messages: [{ role: 'user', content: prompt }], max_tokens: 2048 }),
-                });
-                if (!res.ok) throw new Error(`Cerebras ${res.status}`);
-                const data = await res.json();
-                return data.choices?.[0]?.message?.content || '';
-            },
-        });
-    }
+    const oai = (name: string, tier: AITier, url: string, key: string, model: string): CascadeProvider => ({
+        name, tier, call: async (prompt: string) => {
+            const res = await fetch(url, {
+                method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+                body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], max_tokens: 2048 })
+            });
+            if (!res.ok) throw new Error(`${name} ${res.status}`);
+            const data = await res.json(); return data.choices?.[0]?.message?.content || '';
+        },
+    });
+
+    // MESTRA
+    if (geminiKey) providers.push({
+        name: 'Gemini Pro', tier: 'MESTRA', call: async (p) => {
+            const ai = new GoogleGenAI({ apiKey: geminiKey }); const r = await ai.models.generateContent({ model: 'gemini-2.5-pro', contents: { parts: [{ text: p }] } });
+            const t = r.candidates?.[0]?.content?.parts?.[0]?.text; if (!t) throw new Error('Gemini Pro vazio'); return t;
+        }
+    });
+    // GERENTE
+    if (geminiKey) providers.push({
+        name: 'Gemini Flash', tier: 'GERENTE', call: async (p) => {
+            const ai = new GoogleGenAI({ apiKey: geminiKey }); const r = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: { parts: [{ text: p }] } });
+            const t = r.candidates?.[0]?.content?.parts?.[0]?.text; if (!t) throw new Error('Gemini Flash vazio'); return t;
+        }
+    });
+    if (mistralKey) providers.push(oai('Mistral Large', 'GERENTE', 'https://api.mistral.ai/v1/chat/completions', mistralKey, 'mistral-large-latest'));
+    // FUNCIONÁRIO
+    if (groqKey) providers.push(oai('Groq 70B', 'FUNCIONARIO', 'https://api.groq.com/openai/v1/chat/completions', groqKey, 'llama-3.3-70b-versatile'));
+    if (togetherKey) providers.push(oai('Together 70B', 'FUNCIONARIO', 'https://api.together.xyz/v1/chat/completions', togetherKey, 'meta-llama/Llama-3.3-70B-Instruct-Turbo'));
+    if (openrouterKey) providers.push(oai('OpenRouter 70B', 'FUNCIONARIO', 'https://openrouter.ai/api/v1/chat/completions', openrouterKey, 'meta-llama/llama-3.3-70b-instruct:free'));
+    // ESTAGIÁRIO
+    if (cerebrasKey) providers.push(oai('Cerebras 8B', 'ESTAGIARIO', 'https://api.cerebras.ai/v1/chat/completions', cerebrasKey, 'llama3.1-8b'));
+    if (groqKey) providers.push(oai('Groq 8B', 'ESTAGIARIO', 'https://api.groq.com/openai/v1/chat/completions', groqKey, 'llama-3.1-8b-instant'));
+    if (mistralKey) providers.push(oai('Ministral 3B', 'ESTAGIARIO', 'https://api.mistral.ai/v1/chat/completions', mistralKey, 'ministral-3b-latest'));
+
     return providers;
 };
 
-const runCascade = async (prompt: string): Promise<{ text: string; provider: string }> => {
-    const providers = buildCascadeProviders();
-    if (!providers.length) throw new Error('Nenhuma chave de IA configurada.');
+const runCascade = async (prompt: string, agentId?: string): Promise<{ text: string; provider: string }> => {
+    const allProviders = buildAllProviders();
+    if (!allProviders.length) throw new Error('Nenhuma chave de IA configurada.');
+    const preferredTier: AITier = agentId ? (AGENT_TIER_MAP[agentId] || 'GERENTE') : 'GERENTE';
+    const sorted: CascadeProvider[] = [];
+    for (const tier of TIER_FALLBACK[preferredTier]) sorted.push(...allProviders.filter(p => p.tier === tier));
     const errors: string[] = [];
-    for (const p of providers) {
+    for (const p of sorted) {
         try {
             const text = await p.call(prompt);
-            return { text, provider: p.name };
+            if (text) { const label = p.tier === preferredTier ? '' : ` ↑${p.tier}`; return { text, provider: `${p.name}${label}` }; }
         } catch (e: any) {
-            errors.push(`${p.name}: ${e.message}`);
+            if (e.message?.includes('429')) {
+                await delay(25000);
+                try { const t = await p.call(prompt); if (t) return { text: t, provider: `${p.name} (retry)` }; } catch (re: any) { errors.push(`${p.name}: ${re.message}`); }
+            } else { errors.push(`${p.name}: ${e.message}`); }
         }
     }
     throw new Error(`Todas as IAs falharam: ${errors.join(' | ')}`);
@@ -448,7 +460,7 @@ ${contextPrompt}
 
 Responda a última mensagem do DONO de forma natural e útil.`;
 
-            const { text, provider } = await runCascade(fullPrompt);
+            const { text, provider } = await runCascade(fullPrompt, selectedAgent);
 
             const agentMsg: ChatMessage = {
                 id: `msg-${Date.now()}-resp`,
@@ -549,7 +561,7 @@ Dê sua opinião do ponto de vista da sua especialidade em NO MÁXIMO ${isClara 
 Seja direto, prático, e fale como se estivesse numa mesa de reunião.
 Comece com seu ponto principal.`;
 
-                const { text, provider } = await runCascade(meetingPrompt);
+                const { text, provider } = await runCascade(meetingPrompt, agent.id);
 
                 const agentMsg: ChatMessage = {
                     id: `meet-${Date.now()}-${agent.id}`,
@@ -808,8 +820,8 @@ Comece com seu ponto principal.`;
                                                 onClick={() => toggleMeetingAgent(agent.id)}
                                                 disabled={meetingLoading}
                                                 className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-black transition-all ${isSelected
-                                                        ? `${agent.bgColor} ${agent.color} ${agent.borderColor} border shadow-sm`
-                                                        : 'bg-white text-slate-300 border border-slate-100 hover:border-slate-300'
+                                                    ? `${agent.bgColor} ${agent.color} ${agent.borderColor} border shadow-sm`
+                                                    : 'bg-white text-slate-300 border border-slate-100 hover:border-slate-300'
                                                     } ${isClara ? 'ring-1 ring-amber-300' : ''}`}
                                                 title={isClara ? 'Dona Clara sempre participa' : `Toggle ${agent.name}`}
                                             >

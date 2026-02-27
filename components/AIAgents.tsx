@@ -20,17 +20,36 @@ import { generateDRE, formatDREText, calculateESGScore, COMPLIANCE_CHECKLIST, DR
 import { calcularPrecificacao, formatPrecificacaoForPrompt, PrecificacaoItem } from '../services/pricingEngine';
 import { calculateClientScores, formatRFMForPrompt, getClientTierSummary, ClientScore } from '../services/clientScoringService';
 
-// ═══ AI CASCADE — Gemini → Groq → Cerebras ═══
+// ═══ AI HIERARCHY — 4 Tiers: Estagiário → Funcionário → Gerente → Mestra ═══
+// Cada IA na sua melhor função!
+
+type AITier = 'ESTAGIARIO' | 'FUNCIONARIO' | 'GERENTE' | 'MESTRA';
+
 interface CascadeProvider {
     name: string;
+    tier: AITier;
     call: (prompt: string) => Promise<string>;
 }
 
-const buildCascadeProviders = (): CascadeProvider[] => {
+// Mapeamento: Agente → Tier (cada um com sua melhor função)
+const AGENT_TIER_MAP: Record<string, AITier> = {
+    'ADMINISTRATIVO': 'MESTRA',       // 🧠 Dona Clara — decisões estratégicas, visão 360°
+    'PRODUCAO': 'FUNCIONARIO',   // 🥩 Seu Antônio — cálculos de rendimento, matemática
+    'COMERCIAL': 'GERENTE',       // 🤝 Marcos — negociação, precificação, pesquisa mercado
+    'AUDITOR': 'GERENTE',       // ⚖️ Dra. Beatriz — compliance, detecção de anomalias
+    'ESTOQUE': 'ESTAGIARIO',    // 📦 Joaquim — FIFO/FEFO, alertas simples
+    'COMPRAS': 'FUNCIONARIO',   // 🛒 Roberto — TCO, comparação custos
+    'MERCADO': 'GERENTE',       // 📈 Ana — pesquisa internet, análise tendências
+    'ROBO_VENDAS': 'FUNCIONARIO',   // 🤖 Lucas — propostas, scripts, growth hacking
+    'MARKETING': 'ESTAGIARIO',    // ✨ Isabela — textos campanha, posts, templates
+    'SATISFACAO': 'ESTAGIARIO',    // 🌸 Camila — pesquisas satisfação, respostas padrão
+};
+
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const buildAllProviders = (): CascadeProvider[] => {
     const providers: CascadeProvider[] = [];
 
-    // Vite replaces import.meta.env.VITE_* statically at build time
-    // Must access EACH key directly — cannot use dynamic property access
     const geminiKey = (import.meta as any).env.VITE_AI_API_KEY as string || '';
     const groqKey = (import.meta as any).env.VITE_GROQ_API_KEY as string || '';
     const cerebrasKey = (import.meta as any).env.VITE_CEREBRAS_API_KEY as string || '';
@@ -38,9 +57,9 @@ const buildCascadeProviders = (): CascadeProvider[] => {
     const togetherKey = (import.meta as any).env.VITE_TOGETHER_API_KEY as string || '';
     const mistralKey = (import.meta as any).env.VITE_MISTRAL_API_KEY as string || '';
 
-    // Helper para chamadas OpenAI-compatible
-    const openAICompatible = (name: string, url: string, key: string, model: string): CascadeProvider => ({
-        name,
+    // Helper OpenAI-compatible
+    const oai = (name: string, tier: AITier, url: string, key: string, model: string): CascadeProvider => ({
+        name, tier,
         call: async (prompt: string) => {
             const res = await fetch(url, {
                 method: 'POST',
@@ -53,10 +72,27 @@ const buildCascadeProviders = (): CascadeProvider[] => {
         },
     });
 
-    // 1. GEMINI (primário — Google)
+    // ═══ TIER 🔴 MESTRA — Modelos premium, raciocínio avançado ═══
     if (geminiKey) {
         providers.push({
-            name: 'Gemini',
+            name: 'Gemini Pro', tier: 'MESTRA',
+            call: async (prompt: string) => {
+                const ai = new GoogleGenAI({ apiKey: geminiKey });
+                const res = await ai.models.generateContent({
+                    model: 'gemini-2.5-pro',
+                    contents: { parts: [{ text: prompt }] },
+                });
+                const text = res.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!text) throw new Error('Gemini Pro sem resposta');
+                return text;
+            },
+        });
+    }
+
+    // ═══ TIER 🟡 GERENTE — Modelos inteligentes, boa relação custo/benefício ═══
+    if (geminiKey) {
+        providers.push({
+            name: 'Gemini Flash', tier: 'GERENTE',
             call: async (prompt: string) => {
                 const ai = new GoogleGenAI({ apiKey: geminiKey });
                 const res = await ai.models.generateContent({
@@ -64,66 +100,88 @@ const buildCascadeProviders = (): CascadeProvider[] => {
                     contents: { parts: [{ text: prompt }] },
                 });
                 const text = res.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (!text) throw new Error('Gemini sem resposta');
+                if (!text) throw new Error('Gemini Flash sem resposta');
                 return text;
             },
         });
     }
-
-    // 2. GROQ (fallback 1 — Llama 3.3 70B, ultra-rápido)
-    if (groqKey) {
-        providers.push(openAICompatible('Groq', 'https://api.groq.com/openai/v1/chat/completions', groqKey, 'llama-3.3-70b-versatile'));
-    }
-
-    // 3. CEREBRAS (fallback 2 — Llama 3.3 70B, inferência rápida)
-    if (cerebrasKey) {
-        providers.push(openAICompatible('Cerebras', 'https://api.cerebras.ai/v1/chat/completions', cerebrasKey, 'llama3.1-8b'));
-    }
-
-    // 4. OPENROUTER (fallback 3 — acesso a múltiplos modelos, escolhe o melhor gratuito)
-    if (openrouterKey) {
-        providers.push(openAICompatible('OpenRouter', 'https://openrouter.ai/api/v1/chat/completions', openrouterKey, 'meta-llama/llama-3.3-70b-instruct:free'));
-    }
-
-    // 5. TOGETHER AI (fallback 4 — Llama 3.3 70B Turbo)
-    if (togetherKey) {
-        providers.push(openAICompatible('Together', 'https://api.together.xyz/v1/chat/completions', togetherKey, 'meta-llama/Llama-3.3-70B-Instruct-Turbo'));
-    }
-
-    // 6. MISTRAL AI (fallback 5 — Mistral Small, europeu)
     if (mistralKey) {
-        providers.push(openAICompatible('Mistral', 'https://api.mistral.ai/v1/chat/completions', mistralKey, 'mistral-small-latest'));
+        providers.push(oai('Mistral Large', 'GERENTE', 'https://api.mistral.ai/v1/chat/completions', mistralKey, 'mistral-large-latest'));
+    }
+
+    // ═══ TIER 🔵 FUNCIONÁRIO — Modelos 70B, bom raciocínio, custo médio ═══
+    if (groqKey) {
+        providers.push(oai('Groq 70B', 'FUNCIONARIO', 'https://api.groq.com/openai/v1/chat/completions', groqKey, 'llama-3.3-70b-versatile'));
+    }
+    if (togetherKey) {
+        providers.push(oai('Together 70B', 'FUNCIONARIO', 'https://api.together.xyz/v1/chat/completions', togetherKey, 'meta-llama/Llama-3.3-70B-Instruct-Turbo'));
+    }
+    if (openrouterKey) {
+        providers.push(oai('OpenRouter 70B', 'FUNCIONARIO', 'https://openrouter.ai/api/v1/chat/completions', openrouterKey, 'meta-llama/llama-3.3-70b-instruct:free'));
+    }
+
+    // ═══ TIER 🟢 ESTAGIÁRIO — Modelos 8B, ultra baratos, tarefas simples ═══
+    if (cerebrasKey) {
+        providers.push(oai('Cerebras 8B', 'ESTAGIARIO', 'https://api.cerebras.ai/v1/chat/completions', cerebrasKey, 'llama3.1-8b'));
+    }
+    if (groqKey) {
+        providers.push(oai('Groq 8B', 'ESTAGIARIO', 'https://api.groq.com/openai/v1/chat/completions', groqKey, 'llama-3.1-8b-instant'));
+    }
+    if (mistralKey) {
+        providers.push(oai('Ministral 3B', 'ESTAGIARIO', 'https://api.mistral.ai/v1/chat/completions', mistralKey, 'ministral-3b-latest'));
+    }
+    if (togetherKey) {
+        providers.push(oai('Together 8B', 'ESTAGIARIO', 'https://api.together.xyz/v1/chat/completions', togetherKey, 'meta-llama/Llama-3.2-3B-Instruct-Turbo'));
     }
 
     return providers;
 };
 
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+// Ordem de fallback entre tiers (quando o tier preferido falha, sobe ou desce)
+const TIER_FALLBACK: Record<AITier, AITier[]> = {
+    'ESTAGIARIO': ['ESTAGIARIO', 'FUNCIONARIO', 'GERENTE', 'MESTRA'],
+    'FUNCIONARIO': ['FUNCIONARIO', 'ESTAGIARIO', 'GERENTE', 'MESTRA'],
+    'GERENTE': ['GERENTE', 'FUNCIONARIO', 'MESTRA', 'ESTAGIARIO'],
+    'MESTRA': ['MESTRA', 'GERENTE', 'FUNCIONARIO', 'ESTAGIARIO'],
+};
 
-const runCascade = async (prompt: string): Promise<{ text: string; provider: string }> => {
-    const providers = buildCascadeProviders();
-    if (providers.length === 0) throw new Error('Nenhuma API Key configurada. Adicione pelo menos uma: VITE_AI_API_KEY, VITE_GROQ_API_KEY, VITE_CEREBRAS_API_KEY, VITE_OPENROUTER_API_KEY, VITE_TOGETHER_API_KEY, VITE_MISTRAL_API_KEY');
+// ═══ MAIN: runCascade com hierarquia ═══
+const runCascade = async (prompt: string, agentId?: string): Promise<{ text: string; provider: string }> => {
+    const allProviders = buildAllProviders();
+    if (allProviders.length === 0) throw new Error('Nenhuma API Key configurada. Adicione pelo menos uma no .env');
+
+    // Determina o tier do agente (default: GERENTE para compatibilidade)
+    const preferredTier: AITier = agentId ? (AGENT_TIER_MAP[agentId] || 'GERENTE') : 'GERENTE';
+    const tierOrder = TIER_FALLBACK[preferredTier];
+
+    // Ordena providers pelo tier preferido (primeiro os do tier certo, depois fallbacks)
+    const sortedProviders: CascadeProvider[] = [];
+    for (const tier of tierOrder) {
+        sortedProviders.push(...allProviders.filter(p => p.tier === tier));
+    }
+
     const errors: string[] = [];
-    for (const provider of providers) {
+    for (const provider of sortedProviders) {
         try {
             const text = await provider.call(prompt);
-            if (text) return { text, provider: provider.name };
+            if (text) {
+                const tierLabel = provider.tier === preferredTier ? '' : ` ↑${provider.tier}`;
+                return { text, provider: `${provider.name}${tierLabel}` };
+            }
         } catch (err: any) {
             const is429 = err.message?.includes('429');
-            // Se for rate limit (429), espera 25s e tenta de novo UMA vez
             if (is429) {
-                console.warn(`[CASCADE] ${provider.name} rate limited (429). Aguardando 25s...`);
+                console.warn(`[TIER] ${provider.name} rate limited (429). Aguardando 25s...`);
                 await delay(25000);
                 try {
                     const retryText = await provider.call(prompt);
                     if (retryText) return { text: retryText, provider: `${provider.name} (retry)` };
                 } catch (retryErr: any) {
                     errors.push(`${provider.name} (retry): ${retryErr.message}`);
-                    console.warn(`[CASCADE] ${provider.name} retry falhou:`, retryErr.message);
                 }
             } else {
                 errors.push(`${provider.name}: ${err.message}`);
-                console.warn(`[CASCADE] ${provider.name} falhou:`, err.message);
+                console.warn(`[TIER] ${provider.name} falhou:`, err.message);
             }
         }
     }
@@ -1539,7 +1597,7 @@ Organize em: 🤝 SAÚDE DO CLIENTE (NPS), 🥩 QUALIDADE PERCEBIDA, 🚚 FEEDBA
             const pricingBlock = (agentType === 'ESTOQUE' || agentType === 'COMERCIAL' || agentType === 'PRODUCAO') ? formatPrecificacaoForPrompt(precificacao) : '';
             const rfmBlock = (agentType === 'COMERCIAL' || agentType === 'MARKETING' || agentType === 'SATISFACAO') ? formatRFMForPrompt(clientScores) : '';
             const fullPrompt = `${prompts[agentType]}${baseRules}${memoryBlock} \n\n${dataPackets[agentType]}${predictionsBlock}${dreBlock}${pricingBlock}${rfmBlock}${newsBlock} \n\nINSTRUÇÃO CRÍTICA: A data de HOJE é ${new Date().toLocaleDateString('pt-BR')}.Use as NOTÍCIAS DO MERCADO acima como base para sua análise.NÃO invente notícias — cite apenas as que foram fornecidas.Se não houver notícias, diga que o feed não está disponível no momento.LEMBRE-SE: CARNE DURA NO MÁXIMO 8 DIAS NA CÂMARA. Peças com 6+ dias = VENDA URGENTE.`;
-            const { text, provider } = await runCascade(fullPrompt);
+            const { text, provider } = await runCascade(fullPrompt, agentType);
             setAgentResponse(`_via ${provider} | 🧠 ${(memoryCounts[agentType] || 0) + 1} memórias_\n\n${text} `);
 
             // ⚡ FAÇÃO AUTÔNOMA — Detectar ações na resposta
@@ -1846,7 +1904,7 @@ Responda em português BR, direto e prático.Use emojis.Cite números específic
                 } catch (e) { }
                 const promptWithMemory = miniPrompt + memBlock;
 
-                const { text, provider } = await runCascade(promptWithMemory);
+                const { text, provider } = await runCascade(promptWithMemory, agent.id);
                 setAgentDiagnostics(prev => ({ ...prev, [agent.id]: { text, provider, timestamp: new Date() } }));
                 localDiags[agent.id] = { text, provider };
 
@@ -1922,7 +1980,7 @@ ${allDiags.join('\n\n')}
 
 Responda em português BR. Máximo 500 palavras.`;
 
-                const { text, provider } = await runCascade(debatePrompt);
+                const { text, provider } = await runCascade(debatePrompt, 'ADMINISTRATIVO');
                 setDebateSynthesis({ text, provider, timestamp: new Date() });
 
                 // Salvar memória da síntese
@@ -2090,7 +2148,7 @@ Regras:
                 - Máximo 800 palavras`;
 
             const fullPrompt = `${orchestrationPrompt} \n\n${megaSnapshot} `;
-            const { text, provider } = await runCascade(fullPrompt);
+            const { text, provider } = await runCascade(fullPrompt, 'ADMINISTRATIVO');
             setAgentResponse(`_📋 Relatório Executivo via ${provider} _\n\n${text} `);
             setTimeout(() => agentResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
         } catch (err: any) {
