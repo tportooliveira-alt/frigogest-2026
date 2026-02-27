@@ -863,6 +863,38 @@ Se algum item tiver discrepância que você não conseguiu resolver, marque vali
                 <div className="pt-4 border-t border-slate-50 space-y-4">
                   <h4 className="text-[9px] font-black text-emerald-600 uppercase tracking-[0.2em] flex items-center gap-1.5">🐂 Dados da Produção</h4>
 
+                  {/* TOGGLE: MODALIDADE DE COMPRA */}
+                  {!selectedBatch && (
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Modalidade de Compra</label>
+                      <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-2xl mb-1">
+                        <button
+                          type="button"
+                          onClick={() => setNewBatch({ ...newBatch, modalidade_compra: 'GANCHO', peso_vivo_medio: 0 } as any)}
+                          className={`py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${(newBatch as any).modalidade_compra !== 'PESO_VIVO' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                          🪝 Por Gancho
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewBatch({ ...newBatch, modalidade_compra: 'PESO_VIVO' } as any)}
+                          className={`py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${(newBatch as any).modalidade_compra === 'PESO_VIVO' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                          ⚖️ Por Peso Vivo
+                        </button>
+                      </div>
+                      {(newBatch as any).modalidade_compra !== 'PESO_VIVO' ? (
+                        <div className="px-3 py-2 bg-emerald-50 border border-emerald-100 rounded-xl text-[10px] text-emerald-700">
+                          🪝 <strong>Compra por Gancho</strong> — Você pesa direto a carcaça obtida após o abate. Rendimento de carcaça não é calculado (normal nessa modalidade).
+                        </div>
+                      ) : (
+                        <div className="px-3 py-2 bg-blue-50 border border-blue-100 rounded-xl text-[10px] text-blue-700">
+                          ⚖️ <strong>Compra por Peso Vivo</strong> — Preencha o peso vivo médio para calcular o rendimento de carcaça automaticamente.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div>
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Raça do Lote</label>
                     <select
@@ -911,10 +943,12 @@ Se algum item tiver discrepância que você não conseguiu resolver, marque vali
                   </div>
 
                   <div className="grid grid-cols-3 gap-3">
+                    {/* Peso Vivo — só aparece se modalidade = PESO_VIVO ou se já tem valor cadastrado */}
+                    {((newBatch as any).modalidade_compra === 'PESO_VIVO' || (selectedBatch && (selectedBatch as any).peso_vivo_medio > 0)) && (
                     <div>
-                      <label className="text-[10px] font-bold text-orange-500 uppercase tracking-widest block mb-2 px-1">⚖️ Peso Vivo Médio</label>
+                      <label className="text-[10px] font-bold text-blue-500 uppercase tracking-widest block mb-2 px-1">⚖️ Peso Vivo Médio</label>
                       <DecimalInput
-                        className="modern-input border-orange-200 bg-orange-50 text-xs"
+                        className="modern-input border-blue-200 bg-blue-50 text-xs"
                         placeholder="kg/cab"
                         value={selectedBatch ? (selectedBatch as any).peso_vivo_medio || 0 : (newBatch.peso_vivo_medio || 0)}
                         onValueChange={v => {
@@ -922,7 +956,9 @@ Se algum item tiver discrepância que você não conseguiu resolver, marque vali
                           else setNewBatch({ ...newBatch, peso_vivo_medio: v });
                         }}
                       />
+                      <p className="text-[9px] text-blue-400 mt-1 px-1">Preenchido → calcula rendimento</p>
                     </div>
+                    )}
                     <div>
                       <label className="text-[10px] font-bold text-orange-500 uppercase tracking-widest block mb-2 px-1">✂️ Toalete (kg)</label>
                       <DecimalInput
