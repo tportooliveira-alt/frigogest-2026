@@ -202,9 +202,17 @@ const AIChat: React.FC<Props> = ({
         // ── LOTES ──
         const lotesAbertos = batches.filter(b => b.status === 'ABERTO');
         const lotesFechados = batches.filter(b => b.status === 'FECHADO');
-        const lotesComRendimento = batches.filter(b => b.rendimento_real && b.rendimento_real > 0);
+        const lotesComRendimento = batches.filter(b => {
+            const cab = (b as any).qtd_cabecas || 0;
+            const vivo = (b as any).peso_vivo_medio || 0;
+            return cab > 0 && vivo > 0; // Só conta se tem peso vivo para calcular correto
+        });
         const rendimentoMedio = lotesComRendimento.length > 0
-            ? lotesComRendimento.reduce((s, b) => s + (b.rendimento_real || 0), 0) / lotesComRendimento.length
+            ? lotesComRendimento.reduce((s, b) => {
+                const pesoVivoTotal = ((b as any).qtd_cabecas || 0) * ((b as any).peso_vivo_medio || 0);
+                const pesoCarcaca = (b as any).peso_gancho > 0 ? (b as any).peso_gancho : b.peso_total_romaneio;
+                return s + (pesoVivoTotal > 0 ? (pesoCarcaca / pesoVivoTotal) * 100 : 0);
+            }, 0) / lotesComRendimento.length
             : 0;
         const lotesComCusto = batches.filter(b => b.custo_real_kg && b.custo_real_kg > 0);
         const custoKgMedio = lotesComCusto.length > 0
@@ -339,9 +347,18 @@ ${clients.sort((a, b) => { const va = sales.filter(s => s.id_cliente === a.id_fe
 ${suppliers.slice(0, 5).map(s => {
             const lotes = batches.filter(b => b.fornecedor === s.nome_fantasia);
             const mortos = lotes.reduce((sum, b) => sum + ((b as any).qtd_mortos || 0), 0);
-            const rends = lotes.filter(b => b.rendimento_real && b.rendimento_real > 0);
-            const avgRend = rends.length > 0 ? (rends.reduce((sum, b) => sum + (b.rendimento_real || 0), 0) / rends.length).toFixed(1) + '%' : 'N/A';
-            const score = avgRend !== 'N/A' && parseFloat(avgRend) > 52 && mortos === 0 ? 'A (Excelente)' : (avgRend !== 'N/A' && parseFloat(avgRend) > 49 ? 'B (Bom)' : 'C (Atenção)');
+            const rends = lotes.filter(b => {
+                const cab = (b as any).qtd_cabecas || 0;
+                const vivo = (b as any).peso_vivo_medio || 0;
+                return cab > 0 && vivo > 0;
+            });
+            const avgRend = rends.length > 0 ? (rends.reduce((sum, b) => {
+                const pesoVivoTotal = ((b as any).qtd_cabecas || 0) * ((b as any).peso_vivo_medio || 0);
+                const pesoCarcaca = (b as any).peso_gancho > 0 ? (b as any).peso_gancho : b.peso_total_romaneio;
+                return sum + (pesoVivoTotal > 0 ? (pesoCarcaca / pesoVivoTotal) * 100 : 0);
+            }, 0) / rends.length).toFixed(1) + '%' : 'N/A (sem peso vivo cadastrado)';
+            const avgRendNum = rends.length > 0 ? parseFloat(avgRend) : 0;
+            const score = avgRendNum > 0 ? (avgRendNum > 52 && mortos === 0 ? 'A (Excelente)' : (avgRendNum > 49 ? 'B (Bom)' : 'C (Atenção)')) : 'N/A (sem peso vivo)';
             return `- ${s.nome_fantasia} | Score: ${score} | Mortos: ${mortos} | Rend: ${avgRend}`;
         }).join('\n')}
 

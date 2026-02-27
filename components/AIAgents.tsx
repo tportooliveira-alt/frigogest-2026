@@ -568,32 +568,51 @@ const AIAgents: React.FC<AIAgentsProps> = ({
             }
         });
 
-        // ── PRODUÇÃO (SEU ANTÔNIO): Rendimento vs Referência EMBRAPA ──
+        // ── PRODUÇÃO (SEU ANTÔNIO): Rendimento Carcaça vs Referência EMBRAPA ──
+        // FÓRMULA CORRETA: Rendimento = (Peso Carcaça / Peso Vivo Total) × 100
+        // Só calcula se peso vivo for informado (qtd_cabecas × peso_vivo_medio)
+        // Nunca usar peso_romaneio como denominador (daria ~100%, que é absurdo)
         batches.filter(b => b.status === 'FECHADO').forEach(b => {
-            const lotePecas = stock.filter(s => s.id_lote === b.id_lote);
-            if (lotePecas.length > 0 && b.peso_total_romaneio > 0) {
-                const pesoTotal = lotePecas.reduce((sum, s) => sum + s.peso_entrada, 0);
-                const rendimento = (pesoTotal / b.peso_total_romaneio) * 100;
+            const qtdCabecas = (b as any).qtd_cabecas || 0;
+            const pesoVivoMedio = (b as any).peso_vivo_medio || 0;
+            const pesoGancho = (b as any).peso_gancho || 0;
 
-                // Busca referência por raça
-                const racaRef = BREED_REFERENCE_DATA.find(r => r.raca === b.raca);
-                if (racaRef && (rendimento < racaRef.rendimento_min)) {
+            // Só calcula rendimento se tiver peso vivo cadastrado
+            if (qtdCabecas > 0 && pesoVivoMedio > 0) {
+                const pesoVivoTotal = qtdCabecas * pesoVivoMedio;
+                const pesoCarcaca = pesoGancho > 0 ? pesoGancho : b.peso_total_romaneio;
+                const rendimento = (pesoCarcaca / pesoVivoTotal) * 100;
+
+                // Valida intervalo real (48-62% é normal para gado bovino)
+                if (rendimento < 40 || rendimento > 70) {
                     alerts.push({
-                        id: `PROD-REF-${b.id_lote}`, agent: 'PRODUCAO', severity: 'CRITICO',
-                        module: 'LOTES', title: `⚠️ Rendimento Crítico: ${b.id_lote}`,
-                        message: `Rendimento ${rendimento.toFixed(1)}% está ABAIXO da referência EMBRAPA para ${b.raca || 'Nelore'} (mín ${racaRef.rendimento_min}%). Fornecedor: ${b.fornecedor}. Romaneio pode estar inflado ou quebra de resfriamento excessiva.`,
+                        id: `PROD-REND-DADOS-${b.id_lote}`, agent: 'PRODUCAO', severity: 'ALERTA',
+                        module: 'LOTES', title: `⚠️ Rendimento fora do intervalo: ${b.id_lote}`,
+                        message: `Rendimento calculado: ${rendimento.toFixed(1)}% — valor improvável (esperado 48-62%). Verifique os dados: Peso vivo total = ${pesoVivoTotal}kg, Peso carcaça = ${pesoCarcaca}kg. Possível erro de cadastro.`,
                         timestamp: now.toISOString(), status: 'NOVO',
-                        data: { rendimento, raca: b.raca }
+                        data: { rendimento, pesoVivoTotal, pesoCarcaca }
                     });
-                } else if (rendimento < 49) {
-                    alerts.push({
-                        id: `PROD-REND-${b.id_lote}`, agent: 'PRODUCAO', severity: 'ALERTA',
-                        module: 'LOTES', title: `Rendimento Baixo: ${b.id_lote}`,
-                        message: `Rendimento ${rendimento.toFixed(1)}%. Sugiro que Dra. Beatriz audite a pesagem desse lote.`,
-                        timestamp: now.toISOString(), status: 'NOVO'
-                    });
+                } else {
+                    const racaRef = BREED_REFERENCE_DATA.find(r => r.raca === b.raca);
+                    if (racaRef && rendimento < racaRef.rendimento_min) {
+                        alerts.push({
+                            id: `PROD-REF-${b.id_lote}`, agent: 'PRODUCAO', severity: 'CRITICO',
+                            module: 'LOTES', title: `⚠️ Rendimento Crítico: ${b.id_lote}`,
+                            message: `Rendimento de carcaça ${rendimento.toFixed(1)}% está ABAIXO da referência EMBRAPA para ${b.raca} (mínimo ${racaRef.rendimento_min}%). Peso vivo: ${pesoVivoTotal}kg → Gancho: ${pesoCarcaca}kg. Fornecedor: ${b.fornecedor}. Possível quebra excessiva ou romaneio inflado.`,
+                            timestamp: now.toISOString(), status: 'NOVO',
+                            data: { rendimento, raca: b.raca }
+                        });
+                    } else if (rendimento < 49) {
+                        alerts.push({
+                            id: `PROD-REND-${b.id_lote}`, agent: 'PRODUCAO', severity: 'ALERTA',
+                            module: 'LOTES', title: `Rendimento Baixo: ${b.id_lote}`,
+                            message: `Rendimento de carcaça ${rendimento.toFixed(1)}% (Peso vivo: ${pesoVivoTotal}kg → Gancho: ${pesoCarcaca}kg). Sugiro que Dra. Beatriz audite a pesagem desse lote.`,
+                            timestamp: now.toISOString(), status: 'NOVO'
+                        });
+                    }
                 }
             }
+            // Se não tem peso vivo: não calcula rendimento (não dá para calcular sem essa informação)
         });
         
         // ── SEU ANTÔNIO: Vision Audit Revision Needed ──
