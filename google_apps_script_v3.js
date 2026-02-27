@@ -107,6 +107,13 @@ function doPost(e) {
     const payload = JSON.parse(e.postData.contents);
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
+    // Remove abas antigas (sem emoji) do script anterior
+    const abasAntigas = ['Clientes','Fornecedores','Lotes','Estoque','Vendas','Fluxo de Caixa','Contas a Pagar','Agendamentos'];
+    abasAntigas.forEach(nome => {
+      const s = ss.getSheetByName(nome);
+      if (s && ss.getSheets().length > 1) try { ss.deleteSheet(s); } catch(e) {}
+    });
+
     // Cria/atualiza cada aba
     for (const [nomeAba, dados] of Object.entries(payload.allData || {})) {
       atualizarAba(ss, nomeAba, dados, CABECALHOS[nomeAba] || null);
@@ -136,93 +143,67 @@ function doGet(e) {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  ATUALIZAR ABA
+//  ATUALIZAR ABA (FIXED — sem inserção de linhas)
 // ─────────────────────────────────────────────────────────────
 function atualizarAba(ss, nomeAba, dados, cabecalhos) {
   let sheet = ss.getSheetByName(nomeAba);
   if (!sheet) {
     sheet = ss.insertSheet(nomeAba);
   }
-  sheet.clearContents();
-  sheet.clearFormats();
 
-  if (!dados || !Array.isArray(dados) || dados.length === 0) {
-    // Coloca cabeçalho mesmo vazio
-    if (cabecalhos) formatarCabecalho(sheet, cabecalhos, nomeAba);
-    sheet.getRange(2, 1).setValue('Nenhum dado ainda.');
-    return;
-  }
+  // Limpa TUDO incluindo linhas extras — evita duplicação
+  sheet.clear();
 
-  // Cabeçalho da aba
-  if (cabecalhos) {
-    formatarCabecalho(sheet, cabecalhos, nomeAba);
-  } else {
-    // Usa as chaves do primeiro objeto
-    const keys = Object.keys(dados[0]);
-    formatarCabecalho(sheet, keys, nomeAba);
-  }
-
-  // Chaves para a ordem das colunas
-  const keys = cabecalhos
-    ? Object.keys(dados[0])
-    : Object.keys(dados[0]);
-
-  // Preencher dados
-  const linhas = dados.map(row => Object.values(row).map(v => v === null || v === undefined ? '' : v));
-  if (linhas.length > 0) {
-    sheet.getRange(2, 1, linhas.length, linhas[0].length).setValues(linhas);
-  }
-
-  // Formatação condicional
-  aplicarFormatacaoCondicional(sheet, nomeAba, linhas.length);
-
-  // Auto resize
-  try { sheet.autoResizeColumns(1, (linhas[0] || cabecalhos || []).length); } catch (e) {}
-
-  // Congelar cabeçalho
-  sheet.setFrozenRows(1);
-
-  // Cor da tab
-  const config = ABA_CONFIG[nomeAba];
-  if (config) sheet.setTabColor(config.cor);
-}
-
-// ─────────────────────────────────────────────────────────────
-//  CABEÇALHO BONITO
-// ─────────────────────────────────────────────────────────────
-function formatarCabecalho(sheet, cabecalhos, nomeAba) {
-  sheet.insertRowBefore(1);
   const config = ABA_CONFIG[nomeAba] || { cor: CORES.CINZA_DARK };
-  const numCols = cabecalhos.length;
+  const cols = cabecalhos ? cabecalhos : (dados && dados.length > 0 ? Object.keys(dados[0]) : ['Dado']);
+  const numCols = cols.length;
 
-  // Linha de TÍTULO
+  // ── LINHA 1: Título (escreve direto, sem inserir) ──
   const titulo = sheet.getRange(1, 1, 1, numCols);
   titulo.merge();
-  titulo.setValue(nomeAba.toUpperCase() + ' — FRIGOGEST Sistema de Gestão');
+  titulo.setValue(nomeAba.toUpperCase() + ' — FRIGOGEST');
   titulo.setBackground(config.cor);
   titulo.setFontColor(CORES.BRANCO);
   titulo.setFontWeight('bold');
   titulo.setFontSize(11);
   titulo.setHorizontalAlignment('center');
   titulo.setVerticalAlignment('middle');
-
   sheet.setRowHeight(1, 36);
 
-  // Linha de CABEÇALHO
-  sheet.insertRowAfter(1);
+  // ── LINHA 2: Cabeçalhos ──
   const cabRow = sheet.getRange(2, 1, 1, numCols);
-  cabRow.setValues([cabecalhos]);
+  cabRow.setValues([cols]);
   cabRow.setBackground('#2D3748');
   cabRow.setFontColor(CORES.BRANCO);
   cabRow.setFontWeight('bold');
   cabRow.setFontSize(9);
   cabRow.setHorizontalAlignment('center');
   cabRow.setVerticalAlignment('middle');
-  cabRow.setBorder(false, false, true, false, false, false, '#4A5568', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
   sheet.setRowHeight(2, 28);
-
   sheet.setFrozenRows(2);
+
+  // Cor da tab
+  sheet.setTabColor(config.cor);
+
+  if (!dados || !Array.isArray(dados) || dados.length === 0) {
+    sheet.getRange(3, 1).setValue('Nenhum dado ainda.');
+    return;
+  }
+
+  // ── LINHAS 3+: Dados ──
+  const linhas = dados.map(row => Object.values(row).map(v => v === null || v === undefined ? '' : String(v)));
+  sheet.getRange(3, 1, linhas.length, linhas[0].length).setValues(linhas);
+
+  // Formatação condicional
+  aplicarFormatacaoCondicional(sheet, nomeAba, linhas.length);
+
+  // Auto resize
+  try { sheet.autoResizeColumns(1, numCols); } catch (e) {}
 }
+
+// ─────────────────────────────────────────────────────────────
+//  [REMOVIDO] formatarCabecalho — substituído pela lógica acima
+// ─────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────
 //  FORMATAÇÃO CONDICIONAL POR ABA
