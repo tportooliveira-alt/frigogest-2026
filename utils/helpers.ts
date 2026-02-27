@@ -1,9 +1,30 @@
 import { CURRENT_DATE } from '../constants';
 import { Client, Sale } from '../types';
 
+/**
+ * Retorna hoje no fuso de São Paulo (YYYY-MM-DD).
+ * Evita bug de UTC: new Date().toISOString() pode dar dia errado após 21h no Brasil.
+ */
+export const todayBR = (): string => {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  // en-CA = formato YYYY-MM-DD nativo
+};
+
+/**
+ * Exibe uma data YYYY-MM-DD como DD/MM/YYYY sem erro de fuso.
+ * Evita bug: new Date("2026-02-26") → meia-noite UTC → 25/02 no Brasil
+ */
+export const formatDateBR = (dateStr: string): string => {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  return dateStr;
+};
+
 export const calculateDaysInStock = (entryDate: string): number => {
-  const start = new Date(entryDate);
-  const current = new Date(); // Always use live date, not static CURRENT_DATE
+  // Adiciona T12:00:00 para evitar erro de fuso ao criar Date de string "YYYY-MM-DD"
+  const start = new Date(entryDate + 'T12:00:00');
+  const current = new Date();
   const diffTime = Math.abs(current.getTime() - start.getTime());
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   return diffDays;

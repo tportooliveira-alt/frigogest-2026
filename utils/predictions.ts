@@ -60,10 +60,10 @@ export function calculatePredictions(
     const validSales = sales.filter(s => s.status_pagamento !== 'ESTORNADO');
 
     // ═══ RECEITA ═══
-    const sales7d = validSales.filter(s => (now.getTime() - new Date(s.data_venda).getTime()) / msDay <= 7);
-    const sales30d = validSales.filter(s => (now.getTime() - new Date(s.data_venda).getTime()) / msDay <= 30);
+    const sales7d = validSales.filter(s => (now.getTime() - new Date(s.data_venda + "T12:00:00").getTime()) / msDay <= 7);
+    const sales30d = validSales.filter(s => (now.getTime() - new Date(s.data_venda + "T12:00:00").getTime()) / msDay <= 30);
     const sales30_60d = validSales.filter(s => {
-        const dias = (now.getTime() - new Date(s.data_venda).getTime()) / msDay;
+        const dias = (now.getTime() - new Date(s.data_venda + "T12:00:00").getTime()) / msDay;
         return dias > 30 && dias <= 60;
     });
 
@@ -98,13 +98,13 @@ export function calculatePredictions(
 
     // Peças próximas do vencimento (carne dura MAX 8 dias)
     const pecasVencendo = estoqueDisp.filter(s => {
-        const dias = Math.floor((now.getTime() - new Date(s.data_entrada).getTime()) / msDay);
+        const dias = Math.floor((now.getTime() - new Date(s.data_entrada + "T12:00:00").getTime()) / msDay);
         return dias >= 6; // 6+ dias = urgência (faltam 2 dias ou menos)
     }).length;
 
     // ═══ CAIXA ═══
     const txValidasRecentes = transactions.filter(t => {
-        const dias = (now.getTime() - new Date(t.data).getTime()) / msDay;
+        const dias = (now.getTime() - new Date(t.data + "T12:00:00").getTime()) / msDay;
         return dias <= 30 && t.categoria !== 'ESTORNO';
     });
     const entradas30d = txValidasRecentes
@@ -127,7 +127,7 @@ export function calculatePredictions(
     // Pagar nos próximos 30d
     const payablesProximos = payables.filter(p => {
         if (p.status !== 'PENDENTE') return false;
-        const venc = new Date(p.data_vencimento);
+        const venc = new Date(p.data_vencimento + "T12:00:00");
         return venc.getTime() - now.getTime() <= 30 * msDay && venc.getTime() >= now.getTime();
     });
     const totalAPagar30d = payablesProximos.reduce((s, p) => s + p.valor, 0);
@@ -151,10 +151,10 @@ export function calculatePredictions(
     // ═══ COMPRAS ═══
     const batchesFechados = batches.filter(b => b.status === 'FECHADO');
     const batches7d = batchesFechados.filter(b =>
-        (now.getTime() - new Date(b.data_recebimento).getTime()) / msDay <= 7
+        (now.getTime() - new Date(b.data_recebimento + "T12:00:00").getTime()) / msDay <= 7
     );
     const batches30d = batchesFechados.filter(b =>
-        (now.getTime() - new Date(b.data_recebimento).getTime()) / msDay <= 30
+        (now.getTime() - new Date(b.data_recebimento + "T12:00:00").getTime()) / msDay <= 30
     );
 
     const custoTotal7d = batches7d.reduce((s, b) => s + (b.preco_arroba * (b.peso_total_romaneio / 15)), 0);

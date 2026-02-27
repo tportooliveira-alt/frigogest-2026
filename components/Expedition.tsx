@@ -32,7 +32,7 @@ import {
   BoxSelect,
   MoreHorizontal
 } from 'lucide-react';
-import { formatWeight, formatCurrency } from '../utils/helpers';
+import { formatWeight, formatCurrency, todayBR, formatDateBR } from '../utils/helpers';
 import { jsPDF } from 'jspdf';
 
 interface ExpeditionProps {

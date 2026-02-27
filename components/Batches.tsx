@@ -31,7 +31,7 @@ import {
   Pencil as PencilIcon,
   RotateCcw as RotateCcwIcon
 } from 'lucide-react';
-import { calculateRealCost, formatCurrency, formatWeight } from '../utils/helpers';
+import { calculateRealCost, formatCurrency, formatWeight, todayBR, formatDateBR } from '../utils/helpers';
 
 interface BatchesProps {
   batches: Batch[];
@@ -161,7 +161,7 @@ const Batches: React.FC<BatchesProps> = ({
   const [newBatch, setNewBatch] = useState<any>({
     id_lote: '',
     fornecedor: '',
-    data_recebimento: new Date().toISOString().split('T')[0],
+    data_recebimento: todayBR(),
     peso_total_romaneio: 0,
     valor_compra_total: 0,
     frete: 0,
@@ -390,7 +390,7 @@ const Batches: React.FC<BatchesProps> = ({
       tipo: type,
       peso_entrada: weight, // Salva o peso EXATO cadastrado, sem desconto
       status: 'DISPONIVEL',
-      data_entrada: selectedBatch?.data_recebimento || new Date().toISOString().split('T')[0]
+      data_entrada: selectedBatch?.data_recebimento || todayBR()
     };
 
     setDraftItems(prev => [...prev, itemToAdd as StockItem]);
@@ -616,7 +616,7 @@ Se algum item tiver discrepância que você não conseguiu resolver, marque vali
                     tipo: StockType.BANDA_A,
                     peso_entrada: item.banda1,
                     status: 'DISPONIVEL',
-                    data_entrada: (draftBatch || safeBatches.find(b => b.id_lote === selectedBatchId))?.data_recebimento || new Date().toISOString().split('T')[0]
+                    data_entrada: (draftBatch || safeBatches.find(b => b.id_lote === selectedBatchId))?.data_recebimento || todayBR()
                   } as StockItem]);
 
                   // BANDA_B
@@ -628,7 +628,7 @@ Se algum item tiver discrepância que você não conseguiu resolver, marque vali
                     tipo: StockType.BANDA_B,
                     peso_entrada: item.banda2,
                     status: 'DISPONIVEL',
-                    data_entrada: (draftBatch || safeBatches.find(b => b.id_lote === selectedBatchId))?.data_recebimento || new Date().toISOString().split('T')[0]
+                    data_entrada: (draftBatch || safeBatches.find(b => b.id_lote === selectedBatchId))?.data_recebimento || todayBR()
                   } as StockItem]);
 
                   count++;
@@ -1743,4 +1743,4 @@ Se algum item tiver discrepância que você não conseguiu resolver, marque vali
   );
 };
 
-export default Batches;
+export default Batches;
