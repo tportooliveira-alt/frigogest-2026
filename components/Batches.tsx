@@ -697,13 +697,62 @@ Se algum item tiver discrepância que você não conseguiu resolver, marque vali
           </div>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
           {!isBatchLocked && selectedBatch && (
             <button
               onClick={() => setShowFinalizationModal(true)}
               className="btn-modern bg-slate-900 text-white hover:bg-orange-600 px-8 py-4 gap-3 shadow-xl"
             >
               <CheckIcon size={20} /> Finalizar Operação
+            </button>
+          )}
+
+          {/* FEATURE 2 & 3: IMPRIMIR ROMANEIO / RECIBO */}
+          {selectedBatch && (
+            <button
+              onClick={() => {
+                const items = draftItems.length > 0 ? draftItems : safeStock.filter(s => s.id_lote === selectedBatch.id_lote);
+                const totalPeso = items.reduce((s, i) => s + i.peso_entrada, 0);
+                const html = `<!DOCTYPE html><html><head><title>Romaneio ${selectedBatch.id_lote}</title>
+                <style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}
+                h1{font-size:18px;font-weight:bold;margin-bottom:4px}
+                h2{font-size:13px;color:#666;margin-bottom:16px}
+                table{width:100%;border-collapse:collapse;margin-bottom:16px}
+                th{background:#1e293b;color:white;padding:8px;text-align:left;font-size:11px}
+                td{padding:6px 8px;border-bottom:1px solid #e2e8f0;font-size:11px}
+                tr:nth-child(even){background:#f8fafc}
+                .total{font-weight:bold;font-size:14px;padding:12px;background:#f1f5f9;border-radius:8px}
+                .header{display:flex;justify-content:space-between;margin-bottom:20px}
+                @media print{button{display:none}}</style></head><body>
+                <div class="header">
+                  <div>
+                    <h1>ROMANEIO DE RECEPÇÃO</h1>
+                    <h2>Lote: ${selectedBatch.id_lote} | Fornecedor: ${(selectedBatch as any).fornecedor || '-'}</h2>
+                    <p>Data: ${selectedBatch.data_recebimento} | Gerado em: ${new Date().toLocaleString('pt-BR')}</p>
+                  </div>
+                </div>
+                <table><thead><tr><th>Seq</th><th>Tipo</th><th>Peso Entrada (kg)</th><th>Status</th><th>Data Entrada</th></tr></thead><tbody>
+                ${items.map(i => `<tr>
+                  <td>${i.sequencia}</td>
+                  <td>${i.tipo === 1 ? 'INTEIRO' : i.tipo === 2 ? 'BANDA A' : 'BANDA B'}</td>
+                  <td>${i.peso_entrada.toFixed(3)}</td>
+                  <td>${i.status}</td>
+                  <td>${i.data_entrada || '-'}</td>
+                </tr>`).join('')}
+                <tr style="font-weight:bold;background:#e2e8f0">
+                  <td colspan="2">TOTAL</td>
+                  <td>${totalPeso.toFixed(3)} kg</td>
+                  <td>${items.length} peças</td><td></td>
+                </tr></tbody></table>
+                <div class="total">Peso Total: ${totalPeso.toFixed(3)} kg | Peças: ${items.length} | Animais: ${new Set(items.map(i => i.sequencia)).size}</div>
+                <script>window.onload=()=>{window.print()}</script></body></html>`;
+                const w = window.open('', '_blank');
+                w?.document.write(html);
+                w?.document.close();
+              }}
+              className="btn-modern bg-emerald-600 text-white hover:bg-emerald-700 px-6 py-4 gap-2 shadow-xl"
+            >
+              🖨️ Imprimir Romaneio
             </button>
           )}
 

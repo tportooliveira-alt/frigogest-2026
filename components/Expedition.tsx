@@ -145,8 +145,13 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
 
 
   const [itemWeights, setItemWeights] = useState<Record<string, number>>({});
+  const [pesoUnit, setPesoUnit] = useState<'KG' | 'G'>('KG');
   const [pagoNoAto, setPagoNoAto] = useState(false);
   const [pagoMetodo, setPagoMetodo] = useState<'PIX' | 'DINHEIRO' | 'CARTAO'>('PIX');
+
+  // Conversor de unidade para exibição/entrada
+  const toDisplayWeight = (kg: number) => pesoUnit === 'G' ? Math.round(kg * 1000) : kg;
+  const toKg = (v: number) => pesoUnit === 'G' ? v / 1000 : v;
 
   const getTotalWeight = () => {
     return selectedItems.reduce((acc, item) => {
@@ -786,10 +791,10 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
                               <DecimalInput
                                 className="w-32 bg-transparent text-right font-black text-xl text-blue-700 outline-none"
                                 placeholder="Peso"
-                                value={Number(groupItemsWeight.toFixed(2)) || 0}
-                                onValueChange={(v) => handleGroupWeightChange(group, v)}
+                                value={toDisplayWeight(Number(groupItemsWeight.toFixed(2))) || 0}
+                                onValueChange={(v) => handleGroupWeightChange(group, toKg(v))}
                               />
-                              <span className="text-sm font-black text-blue-500">KG</span>
+                              <span className="text-sm font-black text-blue-500">{pesoUnit}</span>
                             </div>
                           </div>
                         </div>
@@ -803,18 +808,18 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
                                 <div className="bg-slate-100 px-1.5 py-0.5 rounded text-[8px] font-bold text-slate-500 font-mono">{item.id_completo.split('-').pop()}</div>
                                 <span className="text-[9px] font-black text-slate-900 uppercase">{item.tipo === 1 ? 'INT' : item.tipo === 2 ? 'B-A' : 'B-B'}</span>
                               </div>
-                              <div className="flex flex-col items-end">
-                                <span className="text-[9px] font-black text-blue-500 uppercase mb-1">PESO SAÍDA</span>
-                                <div className="flex items-center gap-2 bg-blue-50 border-2 border-blue-300 rounded-xl px-3 py-2">
-                                  <DecimalInput
-                                    className="w-28 bg-transparent text-right font-black text-lg text-blue-700 outline-none"
-                                    placeholder="Peso"
-                                    value={currentWeight || 0}
-                                    onValueChange={v => handleWeightChange(item.id_completo, v)}
-                                  />
-                                  <span className="text-xs font-black text-blue-400">KG</span>
+                                <div className="flex flex-col items-end">
+                                  <span className="text-[9px] font-black text-blue-500 uppercase mb-1">PESO SAÍDA</span>
+                                  <div className="flex items-center gap-2 bg-blue-50 border-2 border-blue-300 rounded-xl px-3 py-2">
+                                    <DecimalInput
+                                      className="w-28 bg-transparent text-right font-black text-lg text-blue-700 outline-none"
+                                      placeholder="Peso"
+                                      value={toDisplayWeight(currentWeight) || 0}
+                                      onValueChange={v => handleWeightChange(item.id_completo, toKg(v))}
+                                    />
+                                    <span className="text-xs font-black text-blue-400">{pesoUnit}</span>
+                                  </div>
                                 </div>
-                              </div>
                             </div>
                           );
                         })
@@ -825,6 +830,26 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
               })
             )}
           </div>
+
+          {/* TOGGLE KG/GRAMAS para pesos de saída */}
+          {selectedItems.length > 0 && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-slate-800 border-t border-slate-700">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Unidade peso saída:</span>
+              <button
+                onClick={() => setPesoUnit(u => u === 'KG' ? 'G' : 'KG')}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                  pesoUnit === 'G'
+                    ? 'bg-orange-500 text-white shadow-lg shadow-orange-900'
+                    : 'bg-slate-600 text-slate-300 hover:bg-slate-500'
+                }`}
+              >
+                {pesoUnit === 'KG' ? '⚖️ KG' : '🔢 GRAMAS'}
+              </button>
+              {pesoUnit === 'G' && (
+                <span className="text-[9px] text-orange-400 font-bold">Digite em gramas → converte para KG</span>
+              )}
+            </div>
+          )}
 
           {/* CHECKOUT ACTION AREA - CONDENSED */}
           <div className="shrink-0 bg-slate-900 text-white p-4 relative overflow-hidden">

@@ -547,14 +547,93 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, stock, transactions, batch
               </div>
             </div>
 
-            {/* LOSS ANALYSIS CHART PLACEHOLDER */}
-            <div className="premium-card p-24 bg-white flex flex-col items-center justify-center border-dashed border-2 border-slate-100">
-              <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mb-8">
-                <BarChart2 size={40} className="text-slate-200" />
+            {/* FEATURE 4: PROJEÇÃO 30/60/90 DIAS */}
+            {(() => {
+              const ultimas = activeSales.slice(-30);
+              const diasComVenda = new Set(ultimas.map(s => s.data_venda || '')).size || 1;
+              const receitaMedia = ultimas.reduce((s, v) => s + v.peso_real_saida * v.preco_venda_kg, 0) / diasComVenda;
+              const lucroMedio = ultimas.reduce((s, v) => s + (v.lucro_liquido_unitario || 0) * v.peso_real_saida, 0) / diasComVenda;
+              const projs = [
+                { label: '30 dias', receita: receitaMedia * 30, lucro: lucroMedio * 30, color: 'blue' },
+                { label: '60 dias', receita: receitaMedia * 60, lucro: lucroMedio * 60, color: 'emerald' },
+                { label: '90 dias', receita: receitaMedia * 90, lucro: lucroMedio * 90, color: 'orange' },
+              ];
+              return (
+                <div className="premium-card p-6">
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center">
+                      <TrendingUp size={20} className="text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Projeção de Resultado</h3>
+                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Baseado nas últimas {ultimas.length} vendas registradas</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-4">
+                    {projs.map(p => (
+                      <div key={p.label} className="rounded-2xl p-5 bg-slate-50 border border-slate-100">
+                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">{p.label}</p>
+                        <p className="text-xl font-black text-slate-800 leading-none">{formatCurrency(p.receita)}</p>
+                        <p className="text-[9px] font-bold text-slate-400 mt-1">Receita estimada</p>
+                        <div className="mt-3 pt-3 border-t border-slate-200">
+                          <p className={`text-sm font-black ${p.lucro >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {p.lucro >= 0 ? '+' : ''}{formatCurrency(p.lucro)}
+                          </p>
+                          <p className="text-[9px] font-bold text-slate-400">Lucro estimado</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[8px] text-slate-300 text-center mt-3 font-bold uppercase tracking-widest">Projeção baseada em tendência histórica — sujeita a variações</p>
+                </div>
+              );
+            })()}
+
+            {/* FEATURE 6: ALERTA ESTOQUE BAIXO */}
+            {(() => {
+              const disponiveis = safeStock.filter(s => s.status === 'DISPONIVEL').length;
+              const lotes = new Set(safeStock.filter(s => s.status === 'DISPONIVEL').map(s => s.id_lote)).size;
+              if (disponiveis >= 20) return null;
+              return (
+                <div className="premium-card p-5 border-2 border-amber-300 bg-amber-50">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center animate-pulse">
+                      <AlertTriangle size={20} className="text-white" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-black text-amber-800 uppercase">Estoque Baixo!</p>
+                      <p className="text-[10px] text-amber-600 font-bold">
+                        Apenas <strong>{disponiveis} peças</strong> em <strong>{lotes} lote(s)</strong>. Programe novo abate!
+                      </p>
+                    </div>
+                    <div className="text-3xl font-black text-amber-400">{disponiveis}</div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* FEATURES 5/7/8 — BOTÕES TRAVADOS "EM BREVE" */}
+            <div className="premium-card p-6">
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">🔒 Próximas Funcionalidades</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="relative rounded-2xl p-4 bg-slate-50 border-2 border-dashed border-slate-200 opacity-60">
+                  <span className="absolute top-2 right-2 text-[8px] font-black bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full uppercase">Em Breve</span>
+                  <div className="flex items-center gap-2 mb-3"><span className="text-xl">📱</span><div><p className="text-xs font-black text-slate-700">WhatsApp Automático</p><p className="text-[9px] text-slate-400">Notifica cliente ao confirmar venda</p></div></div>
+                  <button disabled className="w-full py-2 bg-green-100 text-green-400 rounded-xl text-[10px] font-black uppercase cursor-not-allowed">🔒 Ativar WhatsApp Bot</button>
+                </div>
+                <div className="relative rounded-2xl p-4 bg-slate-50 border-2 border-dashed border-slate-200 opacity-60">
+                  <span className="absolute top-2 right-2 text-[8px] font-black bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full uppercase">Em Breve</span>
+                  <div className="flex items-center gap-2 mb-3"><span className="text-xl">📸</span><div><p className="text-xs font-black text-slate-700">Inspeção Visual IA</p><p className="text-[9px] text-slate-400">Câmera detecta anomalias na carcaça</p></div></div>
+                  <button disabled className="w-full py-2 bg-purple-100 text-purple-400 rounded-xl text-[10px] font-black uppercase cursor-not-allowed">🔒 Ativar Câmera IA</button>
+                </div>
+                <div className="relative rounded-2xl p-4 bg-slate-50 border-2 border-dashed border-slate-200 opacity-60">
+                  <span className="absolute top-2 right-2 text-[8px] font-black bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full uppercase">Em Breve</span>
+                  <div className="flex items-center gap-2 mb-3"><span className="text-xl">🧾</span><div><p className="text-xs font-black text-slate-700">Leitura NF-e</p><p className="text-[9px] text-slate-400">IA lê nota fiscal e auto-cadastra lote</p></div></div>
+                  <button disabled className="w-full py-2 bg-blue-100 text-blue-400 rounded-xl text-[10px] font-black uppercase cursor-not-allowed">🔒 Integrar NF-e</button>
+                </div>
               </div>
-              <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.6em]">Projeção de Curva de Perda Industrial</p>
-              <p className="text-[9px] font-bold text-slate-200 mt-4 uppercase">IA está processando variações sazonais...</p>
             </div>
+
           </div>
         )}
       </div>
