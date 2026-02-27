@@ -3,7 +3,8 @@ import {
     ArrowLeft, Send, MessageCircle, Users, Clock,
     Brain, Shield, TrendingUp, BarChart3, Package,
     DollarSign, Truck, Bot, Loader2, Sparkles,
-    ChevronRight, Activity, Mic, MicOff
+    ChevronRight, Activity, Mic, MicOff,
+    Search, FileText, Smartphone, CalendarDays, Thermometer, Banknote
 } from 'lucide-react';
 
 import { GoogleGenAI } from '@google/genai';
@@ -132,6 +133,13 @@ const AGENTS: AgentDef[] = [
     { id: 'ROBO_VENDAS', name: 'Lucas', role: 'Vendas & Inovação', icon: Bot, color: 'text-indigo-600', bgColor: 'bg-indigo-50', borderColor: 'border-indigo-200' },
     { id: 'MARKETING', name: 'Isabela', role: 'Gestora de Marketing', icon: Sparkles, color: 'text-pink-600', bgColor: 'bg-pink-50', borderColor: 'border-pink-200' },
     { id: 'SATISFACAO', name: 'Camila', role: 'Customer Success (CS) & Qualidade', icon: MessageCircle, color: 'text-cyan-600', bgColor: 'bg-cyan-50', borderColor: 'border-cyan-200' },
+    // ═══ PEÕES — IAs GRÁTIS ═══
+    { id: 'CONFERENTE', name: 'Pedro', role: 'Conferente de Dados', icon: Search, color: 'text-stone-600', bgColor: 'bg-stone-50', borderColor: 'border-stone-200' },
+    { id: 'RELATORIOS', name: 'Rafael', role: 'Gerador de Relatórios', icon: FileText, color: 'text-slate-600', bgColor: 'bg-slate-50', borderColor: 'border-slate-200' },
+    { id: 'WHATSAPP_BOT', name: 'Wellington', role: 'Bot WhatsApp', icon: Smartphone, color: 'text-green-600', bgColor: 'bg-green-50', borderColor: 'border-green-200' },
+    { id: 'AGENDA', name: 'Amanda', role: 'Gestora de Agenda', icon: CalendarDays, color: 'text-sky-600', bgColor: 'bg-sky-50', borderColor: 'border-sky-200' },
+    { id: 'TEMPERATURA', name: 'Carlos', role: 'Monitor de Temperatura', icon: Thermometer, color: 'text-red-500', bgColor: 'bg-red-50', borderColor: 'border-red-200' },
+    { id: 'COBRANCA', name: 'Diana', role: 'Cobrança Automática', icon: Banknote, color: 'text-emerald-600', bgColor: 'bg-emerald-50', borderColor: 'border-emerald-200' },
 ];
 
 // ═══ TYPES ═══
@@ -644,7 +652,7 @@ Comece com seu ponto principal.`;
                         {/* AGENT SIDEBAR (desktop) / Toggle (mobile) */}
                         <div className={`${showAgentList ? 'block' : 'hidden'} md:block w-full md:w-72 bg-white border-r border-slate-200 overflow-y-auto`}>
                             <div className="p-3 border-b border-slate-100">
-                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gerentes</p>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Equipe IA (16)</p>
                             </div>
                             {AGENTS.map(agent => {
                                 const Icon = agent.icon;
