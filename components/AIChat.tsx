@@ -321,6 +321,7 @@ const AIChat: React.FC<Props> = ({
     const [orchestrationResult, setOrchestrationResult] = useState<OrchestrationResult | null>(null);
     const [isOrchestrating, setIsOrchestrating] = useState(false);
     const chatEndRef = useRef<HTMLDivElement>(null);
+    const chatContainerRef = useRef<HTMLDivElement>(null);
     const meetingEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const recognitionRef = useRef<any>(null);
@@ -626,10 +627,15 @@ ${payablesVencidos.length > 0 ? `🔴 VENCIDAS: ${payablesVencidos.length} conta
         }
     };
 
-    // Auto-scroll
+    // Auto-scroll robusto (forçando scrollTop no container pai)
     useEffect(() => {
-        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [currentHistory]);
+        setTimeout(() => {
+            if (chatContainerRef.current) {
+                chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+            }
+            chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }, 100);
+    }, [currentHistory, loading]);
 
     useEffect(() => {
         meetingEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -707,7 +713,7 @@ PESQUISA OBRIGATÓRIA: Use googleSearch para buscar "arroba boi gordo VCA Bahia 
         if (agentId === 'AUDITOR') {
             basePrompt += `
 
-PROTOCOLO DE AUDITORIA — FRIGORÍFICO DE CARCÇAS:
+PROTOCOLO DE AUDITORIA — FRIGORÍFICO DE CARCAÇAS:
 
 CRUZAMENTOS CRÍTICOS QUE VOCÊ SEMPRE FAZ:
 1. ESTORNO vs CAIXA: Todo estorno deve ter Transaction de saída correspondente.
@@ -726,7 +732,7 @@ FORMATO DO DIAGNÓSTICO:
 🟡 RISCO MÉDIO — monitorar esta semana
 ✅ CONFORME — o que está ok
 
-Seja fria, cit niNúlmeros precisos. Não acuse sem prova.`;
+Seja fria, cite números precisos. Não acuse sem prova.`;
         }
 
         if (agentId === 'ESTOQUE') {
@@ -756,11 +762,11 @@ NR-36 E HIGIENE:
 ESTRATÉGIA DE COMPRA DE GADO — EXPERT EM CUSTO DE CARCAÇA:
 
 ━━━ PREÇOS DE REFERÊNCIA (fev/2026) ━━━
-● VCA / Sul BA:        R$ 310-315/@  ← REFERÊNCIA PRINCIPAL desta operação
-● Oeste BA:            R$ 316-320/@
-● CEPEA Nacional (SP): R$ 343-353,2/@ ← referência de preço TETO que exportadores pagam
+● VCA / Sul BA:        R$ 320-330/@  ← REFERÊNCIA PRINCIPAL desta operação (com a retenção de fêmeas em 2026, posição firme)
+● Oeste BA:            R$ 325-335/@
+● CEPEA Nacional (SP): R$ 350-355/@ ← recorde histórico em Fev/2026, referência de preço TETO
 ● B3 Futuro (mar/26):  R$ 350,15/@
-● SPREAD VCA vs SP:    ~R$33-40/@  → comprar aqui = vantagem real de custo
+● SPREAD VCA vs SP:    ~R$25-35/@  → comprar aqui = vantagem real de custo
 
 CONVERSÃO OBRIGATÓRIA:
 ● 1 arroba = 15 kg de CARCAÇA (peso faturado)
@@ -804,9 +810,9 @@ USE googleSearch para checar preço atual da arroba em VCA e Itapetinga ANTES de
             basePrompt = `Você é ISABELA — CMO (Diretora de Marketing) do FrigoGest.
 Você cuida EXCLUSIVAMENTE de marketing, branding e crescimento. NÃO tem acesso a dados financeiros.
 
-NEGÓCIO: Frigorífico que vende CARCÇA INTEIRA e MEIA-CARCÇA para açougues e mercados. Sem cortes individuais no momento.
-CANAIS PRINCIPAIS: WhatsApp Business (80% dos clientes) + Instagram (atracção de novos parceiros).
-PÚBS-ALVO: donos de açougues, gerentes de mercado, restaurantes de churrasco na região de Vitória da Conquista-BA.
+NEGÓCIO: Frigorífico que vende CARCAÇA INTEIRA e MEIA-CARCAÇA para açougues e mercados. Sem cortes individuais no momento.
+CANAIS PRINCIPAIS: WhatsApp Business (80% dos clientes) + Instagram (atração de novos parceiros).
+PÚBLICO-ALVO: donos de açougues, gerentes de mercado, restaurantes de churrasco na região de Vitória da Conquista-BA.
 
 SEUS PILARES DE MARKETING:
 1. AUTORIDADE: selos SIF, Inspeção ADAB, rastreabilidade, GTA — mostre que é regularizado.
@@ -1654,7 +1660,7 @@ Comece com seu ponto principal.`;
                             </div>
 
                             {/* Messages */}
-                            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+                            <div ref={chatContainerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
                                 {currentHistory.length === 0 && (
                                     <div className="flex flex-col items-center justify-center h-full text-center opacity-50">
                                         <currentAgent.icon size={48} className={`${currentAgent.color} mb-4`} />
