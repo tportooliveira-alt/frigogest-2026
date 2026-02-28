@@ -1,11 +1,33 @@
-import React from 'react';
-import { ArrowLeft, TrendingUp, TrendingDown, BarChart3, Activity, Target, Zap, Beef, Wheat, DollarSign, Percent } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ArrowLeft, TrendingUp, TrendingDown, BarChart3, Activity, Target, Zap, Beef, Wheat, DollarSign, Percent, RefreshCw, Loader2, Wifi, WifiOff } from 'lucide-react';
+import { fetchAllMarketData, MarketData, calcularPrecoV4 } from '../services/marketDataService';
 
 interface MarketDashboardProps {
     onBack: () => void;
 }
 
 const MarketDashboard: React.FC<MarketDashboardProps> = ({ onBack }) => {
+
+    const [marketData, setMarketData] = useState<MarketData | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [lastUpdate, setLastUpdate] = useState<string>('');
+
+    // Carregar dados ao vivo ao montar o componente
+    useEffect(() => {
+        loadData();
+    }, []);
+
+    const loadData = async () => {
+        setIsLoading(true);
+        try {
+            const data = await fetchAllMarketData();
+            setMarketData(data);
+            setLastUpdate(data.updatedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
+        } catch (err) {
+            console.error('Erro ao carregar dados de mercado:', err);
+        }
+        setIsLoading(false);
+    };
 
     // ═══════════════════════════════════════════════════
     // DADOS V4 DA ANA (Calibrados com 15 variáveis × 5 anos)
@@ -21,20 +43,26 @@ const MarketDashboard: React.FC<MarketDashboardProps> = ({ onBack }) => {
     const IS: Record<number, number> = { 1: 100.8, 2: 102.3, 3: 99.4, 4: 98.1, 5: 96.7, 6: 95.2, 7: 97.0, 8: 98.5, 9: 100.2, 10: 102.6, 11: 104.1, 12: 103.5 };
     const mesNomes = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
-    // Premissas 2026
+    // Usar dados ao vivo se disponíveis, senão fallback
+    const dolarAtual = marketData?.dolar.valor ?? 5.75;
+    const cepeaHoje = marketData?.cepeaBoi.valor ?? 352.80;
+    const selicAtual = marketData?.selic.valor ?? 13.25;
+    const milhoAtual = marketData?.milho.valor ?? 69.53;
+    const cepeaVariacao = marketData?.cepeaBoi.variacao ?? 0;
+
     const premissas = {
-        dolar: 5.75,
+        dolar: dolarAtual,
         abate: 38.0,
         bezerro: 3200,
-        cepeaHoje: 352.80,
+        cepeaHoje: cepeaHoje,
         femeasPct: 41.1,
-        milho: 69.53,
-        selic: 15.0,
+        milho: milhoAtual,
+        selic: selicAtual,
         momentum: 6.5
     };
 
-    // Calcular projeção mensal
-    const precoBase = equacaoV4.base + (equacaoV4.wDolar * premissas.dolar) + (equacaoV4.wAbate * premissas.abate) + (equacaoV4.wBezerro * premissas.bezerro);
+    // Calcular projeção mensal COM DADOS AO VIVO
+    const precoBase = calcularPrecoV4(premissas.dolar, premissas.abate, premissas.bezerro);
     const projecaoMensal = Object.entries(IS).map(([mes, is]) => ({
         mes: parseInt(mes),
         nome: mesNomes[parseInt(mes) - 1],
@@ -42,6 +70,10 @@ const MarketDashboard: React.FC<MarketDashboardProps> = ({ onBack }) => {
         pessimista: (precoBase * 0.94) * (is / 100),
         otimista: (precoBase * 1.06) * (is / 100)
     }));
+
+    // Contadores de fonte
+    const apisAoVivo = marketData ? [marketData.dolar, marketData.cepeaBoi, marketData.selic, marketData.milho].filter(d => d.fonte.startsWith('✅')).length : 0;
+    const apisTotal = 4;
 
     // Ranking de impacto
     const ranking = [
