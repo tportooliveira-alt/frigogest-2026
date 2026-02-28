@@ -106,11 +106,33 @@ const MarketDashboard: React.FC<MarketDashboardProps> = ({ onBack }) => {
                 <button onClick={onBack} className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-sm">
                     <ArrowLeft size={18} /> Voltar
                 </button>
-                <div className="text-right">
-                    <h1 className="text-2xl md:text-3xl font-black tracking-tight">
-                        📊 Dashboard de <span className="text-blue-400">Mercado</span>
-                    </h1>
-                    <p className="text-gray-500 text-xs mt-1">Ana V4 • Monte Carlo • 15 Variáveis × 5 Anos</p>
+                <div className="flex items-center gap-4">
+                    {/* Status das APIs */}
+                    <div className="flex items-center gap-2">
+                        {isLoading ? (
+                            <div className="flex items-center gap-1.5 bg-yellow-900/40 border border-yellow-700/40 rounded-full px-3 py-1">
+                                <Loader2 size={12} className="animate-spin text-yellow-400" />
+                                <span className="text-[10px] text-yellow-400 font-bold">Carregando APIs...</span>
+                            </div>
+                        ) : (
+                            <div className={`flex items-center gap-1.5 ${apisAoVivo > 0 ? 'bg-green-900/40 border-green-700/40' : 'bg-red-900/40 border-red-700/40'} border rounded-full px-3 py-1`}>
+                                {apisAoVivo > 0 ? <Wifi size={12} className="text-green-400" /> : <WifiOff size={12} className="text-red-400" />}
+                                <span className={`text-[10px] font-bold ${apisAoVivo > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    {apisAoVivo}/{apisTotal} APIs ao vivo
+                                </span>
+                            </div>
+                        )}
+                        <button onClick={loadData} disabled={isLoading} className="w-7 h-7 rounded-full bg-gray-800 border border-gray-700 flex items-center justify-center hover:bg-gray-700 transition-colors">
+                            <RefreshCw size={12} className={`text-gray-400 ${isLoading ? 'animate-spin' : ''}`} />
+                        </button>
+                        {lastUpdate && <span className="text-[9px] text-gray-600">{lastUpdate}</span>}
+                    </div>
+                    <div className="text-right">
+                        <h1 className="text-2xl md:text-3xl font-black tracking-tight">
+                            📊 Dashboard de <span className="text-blue-400">Mercado</span>
+                        </h1>
+                        <p className="text-gray-500 text-xs mt-1">Ana V4 • Monte Carlo • Dados ao Vivo</p>
+                    </div>
                 </div>
             </div>
 
@@ -123,10 +145,20 @@ const MarketDashboard: React.FC<MarketDashboardProps> = ({ onBack }) => {
                     <div className="bg-gradient-to-br from-emerald-900/60 to-emerald-800/30 border border-emerald-700/50 rounded-2xl p-6">
                         <div className="flex items-center justify-between mb-2">
                             <span className="text-emerald-400 text-xs font-bold uppercase tracking-wider">CEPEA/ESALQ Hoje</span>
-                            <TrendingUp className="text-emerald-400" size={20} />
+                            {cepeaVariacao >= 0 ? <TrendingUp className="text-emerald-400" size={20} /> : <TrendingDown className="text-red-400" size={20} />}
                         </div>
-                        <div className="text-4xl font-black text-white">R$ {premissas.cepeaHoje.toFixed(2)}</div>
-                        <p className="text-emerald-300/70 text-xs mt-1">Indicador Boi Gordo SP • Recorde Histórico! 🏆</p>
+                        <div className="flex items-end gap-3">
+                            <div className="text-4xl font-black text-white">R$ {premissas.cepeaHoje.toFixed(2)}</div>
+                            {cepeaVariacao !== 0 && (
+                                <span className={`text-sm font-bold mb-1 ${cepeaVariacao >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    {cepeaVariacao >= 0 ? '+' : ''}{cepeaVariacao.toFixed(2)}%
+                                </span>
+                            )}
+                        </div>
+                        <div className="flex items-center justify-between mt-1">
+                            <p className="text-emerald-300/70 text-xs">Indicador Boi Gordo SP 🏆</p>
+                            <span className="text-[8px] text-gray-600">{marketData?.cepeaBoi.fonte || ''}</span>
+                        </div>
                     </div>
 
                     {/* Card Fase do Ciclo */}
@@ -255,10 +287,21 @@ const MarketDashboard: React.FC<MarketDashboardProps> = ({ onBack }) => {
             </div>
 
             {/* FOOTER */}
-            <div className="mt-8 text-center">
+            <div className="mt-8 text-center space-y-1">
                 <p className="text-gray-600 text-[10px]">
-                    Ana V4 • Calibrada com 15 variáveis × 5 anos • Erro R$ 2,19/@ • Monte Carlo 10k cenários • Momentum ARIMA
+                    Ana V4 • Erro R$ 2,19/@ • Monte Carlo 10k cenários • Momentum ARIMA
                 </p>
+                {marketData && marketData.errors.length > 0 && (
+                    <p className="text-yellow-700 text-[9px]">
+                        ⚠️ {marketData.errors.length} API(s) em fallback: {marketData.errors.map(e => e.split(':')[0]).join(', ')}
+                    </p>
+                )}
+                <div className="flex items-center justify-center gap-4 text-[8px] text-gray-700">
+                    <span>💵 Dólar: {marketData?.dolar.fonte || 'Carregando...'}</span>
+                    <span>🐄 CEPEA: {marketData?.cepeaBoi.fonte || 'Carregando...'}</span>
+                    <span>📊 Selic: {marketData?.selic.fonte || 'Carregando...'}</span>
+                    <span>🌽 Milho: {marketData?.milho.fonte || 'Carregando...'}</span>
+                </div>
             </div>
         </div>
     );
