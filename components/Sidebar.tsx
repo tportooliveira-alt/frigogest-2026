@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Users, Package, Truck, Scale, Beef, DollarSign, LogOut, FileText, Zap, Calendar, Bot, Database, ShieldCheck, Sheet, Brain, MessageCircle, Megaphone, PlayCircle, ClipboardCheck, BarChart3 } from 'lucide-react';
+import { LayoutDashboard, Users, Package, Truck, Scale, Beef, DollarSign, LogOut, FileText, Zap, Calendar, Bot, Database, ShieldCheck, Sheet, Brain, MessageCircle, Megaphone, PlayCircle, ClipboardCheck, BarChart3, Target } from 'lucide-react';
 import { APP_VERSION_SHORT, APP_BUILD_DATE } from '../constants';
 
 interface SidebarProps {
@@ -24,6 +24,7 @@ const Sidebar: React.FC<SidebarProps> = ({ setView, onLogout, onSyncSheets, shee
     { id: 'heifers', label: 'Gestão Abate', description: 'Novilhas Diárias', icon: Beef, color: 'text-emerald-700', bg: 'bg-emerald-100', glow: 'group-hover:shadow-lg' },
     { id: 'ai_agents', label: 'Central IA', description: 'Agentes Inteligentes', icon: Brain, color: 'text-purple-600', bg: 'bg-purple-50', glow: 'group-hover:shadow-lg' },
     { id: 'market_dashboard', label: 'Mercado', description: 'Análise V4 Monte Carlo', icon: BarChart3, color: 'text-cyan-600', bg: 'bg-cyan-50', glow: 'group-hover:shadow-cyan-500/50' },
+    { id: 'pricing_engine', label: 'Precificação', description: 'Motor V4 Compra', icon: Target, color: 'text-amber-600', bg: 'bg-amber-50', glow: 'group-hover:shadow-amber-500/50' },
     { id: 'ai_chat', label: 'Chat IA', description: 'Fale com Gerentes', icon: MessageCircle, color: 'text-indigo-600', bg: 'bg-indigo-50', glow: 'group-hover:shadow-lg' },
     { id: 'ai_meeting', label: 'Sala de Guerra', description: 'Reunião Diretoria', icon: Users, color: 'text-rose-600', bg: 'bg-rose-100', glow: 'group-hover:shadow-rose-500/50' },
     { id: 'marketing', label: 'Marketing', description: 'Stitch IA & Studio', icon: Megaphone, color: 'text-fuchsia-600', bg: 'bg-fuchsia-100', glow: 'group-hover:shadow-fuchsia-500/50' },
