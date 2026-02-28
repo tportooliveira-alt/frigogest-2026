@@ -31,5 +31,18 @@
     "typescript": "^5.7.3",
     "vite": "^6.0.11",
     "vite-plugin-pwa": "^0.21.1"
-  }
+  },
+  "description": "- **Deploy:** Firebase Hosting\r - **Versão:** FG-PRO_v2.7.0\r - **Última atualização:** 24/02/2026\r - **Versão centralizada em:** `constants.ts` → `APP_VERSION`",
+  "main": "analyze_finances.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tportooliveira-alt/frigogest-2026.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/tportooliveira-alt/frigogest-2026/issues"
+  },
+  "homepage": "https://github.com/tportooliveira-alt/frigogest-2026#readme"
 }

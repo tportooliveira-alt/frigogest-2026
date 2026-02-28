@@ -1,0 +1,71 @@
+=================================================================
+🧠 ANA SUPERCOMPUTADOR V3: 12 VARIÁVEIS CRUZADAS (DADOS REAIS)
+=================================================================
+
+📊 DADOS CARREGADOS: 12 variáveis × 5 anos = 60 pontos de cruzamento real
+
+🔬 CORRELAÇÃO DE PEARSON (Cada Variável vs. Preço da Arroba):
+   (Positivo = preço sobe junto | Negativo = preço cai junto)
+
+   % Fêmeas Abate         r = -0.3402  ↓ inverso
+   Câmbio USD/BRL         r = +0.6338  ↑ sobe junto
+   Milho Saca 60kg        r = +0.8991  ↑ sobe junto
+   Frango Atacado         r = +0.7113  ↑ sobe junto
+   Vol. Abate Total       r = -0.2856  ↓ inverso
+   Exportação (ton)       r = -0.1467  ↓ inverso
+   Confinamento           r = -0.0152  ↓ inverso
+   Taxa Selic             r = +0.4344  ↑ sobe junto
+   Preço Bezerro          r = +0.8219  ↑ sobe junto
+   Custo Terra/ha         r = -0.0932  ↓ inverso
+   Consumo Per Capita     r = -0.4429  ↓ inverso
+
+=================================================================
+🏆 RANKING FINAL: O QUE MAIS AFETA O PREÇO DA ARROBA?
+=================================================================
+
+ 1. Milho Saca 60kg         18.6%  █████████  (r=+0.899)
+ 2. Preço Bezerro           17.0%  █████████  (r=+0.822)
+ 3. Frango Atacado          14.7%  ███████  (r=+0.711)
+ 4. Câmbio USD/BRL          13.1%  ███████  (r=+0.634)
+ 5. Consumo Per Capita       9.2%  █████  (r=-0.443)
+ 6. Taxa Selic               9.0%  █████  (r=+0.434)
+ 7. % Fêmeas Abate           7.1%  ████  (r=-0.340)
+ 8. Vol. Abate Total         5.9%  ███  (r=-0.286)
+ 9. Exportação (ton)         3.0%  ██  (r=-0.147)
+10. Custo Terra/ha           1.9%  █  (r=-0.093)
+11. Confinamento             0.3%    (r=-0.015)
+
+=================================================================
+⚙️ REGRESSÃO COM AS TOP 6 VARIÁVEIS (Grid Search Adaptativo)
+=================================================================
+
+Erro Médio Absoluto da Fórmula: R$ 2.47 por arroba
+
+A FÓRMULA REAL COM 6 VARIÁVEIS CRUZADAS:
+Preço = 75
+      + (0 × % Fêmeas)        → Ciclo Pecuário
+      + (25 × Dólar)            → Câmbio
+      + (0.5 × Milho R$/saca)    → Custo Alimentação
+      + (-2 × Abate em Milhões) → Pressão de Oferta
+      + (0.05 × Preço Bezerro)    → Custo Reposição
+
+PROVA REAL ANO A ANO:
+2021 | Real: R$ 305.50 | Modelo: R$ 310.52 | Erro: R$ 5.02
+2022 | Real: R$ 317.80 | Modelo: R$ 316.58 | Erro: R$ 1.22
+2023 | Real: R$ 255.10 | Modelo: R$ 251.63 | Erro: R$ 3.47
+2024 | Real: R$ 258.00 | Modelo: R$ 260.46 | Erro: R$ 2.46
+2025 | Real: R$ 310.00 | Modelo: R$ 309.80 | Erro: R$ 0.20
+
+=================================================================
+🔮 PROJEÇÃO 2026 (DADOS REAIS DE FEV/2026)
+=================================================================
+
+Premissas 2026:
+  Fêmeas: 41.1% | Dólar: R$ 5.75 | Milho: R$ 69.53
+  Abate Projetado: 38M cabeças | Bezerro: R$ 3200
+
+🎯 PROJEÇÃO MÉDIA ANUAL 2026 (Base CEPEA-SP): R$ 337.51 / @
+   Com Sazonalidade de Pico (Outubro, IS=102.6): R$ 346.29 / @
+   CEPEA Real Hoje (Fev/2026): R$ 352.8
+   Desvio do Modelo vs Realidade Atual: R$ 15.29
+=================================================================

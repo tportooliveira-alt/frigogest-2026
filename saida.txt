@@ -1,0 +1,33 @@
+Iniciando cruzamento de trilhões de combinações para achar os percentuais reais...
+
+========================================================
+🏆 CONTA MATEMÁTICA ENCONTRADA (A MAIS PRÓXIMA DA REALIDADE)
+========================================================
+
+Erro Médio Anual da Equação: R$ 20.06 por arroba
+Essa é a precisão máxima cruzando os 5 anos de montanha-russa do mercado.
+
+A CONTA DE PESOS REAIS:
+Preço Arroba = 310
+             + (-6.5 * % de Fêmeas passadas) -> Peso Oculto Matrizes
+             + (60 * Cotação Dólar)        -> Peso Câmbio
+             + (10 * Vol. Exportação)   -> Peso Escoamento
+             + (-15 * Vol. Confinamento) -> Peso Oferta Cocho
+
+PERCENTUAL DE IMPACTO (O QUE MAIS AFETA?):
+1. Fêmeas no Abate: 36.0% da variação
+2. Dólar:           42.5% da variação
+3. Exportação:      3.5% da variação
+4. Confinamento:    18.0% da variação
+
+PROVA REAL (O QUÃO PERTO CHEGAMOS?):
+Ano 2021 | Real: R$ 305.50 | A Conta Disse: R$ 294.50 | Erro: R$ 11.00
+Ano 2022 | Real: R$ 317.80 | A Conta Disse: R$ 317.50 | Erro: R$ 0.30
+Ano 2023 | Real: R$ 255.10 | A Conta Disse: R$ 280.90 | Erro: R$ 25.80
+Ano 2024 | Real: R$ 258.00 | A Conta Disse: R$ 259.20 | Erro: R$ 1.20
+Ano 2025 | Real: R$ 310.00 | A Conta Disse: R$ 248.00 | Erro: R$ 62.00
+
+========================================================
+🟢 PROJEÇÃO EXATA PARA 2026/2027 (Usando a mesmíssima conta validada):
+-> R$ 276.85 / @
+========================================================
