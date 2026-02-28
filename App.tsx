@@ -32,6 +32,7 @@ import AIChat from './components/AIChat';
 import AIMeetingRoom from './components/AIMeetingRoom';
 import MeetingChat from './components/MeetingChat';
 import MarketingHub from './components/MarketingHub';
+import MarketDashboard from './components/MarketDashboard';
 import ScenarioSimulator from './components/ScenarioSimulator';
 import { ActionApprovalCenter } from './components/ActionApprovalCenter';
 import { DetectedAction } from './services/actionParserService';
@@ -1408,6 +1409,7 @@ const App: React.FC = () => {
         scheduledOrders={data.scheduledOrders}
       />}
       {currentView === 'marketing' && <MarketingHub data={data} onBack={() => setCurrentView('menu')} />}
+      {currentView === 'market_dashboard' && <MarketDashboard onBack={() => setCurrentView('menu')} />}
       {currentView === 'ai_meeting' && <AIMeetingRoom
         onBack={() => setCurrentView('menu')}
         batches={data.batches}
