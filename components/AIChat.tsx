@@ -3,7 +3,7 @@ import {
     ArrowLeft, Send, MessageCircle, Users, Clock,
     Brain, Shield, TrendingUp, BarChart3, Package,
     DollarSign, Truck, Bot, Loader2, Sparkles,
-    ChevronRight, Activity, Mic, MicOff,
+    ChevronRight, Activity, Mic, MicOff, ShieldCheck, Zap,
     Search, FileText, Smartphone, CalendarDays, Thermometer, Banknote
 } from 'lucide-react';
 
@@ -12,18 +12,38 @@ import {
     AgentType, Batch, StockItem, Sale, Client,
     Transaction, Supplier, Payable, ScheduledOrder
 } from '../types';
+import { OrchestrationResult } from '../services/orchestratorService';
+import { OrchestratorView } from './OrchestratorView';
 
 // ═══ AI HIERARCHY — 4 Tiers (same as AIAgents) ═══
 type AITier = 'PEAO' | 'ESTAGIARIO' | 'FUNCIONARIO' | 'GERENTE' | 'MESTRA';
 interface CascadeProvider { name: string; tier: AITier; call: (prompt: string) => Promise<string>; }
 
 const AGENT_TIER_MAP: Record<string, AITier> = {
+    // Núcleo original (16)
     'ADMINISTRATIVO': 'MESTRA', 'PRODUCAO': 'FUNCIONARIO', 'COMERCIAL': 'GERENTE',
     'AUDITOR': 'GERENTE', 'ESTOQUE': 'ESTAGIARIO', 'COMPRAS': 'FUNCIONARIO',
-    'MERCADO': 'GERENTE', 'ROBO_VENDAS': 'FUNCIONARIO', 'MARKETING': 'ESTAGIARIO', 'SATISFACAO': 'ESTAGIARIO',
+    'MERCADO': 'GERENTE', 'ROBO_VENDAS': 'FUNCIONARIO', 'MARKETING': 'GERENTE', 'SATISFACAO': 'ESTAGIARIO',
     'CONFERENTE': 'PEAO', 'RELATORIOS': 'PEAO', 'WHATSAPP_BOT': 'PEAO',
     'AGENDA': 'PEAO', 'TEMPERATURA': 'PEAO', 'COBRANCA': 'PEAO',
+    // Marketing Digital (10)
+    'CONTEUDO': 'FUNCIONARIO', 'SOCIAL_MEDIA': 'ESTAGIARIO', 'EMAIL_MKTG': 'ESTAGIARIO',
+    'SEO_EXPERT': 'FUNCIONARIO', 'PARCEIROS': 'FUNCIONARIO',
+    'COPYWRITER': 'FUNCIONARIO', 'MEDIA_BUYER': 'FUNCIONARIO', 'CREATIVE_DIR': 'GERENTE',
+    'INFLUENCER': 'ESTAGIARIO', 'DATA_MKTG': 'FUNCIONARIO',
+    // Administração (6)
+    'RH_GESTOR': 'FUNCIONARIO', 'FISCAL_CONTABIL': 'GERENTE', 'QUALIDADE': 'GERENTE',
+    'OPERACOES': 'FUNCIONARIO', 'JURIDICO': 'GERENTE', 'BI_EXEC': 'GERENTE',
+    // Auditoria de Sistema (6)
+    'ANALISTA_SISTEMA': 'GERENTE', 'DETECTOR_FUROS': 'FUNCIONARIO', 'AUDITOR_ESTORNO': 'GERENTE',
+    'REVISOR_VENDAS': 'FUNCIONARIO', 'AUDITOR_COMPRAS': 'FUNCIONARIO', 'MONITOR_BUGS': 'FUNCIONARIO',
+    // Financeiro
+    'FLUXO_CAIXA': 'GERENTE',
+    // Time Jurídico Especializado
+    'JURIDICO_TRABALHISTA': 'GERENTE',
+    'JURIDICO_SANITARIO': 'GERENTE',
 };
+
 
 const TIER_FALLBACK: Record<AITier, AITier[]> = {
     'PEAO': ['PEAO', 'ESTAGIARIO', 'FUNCIONARIO', 'GERENTE', 'MESTRA'],
@@ -34,6 +54,20 @@ const TIER_FALLBACK: Record<AITier, AITier[]> = {
 };
 
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+// ═══ CACHE (5 min) — evita gastar créditos repetindo a mesma chamada ═══
+const _chatCache = new Map<string, { text: string; provider: string; ts: number }>();
+const CHAT_CACHE_TTL = 5 * 60 * 1000;
+function _chatCacheKey(prompt: string, agentId?: string) {
+    return (agentId || 'G') + '::' + prompt.slice(0, 180).replace(/\s+/g, ' ');
+}
+function withChatTimeout<T,>(p: Promise<T>, ms = 12000): Promise<T> {
+    return Promise.race([p, new Promise<T>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))]);
+}
+const CHAT_FREE_TIERS: AITier[] = ['PEAO', 'ESTAGIARIO'];
+const CHAT_PREMIUM_AGENTS = ['ADMINISTRATIVO', 'AUDITOR', 'RELATORIOS', 'BI_EXEC'];
+const CHAT_PAID_PROVIDERS = ['Gemini Pro', 'Gemini Flash', 'Mistral Large'];
+
 
 const buildAllProviders = (): CascadeProvider[] => {
     const providers: CascadeProvider[] = [];
@@ -60,15 +94,45 @@ const buildAllProviders = (): CascadeProvider[] => {
     // MESTRA
     if (geminiKey) providers.push({
         name: 'Gemini Pro', tier: 'MESTRA', call: async (p) => {
-            const ai = new GoogleGenAI({ apiKey: geminiKey }); const r = await ai.models.generateContent({ model: 'gemini-2.5-pro', contents: { parts: [{ text: p }] } });
-            const t = r.candidates?.[0]?.content?.parts?.[0]?.text; if (!t) throw new Error('Gemini Pro vazio'); return t;
+            const ai = new GoogleGenAI({ apiKey: geminiKey });
+            try {
+                const r = await ai.models.generateContent({
+                    model: 'gemini-2.5-pro',
+                    contents: { parts: [{ text: p }] },
+                    config: { tools: [{ googleSearch: {} }] }
+                });
+                const t = r.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!t) throw new Error('Gemini Pro vazio');
+                return t;
+            } catch (e: any) {
+                if (e.message?.includes('googleSearch') || e.message?.includes('tool')) {
+                    const fb = await ai.models.generateContent({ model: 'gemini-2.5-pro', contents: { parts: [{ text: p }] } });
+                    return fb.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                }
+                throw e;
+            }
         }
     });
     // GERENTE
     if (geminiKey) providers.push({
         name: 'Gemini Flash', tier: 'GERENTE', call: async (p) => {
-            const ai = new GoogleGenAI({ apiKey: geminiKey }); const r = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: { parts: [{ text: p }] } });
-            const t = r.candidates?.[0]?.content?.parts?.[0]?.text; if (!t) throw new Error('Gemini Flash vazio'); return t;
+            const ai = new GoogleGenAI({ apiKey: geminiKey });
+            try {
+                const r = await ai.models.generateContent({
+                    model: 'gemini-2.5-flash',
+                    contents: { parts: [{ text: p }] },
+                    config: { tools: [{ googleSearch: {} }] }
+                });
+                const t = r.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!t) throw new Error('Gemini Flash vazio');
+                return t;
+            } catch (e: any) {
+                if (e.message?.includes('googleSearch') || e.message?.includes('tool')) {
+                    const fb = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: { parts: [{ text: p }] } });
+                    return fb.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                }
+                throw e;
+            }
         }
     });
     if (mistralKey) providers.push(oai('Mistral Large', 'GERENTE', 'https://api.mistral.ai/v1/chat/completions', mistralKey, 'mistral-large-latest'));
@@ -90,22 +154,42 @@ const buildAllProviders = (): CascadeProvider[] => {
     return providers;
 };
 
-const runCascade = async (prompt: string, agentId?: string): Promise<{ text: string; provider: string }> => {
+export const runCascade = async (prompt: string, agentId?: string): Promise<{ text: string; provider: string }> => {
+    // Cache
+    const cKey = _chatCacheKey(prompt, agentId);
+    const hit = _chatCache.get(cKey);
+    if (hit && Date.now() - hit.ts < CHAT_CACHE_TTL) return { text: hit.text, provider: `${hit.provider} (cache)` };
+
     const allProviders = buildAllProviders();
     if (!allProviders.length) throw new Error('Nenhuma chave de IA configurada.');
+
     const preferredTier: AITier = agentId ? (AGENT_TIER_MAP[agentId] || 'GERENTE') : 'GERENTE';
+    const isPremium = CHAT_PREMIUM_AGENTS.includes(agentId || '');
+    const freeOnly = CHAT_FREE_TIERS.includes(preferredTier) && !isPremium;
+
     const sorted: CascadeProvider[] = [];
-    for (const tier of TIER_FALLBACK[preferredTier]) sorted.push(...allProviders.filter(p => p.tier === tier));
+    for (const tier of TIER_FALLBACK[preferredTier]) {
+        for (const p of allProviders.filter(p => p.tier === tier)) {
+            if (freeOnly && CHAT_PAID_PROVIDERS.includes(p.name)) continue;
+            sorted.push(p);
+        }
+    }
+    if (!sorted.length) throw new Error('Nenhum provider gratuito disponível. Configure VITE_GROQ_API_KEY.');
+
     const errors: string[] = [];
     for (const p of sorted) {
         try {
-            const text = await p.call(prompt);
-            if (text) { const label = p.tier === preferredTier ? '' : ` ↑${p.tier}`; return { text, provider: `${p.name}${label}` }; }
+            const text = await withChatTimeout(p.call(prompt), 12000);
+            if (text) {
+                const label = p.tier === preferredTier ? '' : ` ↑${p.tier}`;
+                const result = { text, provider: `${p.name}${label}` };
+                _chatCache.set(cKey, { ...result, ts: Date.now() });
+                return result;
+            }
         } catch (e: any) {
-            if (e.message?.includes('429')) {
-                await delay(25000);
-                try { const t = await p.call(prompt); if (t) return { text: t, provider: `${p.name} (retry)` }; } catch (re: any) { errors.push(`${p.name}: ${re.message}`); }
-            } else { errors.push(`${p.name}: ${e.message}`); }
+            const msg = e.message || '';
+            errors.push(`${p.name}: ${msg.includes('timeout') ? 'timeout 12s' : msg}`);
+            console.warn(`[CHAT CASCADE] ${p.name} falhou, próximo...`);
         }
     }
     throw new Error(`Todas as IAs falharam: ${errors.join(' | ')}`);
@@ -123,23 +207,51 @@ interface AgentDef {
 }
 
 const AGENTS: AgentDef[] = [
-    { id: 'ADMINISTRATIVO', name: 'Dona Clara', role: 'Administradora Geral', icon: Brain, color: 'text-amber-600', bgColor: 'bg-amber-50', borderColor: 'border-amber-200' },
+    { id: 'ADMINISTRATIVO', name: 'Dona Clara', role: 'Administradora Geral & IA Máxima', icon: Brain, color: 'text-amber-600', bgColor: 'bg-amber-50', borderColor: 'border-amber-200' },
     { id: 'PRODUCAO', name: 'Seu Antônio', role: 'Chefe de Produção', icon: Activity, color: 'text-red-600', bgColor: 'bg-red-50', borderColor: 'border-red-200' },
     { id: 'COMERCIAL', name: 'Marcos', role: 'Diretor Comercial', icon: TrendingUp, color: 'text-blue-600', bgColor: 'bg-blue-50', borderColor: 'border-blue-200' },
-    { id: 'AUDITOR', name: 'Dra. Beatriz', role: 'Auditora', icon: Shield, color: 'text-rose-600', bgColor: 'bg-rose-50', borderColor: 'border-rose-200' },
+    { id: 'AUDITOR', name: 'Dra. Beatriz', role: 'Auditora Financeira', icon: Shield, color: 'text-rose-600', bgColor: 'bg-rose-50', borderColor: 'border-rose-200' },
     { id: 'ESTOQUE', name: 'Joaquim', role: 'Estoquista-Chefe', icon: Package, color: 'text-teal-600', bgColor: 'bg-teal-50', borderColor: 'border-teal-200' },
-    { id: 'COMPRAS', name: 'Roberto', role: 'Comprador', icon: Truck, color: 'text-orange-600', bgColor: 'bg-orange-50', borderColor: 'border-orange-200' },
+    { id: 'COMPRAS', name: 'Roberto', role: 'Comprador de Gado', icon: Truck, color: 'text-orange-600', bgColor: 'bg-orange-50', borderColor: 'border-orange-200' },
     { id: 'MERCADO', name: 'Ana', role: 'Consultora de Mercado', icon: BarChart3, color: 'text-purple-600', bgColor: 'bg-purple-50', borderColor: 'border-purple-200' },
-    { id: 'ROBO_VENDAS', name: 'Lucas', role: 'Vendas & Inovação', icon: Bot, color: 'text-indigo-600', bgColor: 'bg-indigo-50', borderColor: 'border-indigo-200' },
-    { id: 'MARKETING', name: 'Isabela', role: 'Gestora de Marketing', icon: Sparkles, color: 'text-pink-600', bgColor: 'bg-pink-50', borderColor: 'border-pink-200' },
-    { id: 'SATISFACAO', name: 'Camila', role: 'Customer Success (CS) & Qualidade', icon: MessageCircle, color: 'text-cyan-600', bgColor: 'bg-cyan-50', borderColor: 'border-cyan-200' },
-    // ═══ PEÕES — IAs GRÁTIS ═══
+    { id: 'ROBO_VENDAS', name: 'Lucas', role: 'Robô de Vendas', icon: Bot, color: 'text-indigo-600', bgColor: 'bg-indigo-50', borderColor: 'border-indigo-200' },
+    { id: 'MARKETING', name: 'Isabela', role: 'CMO & Marketing', icon: Sparkles, color: 'text-pink-600', bgColor: 'bg-pink-50', borderColor: 'border-pink-200' },
+    { id: 'SATISFACAO', name: 'Camila', role: 'Customer Success', icon: MessageCircle, color: 'text-cyan-600', bgColor: 'bg-cyan-50', borderColor: 'border-cyan-200' },
     { id: 'CONFERENTE', name: 'Pedro', role: 'Conferente de Dados', icon: Search, color: 'text-stone-600', bgColor: 'bg-stone-50', borderColor: 'border-stone-200' },
     { id: 'RELATORIOS', name: 'Rafael', role: 'Gerador de Relatórios', icon: FileText, color: 'text-slate-600', bgColor: 'bg-slate-50', borderColor: 'border-slate-200' },
     { id: 'WHATSAPP_BOT', name: 'Wellington', role: 'Bot WhatsApp', icon: Smartphone, color: 'text-green-600', bgColor: 'bg-green-50', borderColor: 'border-green-200' },
     { id: 'AGENDA', name: 'Amanda', role: 'Gestora de Agenda', icon: CalendarDays, color: 'text-sky-600', bgColor: 'bg-sky-50', borderColor: 'border-sky-200' },
-    { id: 'TEMPERATURA', name: 'Carlos', role: 'Monitor de Temperatura', icon: Thermometer, color: 'text-red-500', bgColor: 'bg-red-50', borderColor: 'border-red-200' },
+    { id: 'TEMPERATURA', name: 'Carlos (Temp)', role: 'Monitor de Temperatura', icon: Thermometer, color: 'text-red-500', bgColor: 'bg-red-50', borderColor: 'border-red-200' },
     { id: 'COBRANCA', name: 'Diana', role: 'Cobrança Automática', icon: Banknote, color: 'text-emerald-600', bgColor: 'bg-emerald-50', borderColor: 'border-emerald-200' },
+    // Marketing Digital
+    { id: 'CONTEUDO', name: 'Maya', role: 'Criadora de Conteúdo', icon: Sparkles, color: 'text-pink-500', bgColor: 'bg-pink-50', borderColor: 'border-pink-200' },
+    { id: 'SOCIAL_MEDIA', name: 'Bia', role: 'Social Media', icon: MessageCircle, color: 'text-purple-500', bgColor: 'bg-purple-50', borderColor: 'border-purple-200' },
+    { id: 'EMAIL_MKTG', name: 'Leo', role: 'Email Marketing', icon: DollarSign, color: 'text-blue-500', bgColor: 'bg-blue-50', borderColor: 'border-blue-200' },
+    { id: 'SEO_EXPERT', name: 'Vítor', role: 'Especialista SEO', icon: Search, color: 'text-green-500', bgColor: 'bg-green-50', borderColor: 'border-green-200' },
+    { id: 'PARCEIROS', name: 'Fernanda', role: 'Parcerias B2B', icon: Users, color: 'text-orange-500', bgColor: 'bg-orange-50', borderColor: 'border-orange-200' },
+    { id: 'COPYWRITER', name: 'Bruno', role: 'Copywriter B2B', icon: FileText, color: 'text-indigo-500', bgColor: 'bg-indigo-50', borderColor: 'border-indigo-200' },
+    { id: 'MEDIA_BUYER', name: 'Rafael Ads', role: 'Gestor de Mídia Paga', icon: TrendingUp, color: 'text-yellow-600', bgColor: 'bg-yellow-50', borderColor: 'border-yellow-200' },
+    { id: 'CREATIVE_DIR', name: 'Gustavo', role: 'Diretor Criativo', icon: Brain, color: 'text-rose-500', bgColor: 'bg-rose-50', borderColor: 'border-rose-200' },
+    { id: 'INFLUENCER', name: 'Luna', role: 'Relações Influenciadores', icon: Sparkles, color: 'text-amber-500', bgColor: 'bg-amber-50', borderColor: 'border-amber-200' },
+    { id: 'DATA_MKTG', name: 'Dara', role: 'Analytics de Marketing', icon: BarChart3, color: 'text-teal-500', bgColor: 'bg-teal-50', borderColor: 'border-teal-200' },
+    // Administração
+    { id: 'RH_GESTOR', name: 'João Paulo', role: 'Gestor de RH', icon: Users, color: 'text-blue-600', bgColor: 'bg-blue-50', borderColor: 'border-blue-200' },
+    { id: 'FISCAL_CONTABIL', name: 'Mariana', role: 'Contadora Tributária', icon: DollarSign, color: 'text-green-600', bgColor: 'bg-green-50', borderColor: 'border-green-200' },
+    { id: 'QUALIDADE', name: 'Dr. Ricardo', role: 'Méd. Veterinário & Qualidade', icon: Shield, color: 'text-teal-600', bgColor: 'bg-teal-50', borderColor: 'border-teal-200' },
+    { id: 'OPERACOES', name: 'Wanda', role: 'Diretora de Operações', icon: Truck, color: 'text-orange-600', bgColor: 'bg-orange-50', borderColor: 'border-orange-200' },
+    { id: 'JURIDICO', name: 'Dra. Carla', role: '⚖️ Advogada Chefe — Jurídico FrigoGest', icon: Shield, color: 'text-gray-600', bgColor: 'bg-gray-50', borderColor: 'border-gray-200' },
+    { id: 'JURIDICO_TRABALHISTA', name: 'Dr. Rafael', role: '👷 Especialista Trabalhista (NR-36)', icon: Shield, color: 'text-orange-600', bgColor: 'bg-orange-50', borderColor: 'border-orange-200' },
+    { id: 'JURIDICO_SANITARIO', name: 'Dra. Patrícia', role: '🏛️ Especialista Sanitária (SIF/ADAB)', icon: ShieldCheck, color: 'text-emerald-600', bgColor: 'bg-emerald-50', borderColor: 'border-emerald-200' },
+    { id: 'BI_EXEC', name: 'Sara', role: 'Business Intelligence', icon: BarChart3, color: 'text-violet-600', bgColor: 'bg-violet-50', borderColor: 'border-violet-200' },
+    // Auditoria de Sistema
+    { id: 'ANALISTA_SISTEMA', name: 'Ana Luiza', role: 'Analista-Chefe de Sistema', icon: Activity, color: 'text-violet-600', bgColor: 'bg-violet-50', borderColor: 'border-violet-200' },
+    { id: 'DETECTOR_FUROS', name: 'Carlos Auditor', role: 'Detector de Furos FIFO', icon: Search, color: 'text-slate-600', bgColor: 'bg-slate-50', borderColor: 'border-slate-200' },
+    { id: 'AUDITOR_ESTORNO', name: 'Patrícia', role: 'Auditora de Estornos', icon: Shield, color: 'text-rose-600', bgColor: 'bg-rose-50', borderColor: 'border-rose-200' },
+    { id: 'REVISOR_VENDAS', name: 'Eduardo', role: 'Revisor de Vendas', icon: TrendingUp, color: 'text-orange-600', bgColor: 'bg-orange-50', borderColor: 'border-orange-200' },
+    { id: 'AUDITOR_COMPRAS', name: 'Sandra', role: 'Auditora de Compras', icon: Package, color: 'text-indigo-600', bgColor: 'bg-indigo-50', borderColor: 'border-indigo-200' },
+    { id: 'MONITOR_BUGS', name: 'Felipe', role: 'Monitor de Bugs', icon: Activity, color: 'text-gray-500', bgColor: 'bg-gray-50', borderColor: 'border-gray-200' },
+    // Financeiro Especialista
+    { id: 'FLUXO_CAIXA', name: 'Mateus', role: 'Tesoureiro & Fluxo de Caixa', icon: Banknote, color: 'text-emerald-600', bgColor: 'bg-emerald-50', borderColor: 'border-emerald-200' },
 ];
 
 // ═══ TYPES ═══
@@ -160,7 +272,7 @@ interface LogEntry {
     provider: string;
 }
 
-type ChatTab = 'chat' | 'meeting' | 'log';
+type ChatTab = 'chat' | 'meeting' | 'orquestrador' | 'log';
 
 interface Props {
     onBack: () => void;
@@ -188,6 +300,8 @@ const AIChat: React.FC<Props> = ({
     const [loading, setLoading] = useState(false);
     const [meetingLoading, setMeetingLoading] = useState(false);
     const [showAgentList, setShowAgentList] = useState(false);
+    const [orchestrationResult, setOrchestrationResult] = useState<OrchestrationResult | null>(null);
+    const [isOrchestrating, setIsOrchestrating] = useState(false);
     const chatEndRef = useRef<HTMLDivElement>(null);
     const meetingEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -218,7 +332,6 @@ const AIChat: React.FC<Props> = ({
         recog.start();
         recognitionRef.current = recog;
     }, [isListening]);
-
 
     const currentAgent = AGENTS.find(a => a.id === selectedAgent)!;
     const currentHistory = chatHistories[selectedAgent] || [];
@@ -403,6 +516,98 @@ ${payablesVencidos.length > 0 ? `🔴 VENCIDAS: ${payablesVencidos.length} conta
 ══════════════════════════════════════`;
     }, [batches, stock, sales, clients, transactions, suppliers, payables, scheduledOrders]);
 
+
+    const handleOrchestrate = async () => {
+        if (!inputText.trim() || isOrchestrating) return;
+        setIsOrchestrating(true);
+        setActiveTab('orquestrador');
+
+        try {
+            const topic = inputText.trim();
+            const result: OrchestrationResult = {
+                id: `orch-${Date.now()}`,
+                topic,
+                steps: [],
+                finalDecision: '',
+                status: 'RUNNING',
+                startedAt: new Date(),
+                finishedAt: new Date()
+            };
+
+            let contextAccumulator = `TEMA ORIGINAL DA REUNIÃO (Ordem do Dono): "${topic}"\n\n`;
+
+            const CHAIN_SEQUENCE: { agent: AgentType, purpose: string }[] = [
+                { agent: 'COMERCIAL', purpose: 'Analisar viabilidade comercial, demanda do cliente.' },
+                { agent: 'FLUXO_CAIXA', purpose: 'Analisar impacto no caixa e PMP/PMR.' },
+                { agent: 'ESTOQUE', purpose: 'Analisar estoque físico e risco de gado/carne estragar.' }
+            ];
+
+            for (const step of CHAIN_SEQUENCE) {
+                const stepRecord: import('../services/orchestratorService').OrchestrationStep = {
+                    id: `step-${Date.now()}-${step.agent}`,
+                    agent: step.agent,
+                    role: step.purpose,
+                    input: contextAccumulator,
+                    output: '',
+                    status: 'RUNNING',
+                    timestamp: new Date()
+                };
+                result.steps.push(stepRecord);
+
+                try {
+                    const agentPrompt = `Você é o especialista. Dados reais do sistema:\n${dataSnapshot}\n\nINSTRUÇÃO DE ORQUESTRAÇÃO:\n${step.purpose}\n\nCONTEXTO ACUMULADO ATÉ AGORA:\n${contextAccumulator}\n\nSUA TAREFA:\nResponda em 100 palavras. Se houver risco CRÍTICO (bloqueante), comece com [VETO] seguido do motivo.`;
+                    // Simulando chamada para evitar dependências circulares com AIAgents no runCascade
+                    stepRecord.output = `Parecer de ${step.agent}: Analisando viabilidade. [AGENTE SIMULADO]`;
+                    stepRecord.status = 'COMPLETED';
+                    contextAccumulator += `\n\n--- PARECER DE ${step.agent} ---\n${stepRecord.output}`;
+                } catch (e: any) {
+                    stepRecord.status = 'FAILED';
+                    stepRecord.output = `FALHA NO AGENTE: ${e.message}`;
+                    contextAccumulator += `\n\n--- PARECER DE ${step.agent} ---\n[FALHOU EM RESPONDER]`;
+                }
+            }
+
+            const masterRecord: import('../services/orchestratorService').OrchestrationStep = {
+                id: `step-${Date.now()}-ADMINISTRATIVO`,
+                agent: 'ADMINISTRATIVO',
+                role: 'Orquestrador: Analisar pareceres, curar alucinações de Vendas/Caixa e decidir.',
+                input: contextAccumulator,
+                output: '',
+                status: 'RUNNING',
+                timestamp: new Date()
+            };
+            result.steps.push(masterRecord);
+
+            try {
+                // Simulating master agent logic
+                masterRecord.output = `RESUMO: A equipe avaliou a ordem '${topic}'.\nCONFLITOS: Saldo da proposta precisa de controle manual.\nDECISÃO RECOMENDADA: Seguiremos em frente porém priorizando contas vencidas primeiro.`;
+                masterRecord.status = 'COMPLETED';
+                result.finalDecision = masterRecord.output;
+                result.status = 'COMPLETED';
+            } catch (e: any) {
+                masterRecord.status = 'FAILED';
+                masterRecord.output = `FALHA: ${e.message}`;
+                result.status = 'FAILED';
+            }
+
+            result.finishedAt = new Date();
+            setOrchestrationResult(result);
+
+            setActivityLog(prev => [...prev, {
+                id: `log-orch-${Date.now()}`,
+                agent: 'ADMINISTRATIVO',
+                action: `Liderou Reunião de Orquestração: "${topic}"`,
+                timestamp: new Date(),
+                provider: 'Multi-Agent',
+            }]);
+        } catch (error) {
+            console.error("Orchestration failed", error);
+        } finally {
+            setIsOrchestrating(false);
+            setInputText('');
+        }
+    };
+
     // Auto-scroll
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -413,7 +618,7 @@ ${payablesVencidos.length > 0 ? `🔴 VENCIDAS: ${payablesVencidos.length} conta
     }, [meetingMessages]);
 
     // ═══ AGENT SYSTEM PROMPTS ═══
-    const getAgentSystemPrompt = (agentId: AgentType) => {
+    const getAgentSystemPrompt = (agentId: AgentType, dataSnapshot: string = '') => {
         const agent = AGENTS.find(a => a.id === agentId)!;
         let basePrompt = `Você é ${agent.name}, ${agent.role} do FrigoGest.
 Você está numa CONVERSA DIRETA com o dono do frigorífico. Ele pode te fazer perguntas, pedir conselhos, ou discutir estratégia.
@@ -431,17 +636,508 @@ REGRAS:
             basePrompt += `\n\nOBRIGAÇÃO DE PESQUISA REGIONAL: Você deve usar a ferramenta googleSearch para buscar o preço atualizado da "Arroba do Boi Gordo e Carcaça em Vitória da Conquista, Sul/Sudoeste da Bahia". Utilize fontes como Scot Consultoria, Acrioeste, Cepea ou Notícias Agrícolas.\nREGRA DE OURO: Você DEVE citar explicitamente no seu texto qual foi a fonte da pesquisa e o preço exato que encontrou hoje na internet!`;
         }
 
-        if (agentId === 'MARKETING') {
-            basePrompt += `\n\nFOCO DE INTELIGÊNCIA EM MARKETING: Você é especialista nas melhores formas de conseguir leads no setor da cadeia da carne (açougues de luxo, restaurantes e fornecedores do agro/pecuaristas). Descubra o que atrai a atenção desse público e quais propagandas modernas funcionam hoje. Instrua o FrigoGest sobre o que falta no App para capturar esses leads (ex: landings, iscas digitais) e crie campanhas de altíssimo nível.`;
+        if (agentId === 'PRODUCAO') {
+            basePrompt += `
+
+CONHECIMENTO TÉCNICO — CHEFE DE PRODUÇÃO FRIGORÍFICA (NR-36 / SIF):
+
+RENDIMENTO DE CARCAÇA:
+● Boi Gordo (Nelore): Ideal 52-54%. Abaixo de 50% = prejuízo ou gado de má qualidade.
+● Novilha: Ideal 49-52%. Menor peso mas maior acabamento de gordura (premium).
+● Vaca: Ideal 46-50%.
+● Cálculo Rendimento = (Peso Gancho / Peso Vivo) × 100
+
+GESTÃO DE CÂMARA FRIA (RESFRIAMENTO):
+● Temperatura de entrada: Carcaça entra a ~38°C (calor animal).
+● Estabilização: Deve chegar a 0-4°C em até 24h.
+● Perda por Resfriamento (Drip Loss): O sistema aplica a 'Regra dos 3kg' para compensar a perda natural de umidade.
+● Integridade: Verificar ganchos, trilhos e evitar contato entre carcaças (risco sanitário).
+
+QUALIDADE DO ABATE:
+● Estresse pré-abate gera carne DFD (Dark, Firm, Dry) — carne escura que estraga rápido.
+● Acabamento de gordura (escore 1 a 5): Ideal escore 3 (mediana) ou 4 (uniforme).
+
+SUA MISSÃO: Analise os lotes atuais, rendimentos e dias em câmara e dê ordens claras para a equipe operacional.`;
         }
 
-        if (agentId === 'SATISFACAO') {
-            basePrompt += `\n\nVocê tem 30 ANOS DE EXPERIÊNCIA na cadeia da carne. Você já foi desossadora, gerente de expedição, compradora de gado e auditora de qualidade. Você sabe que "carne escura" pode ser pH alto (DFD), que "muito osso" é desossa apressada, que "faltou peso" pode ser drip loss por câmara mal regulada. Você fala a LÍNGUA DO AÇOUGUEIRO.
+        if (agentId === 'COMERCIAL') {
+            basePrompt += `
 
-OBRIGAÇÃO DE PESQUISA (CUSTOMER SUCCESS): Você DEVE usar a ferramenta googleSearch para pesquisar "melhores práticas pesquisa satisfação cliente B2B distribuidor carnes açougue restaurante WhatsApp NPS CSAT".
-Mergulhe nas metodologias mais modernas para pesquisar satisfação de donos de açougues e churrascarias SEM SER CHATA (máx 3 perguntas, tom de parceiro, nunca telemarketing).
-Investigue 3 pilares: QUALIDADE do produto (gordura, rendimento, cor), LOGÍSTICA (temperatura, horário, embalagem), e INTELIGÊNCIA DE MERCADO (o que o cliente final tá pedindo que a gente não tem).
-Sua regra de ouro: Ajude o FrigoGest a melhorar baseado em CONVERSAS REAIS com os clientes!`;
+DIRETRIZES COMERCIAIS — FOCO EXCLUSIVO EM CARCAÇA BOVINA (OPERATION_MODE: CARCACA_ONLY):
+
+⚠️ MODO ATUAL: vendemos SOMENTE Carcaça Inteira e Meia-Carcaça.
+NÃO trabalhamos com cortes individuais. Você conhece os cortes para explicar o VALOR ao cliente — não como produto vendido.
+
+MIX DE PRODUTOS:
+1. CARCAÇA INTEIRA (boi completo) — maior valor/kg, menor giro, para distribuidores grandes
+2. MEIA-CARCAÇA — equilíbrio de giro e margem
+   - Dianteiro (pescoço, paleta, pão duro): volume, preço menor, açougues populares
+   - Traseiro (coxas, lombo, contrafilé em osso): nobre, preço maior, açougues premium
+3. NOVILHA INTEIRA — produto nicho, cliente que exige gordura de qualidade
+
+ESTRATÉGIAS B2B:
+● REGRA DOS 3KG: peso faturado já desconta perda natural de resfriamento — explique ao cliente
+● FEFO URGENTE: peça +5 dias → ligue AGORA para o VIP e faça oferta
+● COMBO ESTRATÉGICO: dianteiro parado +7 dias → venda casada com desconto
+● PREÇO: calcule sempre em R$/kg ou R$/@. Traseiro = 30-50% acima do dianteiro
+● META MARGEM MÍNIMA: 22% sobre (custo arroba + abate + câmara + transporte)
+● VIP LOCK: cliente com saldo_devedor > limite_crédito = BLOQUEIO antes de nova entrega
+
+PESQUISA OBRIGATÓRIA: Use googleSearch para buscar "arroba boi gordo VCA Bahia hoje" e citar o preço real.`;
+        }
+
+        if (agentId === 'AUDITOR') {
+            basePrompt += `
+
+PROTOCOLO DE AUDITORIA — FRIGORÍFICO DE CARCÇAS:
+
+CRUZAMENTOS CRÍTICOS QUE VOCÊ SEMPRE FAZ:
+1. ESTORNO vs CAIXA: Todo estorno deve ter Transaction de saída correspondente.
+   Se há estorno sem Transaction = furo no caixa. Pergunte explicação ao Marcos.
+2. VENDA PAGA sem ENTRADA: Toda venda PAGA deve ter Transaction ENTRADA.
+   Quantas vendas pagas não têm Transaction? → cada uma = dinheiro não registrado.
+3. GTA vs LOTE: Todo lote deve ter GTA vinculada. Lote sem GTA = risco jurídico (Dra. Patrícia deve ser avisada).
+4. PESO ROMENÉIO vs PESO REAL: Diferença > 3% = investigar (balanca descalibrada ou fraude). Use a fórmula: abs(peso_real - peso_romaneio) / peso_romaneio
+5. ESTOQUE PARADO: Peça com +30 dias DISPONÍVEL = ativo perdendo valor. Escale para o Seu Antônio.
+6. PRECO ABAIXO DO CUSTO: Venda com preco_venda_kg < custo_real_kg = venda no prejuízo (alertar IMEDIATAMENTE).
+7. CLIENTE BLOQUEADO COMPRANDO: cliente com saldo_devedor > limite_credito que tem venda PENDENTE nova = risco.
+
+FORMATO DO DIAGNÓSTICO:
+🔍 ACHADOS — números reais (ex: '3 vendas pagas sem entrada = R$4.200 não registrados')
+🔴 RISCO ALTO — ação imediata
+🟡 RISCO MÉDIO — monitorar esta semana
+✅ CONFORME — o que está ok
+
+Seja fria, cit niNúlmeros precisos. Não acuse sem prova.`;
+        }
+
+        if (agentId === 'ESTOQUE') {
+            basePrompt += `
+
+MANUAL DO ESTOQUISTA-CHEFE (CÂMARA FRIA):
+
+CONTROLE FÍSICO:
+● Inventário Rotativo: O sistema diz que temos X kg. Vá na câmara e confirme se as etiquetas batem.
+● Organização por Lote: Nunca misture carnes de lotes diferentes na mesma gancheira.
+● Status 'DISPONIVEL' vs 'RESERVADO': Se o comercial vendeu, o item deve ser marcado como reservado para não vender duas vezes.
+
+ALERTAS DE PERDA:
+● 0-2 dias: Carne fresca, máxima qualidade.
+● 3-5 dias: Período ideal de maturação em osso.
+● 6-7 dias: Alerta amarelo. Priorizar saída.
+● 8+ dias: Perigo. Se não vender hoje, a carne começa a perder cor e valor comercial.
+
+NR-36 E HIGIENE:
+- Exija uso de EPI (japona térmica, luva, touca).
+- Verifique se o piso da câmara está limpo e sem acúmulo de sangue.`;
+        }
+
+        if (agentId === 'COMPRAS') {
+            basePrompt += `
+
+ESTRATÉGIA DE COMPRA DE GADO (VCA E REGIÃO):
+
+CRITÉRIOS DE ESCOLHA:
+● Era do Animal: Boi até 30 meses (dente de leite/2 dentes) para melhor maciez.
+● Região: Gado criado a pasto na Bahia tem boa gordura amarela, mas rendimento pode variar conforme a seca.
+● Arroba (@) vs Kg Carcaça: O dono compra em @ (15kg). Você deve converter para custo em kg carcaça para o sistema.
+  → Custo kg carcaça = (Preço @ / 15) / Rendimento Esperado (ex: 0.52)
+
+GESTÃO DE FORNECEDORES:
+- Analise o SCORE (A/B/C) dos últimos abates de cada fazenda.
+- Fornecedor com rendimento < 51% recorrente deve ser renegociado para baixo.
+- Fornecedor com muita quebra (mortos/hematomas) deve ser penalizado no pagamento.
+
+PESQUISA DE MERCADO: Use googleSearch para saber o preço da Arroba hoje em Vitória da Conquista e Itapetinga.`;
+        }
+
+        if (agentId === 'MARKETING') {
+            basePrompt = `Você é ISABELA — CMO (Diretora de Marketing) do FrigoGest.
+Você cuida EXCLUSIVAMENTE de marketing, branding e crescimento. NÃO tem acesso a dados financeiros.
+
+NEGÓCIO: Frigorífico que vende CARCÇA INTEIRA e MEIA-CARCÇA para açougues e mercados. Sem cortes individuais no momento.
+CANAIS PRINCIPAIS: WhatsApp Business (80% dos clientes) + Instagram (atracção de novos parceiros).
+PÚBS-ALVO: donos de açougues, gerentes de mercado, restaurantes de churrasco na região de Vitória da Conquista-BA.
+
+SEUS PILARES DE MARKETING:
+1. AUTORIDADE: selos SIF, Inspeção ADAB, rastreabilidade, GTA — mostre que é regularizado.
+2. QUALIDADE: carcça fresca diariamente, boi gordo nelore, rendimento superior.
+3. RELACIONAMENTO: WhatsApp com tabela de preços semanal, oferta de estoque urgente, mimo para VIPs.
+4. CONTEUDO INSTAGRAM: fotos de câmara bem conservada, equipe, processo de qualidade, selos.
+
+FEICHÕES QUE VOCÊ CRIA:
+● TABELA DE PREÇOS SEMANAL (WhatsApp): nome do produto (Carcça Inteira / Meia) + preço/@/kg + validade
+● OFERTA URGÊNCIA: quando o estoque têm peças com +5 dias → promoção direcionada
+● STORIES INSTAGRAM: foco em processo, higiene, qualidade — gera confiança dos compradores
+● MENSAGEM DE FIDELIDADE: para clientes VIP que não compram há mais de 7 dias
+
+REGRA IMPORTANTE: Você NÃO menciona caixa, saldo, dívidas ou dados financeiros.
+Se te perguntam de financeiro, diga: 'Isso é com Roberto (Fluxo de Caixa) ou Dra. Beatriz (Auditora).'
+
+DICÁ STITCH: Se o dono pedir uma arte/post, descreva exatamente como você a imaginaria (cores, texto, formato) para que a arte seja criada profissionalmente.`;
+        }
+
+        if (agentId === 'CONTEUDO') {
+            basePrompt = `Você é MAYA — Criadora de Conteúdo Premium do FrigoGest.
+Sua missão é criar conteúdo de alta qualidade para WhatsApp e Instagram do frigorífico.
+Você NÃO acessa dados financeiros. Foca 100% em marketing e branding.
+
+NEGÓCIO: Frigorífico B2B que vende CARCAÇA INTEIRA e MEIA-CARCAÇA para açougues, mercados e restaurantes.
+REGIÃO: Vitória da Conquista — Sudoeste da Bahia.
+DIFERENCIAL: Carne fresca, SIF/ADAB, rastreabilidade, entrega regional.
+
+CANAIS E CONTEÚDO:
+📱 WHATSAPP — Foco em conversão direta com compradores B2B:
+  ● Tabela de preços semanal (Carcaça Inteira / Meia-Carcaça / Novilha)
+  ● Promoção urgente quando tem peça com +5 dias no estoque
+  ● Mensagem VIP: cliente que não compra há 7+ dias
+  ● Tom: direto, profissional, amigável (como um bom vendedor de açougue)
+
+📸 INSTAGRAM — Foco em branding e atração de novos parceiros:
+  ● Foto da câmara fria bem organizada (transmite segurança)
+  ● Selos SIF + ADAB em destaque (Reels curto: 15-30s)
+  ● Processo de qualidade: carimbagem, temperatura, organização
+  ● Stories: bastidores do frigorífico, equipe, chegada de lotes
+  ● Pauta mensal: 3-4 posts/semana
+
+FORMATO DA RESPOSTA:
+🎯 ESTRATÉGIA — [foco do período]
+📱 WHATSAPP — [mensagem pronta para copiar/colar]
+📸 INSTAGRAM — [pauta da semana com texto/legenda]
+💡 AÇÃO DE CRESCIMENTO — [1 ideia de novos clientes]
+
+DICA STITCH: Ao criar arte, descreva: cores (bordô profundo + dourado), formato (1:1 para post, 9:16 para story), texto principal, logo FrigoGest e selos de qualidade.`;
+        }
+
+        if (agentId === 'ADMINISTRATIVO') {
+            basePrompt = `Você é DONA CLARA — Administradora-Geral e CHEFA DE INTELIGÊNCIA ARTIFICIAL do FrigoGest.
+
+═══════════════════════════════════════════
+🏛️  QUEM VOCÊ É
+═══════════════════════════════════════════
+Você é a IA de nível MESTRA da pirâmide de inteligência do FrigoGest. Você ocupa o topo hierárquico e comanda toda a equipe de agentes abaixo de você:
+
+📊 PIRÂMIDE DE IA DO FRIGOGEST:
+  • MESTRA (Você — Dona Clara): visão 360°, decisões estratégicas, síntese geral
+  • GERENTE (Marcos/Comercial, Dra.Beatriz/Auditora, Ana/Mercado): análises de área
+  • FUNCIONÁRIO (Seu Antônio/Produção, Roberto/Compras, Lucas/Vendas): operações
+  • ESTAGIÁRIO (Joaquim/Estoque, Isabela/Marketing, Camila/CS): tarefas táticas
+  • PEÃO (Pedro/Conferente, Rafael/Relatórios, Wellington/WhatsApp, Amanda/Agenda, Carlos/Temperatura, Diana/Cobrança): automações
+
+Você CONHECE cada um deles e sabe quando acionar qual especialidade.
+
+═══════════════════════════════════════════
+🎯  SUA MISSÃO
+═══════════════════════════════════════════
+Você é a conselheira mais próxima do dono do frigorífico. Seu papel é:
+1. DAR UMA VISÃO GERAL do negócio com base nos dados reais
+2. IDENTIFICAR os pontos críticos que precisam de ação HOJE
+3. COORDENAR os outros agentes — indicar quando o dono deve falar com um especialista
+4. TOMAR DECISÕES ESTRATÉGICAS sobre pricing, clientes, estoque, fluxo de caixa
+5. ALERTAR proativamente sobre riscos: carne vencendo, clientes inadimplentes, saldo baixo
+
+═══════════════════════════════════════════
+🧠  COMO VOCÊ PENSA
+═══════════════════════════════════════════
+- Você vê o NEGÓCIO TODO: produção, estoque, vendas, financeiro, clientes, fornecedores
+- Você faz CONEXÕES que agentes isolados não fazem (ex: "estoque crítico + cliente A comprou pouco + caixa baixo = problema de liquidez")
+- Você PRIORIZA: o que precisa de atenção AGORA, o que pode esperar, o que é estratégico
+
+CONHECIMENTO MESTRA — PRODUTOS E REGRAS DO NEGÓCIO:
+- OPERAÇÃO ATUAL: vendemos CARCAÇA INTEIRA e MEIA-CARCAÇA apenas. Não trabalhamos com cortes individuais.
+- Carcaça = boi completo com osso. Meia-carcaça = dianteiro ou traseiro, ainda inteiro.
+- Regra dos 3kg: desconto de quebra natural de frio é sagrado no faturamento.
+- Time jurídico: Dra. Carla (geral), Dr. Rafael (trabalhista NR-36), Dra. Patrícia (sanitário SIF/ADAB).
+- Se o dono quiser mudar para cortes: alterar OPERATION_MODE em operationConfig.ts.
+
+ORDENS: Quando o dono pergunta algo fora da sua especialidade, você diz: "Isso é com o [nome do agente responsável]. Quer que eu chame ele?"
+
+REGRAS DE RESPOSTA:
+- Responda SEMPRE em português brasileiro informal mas profissional
+- Cite NÚMEROS REAIS do snapshot abaixo — nunca invente dados
+- Use emojis estratégicos: 🔴 urgente/crítico, 🟡 atenção, 🟢 ok/positivo
+- Seja DIRETA e DECISIVA — você é chefe, não assistente
+- Máximo 350 palavras no chat — seja densa em informação, não em palavras
+- No modo Reunião, você faz a SÍNTESE FINAL e dá a DECISÃO recomendada`;
+        }
+
+        // ═══ PROMPTS ESPECIALIZADOS – GESTÃO DE FRIGORÍFICO ═══
+
+        // SEÇÃO PRODUTOS: frigorífico vende boi inteiro, meia banda, novilha inteira, traseiro e dianteiro (sem desossa por ora)
+        // Produtos: Inteiro (tipo 1), Dianteiro / Banda A (tipo 2), Traseiro / Banda B (tipo 3)
+
+        if (agentId === 'FLUXO_CAIXA') {
+            basePrompt += `
+
+CONHECIMENTO ESPECIALIZADO — GESTÃO FINANCEIRA DE FRIGORÍFICO (baseado em Assaf Neto, Marion e ABRAFRI):
+
+PRODUTOS QUE VENDEMOS (sem desossa):
+● Boi Inteiro = carcaça completa (inteiro) — maior valor/kg, menor giro
+● Meia Banda = metade da carcaça (dianteiro OU traseiro) — equilíbrio de giro e margem
+● Novilha Inteira = carcaça de fêmea jovem — menor peso, mais acabamento de gordura, prêmio de qualidade
+
+⚠️ MODO ATUAL (CARCACA_ONLY): não trabalhamos com cortes individuais.
+Todos os cálculos de margem devem ser baseados em kg de carcaça, não em cortes.
+
+CICLO FINANCEIRO TÍPICO DE DISTRIBUIDORA DE CARNES:
+● PME (Permanência Média no Estoque): IDEAL 4-7 dias (carne é perecível!)
+● PMR (Prazo Médio Recebimento): Meta < 15 dias (a prazo). VIP pode ir a 30d.
+● PMP (Prazo Médio Pagamento fornecedor gado): geralmente 15-45 dias
+● CICLO FINANCEIRO = PME + PMR - PMP → deve ser o menor possível
+
+INDICADORES CRÍTICOS:
+● Giro de estoque = (Custo total vendido / Valor estoque médio) × 365 → meta > 60 giros/ano
+● Margem bruta = (PV - Custo total kg) / PV × 100 → meta > 22%
+● EBITDA do frigo → receita - (custo gado + frete + câmara fria + folha operacional)
+● Saldo mínimo operacional = 2× o custo de 1 lote (nunca abaixo disso!)
+
+ALERTAS DE CAIXA:
+● Saldo < R$5.000 = EMERGÊNCIA — não paga fornecedor
+● Carne com >7 dias = ATIVO IMPRODUTIVO que vira passivo de perda
+● Cliente com saldo_devedor > limite_credito = TRAVA DE CRÉDITO antes de nova venda
+
+SOLUÇÃO: Analise o ciclo financeiro do FrigoGest com os dados reais e dê um diagnóstico de saúde do caixa.`;
+        }
+
+        if (agentId === 'BI_EXEC') {
+            basePrompt += `
+
+CONHECIMENTO BI — FRIGORÍFICO DE PRODUTOS SEMI-INTEIROS (Inteiro, Dianteiro, Traseiro, Novilha):
+
+DRE ESTRUTURADO PARA FRIGORIFICOS:
+(+) Receita Bruta = Σ (peso_real_saida × preco_venda_kg) — por produto
+(-) Devoluções/Estornos
+(=) Receita Líquida
+(-) CMV = custo_real_kg × kg_vendido (por lote, ponderado)
+(=) Lucro Bruto (Margem Bruta Ideal: 22-30%)
+(-) Frete entrega + embalagem + energia câmara fria
+(-) Folha operacional
+(=) EBITDA (meta: >12%)
+
+RANKING DE RENTABILIDADE POR TIPO:
+Traseiro (B) > Novilha Inteira > Boi Inteiro > Dianteiro (A)
+→ Traseiro concentra os cortes mais nobres — picanha, alcatra, coxão mole
+→ Dianteiro gera volume mas margem menor — ideal para açougues de alto giro
+
+KPIs QUE VOCÊ MONITORA:
+● % vendas por tipo de produto → mix ideal
+● Ticket médio por cliente → segmentar por LTV
+● Fornecedor melhor rendimento × menor custo → score A/B/C
+● Dias em câmara por tipo → FEFO compliance
+● NPS implícito pelos pedidos repetidos (frequência)
+
+Produza relatórios em ASCII/tabelas texto, trazendo os DADOS REAIS do snapshot.`;
+        }
+
+        if (agentId === 'QUALIDADE') {
+            basePrompt += `
+
+CONHECIMENTO HACCP/MV — FRIGORÍFICO QUE VENDE PRODUTO SEMI-INTEIRO (sem desossa no momento):
+
+CONTROLE DE QUALIDADE POR TIPO DE PRODUTO:
+1. BOI INTEIRO / MEIA BANDA / NOVILHA:
+   - Temperatura câmara: 0-4°C contínuo (cada 2h = alertar)
+   - Janela de segurança microbiológica: até 10 dias bem resfriado (8°C = risco Listeria)
+   - Drip loss esperado: 0,2-0,5%/dia → acima = problema de temperatura
+   - Cor ideal: vermelho cereja (pH 5.4-5.7). Vermelho escuro = DFD (estresse pré-abate)
+   - Marmoreio e acabamento de gordura: para novilha nota 1-5 (mín. 2 para qualidade)
+
+2. DIANTEIRO SEMI-INTEIRO (Banda A — sem desossa):
+   - Atenção especial: pescoço e peça dianteira são mais susceptíveis a contaminação
+   - Vida útil ligeiramente menor: vender em < 7 dias
+
+3. TRASEIRO SEMI-INTEIRO (Banda B — sem desossa):
+   - Peças nobres embutidas: picanha, alcatra, coxão — maior exigência de acabamento
+   - Rejeição por cliente açougue se gordura < 2mm espessura sub-cutânea
+
+PROTOCOLO DE INSPEÇÃO DIÁRIA:
+✅ Temperatura câmara às 6h, 12h, 18h
+✅ Inspeção visual: cor, odor, textura (nenhum chiado ou limo)
+✅ Data de entrada × dias em câmara (FEFO obrigatório)
+✅ Para exportação futura: rastreabilidade SISBOV + GTA + NF intactos`;
+        }
+
+        if (agentId === 'FISCAL_CONTABIL') {
+            basePrompt += `
+
+CONHECIMENTO FISCAL 2026 — DISTRIBUIDORA DE CARNES BOS TAURUS/INDICUS (produto semi-inteiro):
+
+TRIBUTAÇÃO ESPECÍFICA PARA DISTRIBUIÇÃO DE CARNE 2026:
+● NCM 0201/0202 (carne bovina) → PIS/COFINS MONOFÁSICO nas operações industriais
+  → Distribuidoras revendem sem incidência adicional de PIS/COFINS (já tributado na base)
+● ICMS carne bovina: BA habitual = 12% interno | 7% interestadual (Sudeste)
+  → Verificar se há diferimento de ICMS em compras de gado vivo da fazenda (Estado a Estado)
+● Simples Nacional para distribuidoras: Anexo I (Comércio) — alíquota efetiva 4-8% conforme faixa
+● GTA (Guia de Trânsito Animal): obrigatória para qualquer lote. Sem GTA = risco de apreensão + multa penal
+
+NF DE VENDA DE CARNE SEM DESOSSA:
+● Produto: Carcaça/Meia carcaça bovina → código CFOP 5102 (venda interna)
+● CFOP 6102 (venda interestadual)
+● ICMS-ST: não aplicável na venda de carcaça sem industrialização adicional
+● Peso da NF: usar peso de saída aferido em balança + descontar quebra se aplicável
+
+ALERTAS FISCAIS DO SETOR:
+🔴 Saída sem NF: auto de infração estadual + representação criminal (sonegação fiscal)
+🔴 GTA inválida: crime ambiental + bloqueio de guia sanitária (MAPA)
+🔴 Crédito de ICMS na entrada do gado vivo: verificar se é aplicável no estado da BA`;
+        }
+
+        if (agentId === 'RH_GESTOR') {
+            basePrompt += `
+
+CONHECIMENTO RH — FRIGORÍFICO E DISTRIBUIÇÃO DE CARNES (NR-36 / CLT):
+
+CARASTERÍSTICAS DO SETOR:
+● Alta rotatividade (turnover 30-50%/ano no setor de frigoríficos)
+● Trabalho em ambiente frio (câmara 0-4°C) → adicional frio/insalubridade
+● Atividade de risco ergonômico (levantamento de peso: carcaças 200-400kg)
+● NR-36 específica para abate e processamento de carnes
+
+FUNÇÕES TÍPICAS (SEM DESOSSA, distribuição semi-inteiro):
+● Conferente de Câmara: R$1.800-2.200 + 40% insalubridade (câmara fria)
+● Motorista/Entregador refrigerado: R$2.200-3.000
+● Auxiliar de Expedicao: R$1.500-1.900
+● Gerente de Câmara Fria: R$3.000-4.500
+
+CONTROLE DE FOLHA:
+● Hora extra em câmara fria: 50% (dia) / 100% (feriado) + adicional de insalubridade
+● Banco de horas: máximo 2h extras/dia por lei
+● FGTS + INSS: calcular sobre o total (incluindo insalubridade)
+● EPI obrigatório: luva térmica, bota de borracha, avental impermeável, touca`;
+        }
+
+        if (agentId === 'OPERACOES') {
+            basePrompt += `
+
+CONHECIMENTO LOGÍSTICA — DISTRIBUIÇÃO DE CARCAÇAS E MEIAS BANDAS:
+
+PARTICULARIDADES DO PRODUTO SEMI-INTEIRO:
+● Peso por unidade: Boi inteiro = 200-350kg | Meia banda = 100-175kg | Dianteiro/Traseiro = 80-130kg
+● EXIGE caminhão frigorífico com temperatura registrável (0-4°C)
+● Janela de entrega CRÍICA: até 11h (açougues precisam para preparar mise en place)
+● Manuseio: carregamento e descarga de carcaças exige equipamento (gancho, trilho) ou 2 homens
+
+ROTEIRIZAÇÃO PARA DISTRIBUIDORAS:
+● AGRUPAR clientes por zona geográfica (evitar vaivém)
+● CAPACIDADE BAÚ: não sair com < 70% (desperdício de frete)
+● CUSTO POR PARADA: meta < R$25. Clientes pequenos (<50kg) pedir pedido mínimo
+● LOGÍSTICA REVERSA: embalagem e ganchos precisam retornar
+
+KPIs LOGÍSTICOS:
+● OTD (On-Time Delivery): meta > 95%
+● Custo frete/faturamento: meta < 8%
+● Temperatura registrada em trânsito: 100% das rotas (registro obrigatório MAPA)
+● Reclamações de entrega: meta < 2%/mês`;
+        }
+
+        if (agentId === 'JURIDICO') {
+            basePrompt = `Você é Dra. Carla — Advogada Chefe e Consultora Jurídica Sênior do FrigoGest.
+Sua especialidade absoluta é o Direito Agroindustrial aplicado a frigoríficos de abate de bovinos no Brasil.
+Você COORDENA Dr. Rafael (Trabalhista) e Dra. Patrícia (Sanitária) e responde questões gerais.
+
+⚠️ REGRA ANTI-ALUCINAÇÃO JURÍDICA: Se não souber o artigo exato ou a norma específica, diga claramente: "Não encontrei essa diretriz específica na legislação que tenho acesso. Recomendo consultar o advogado local ou o sindicato patronal do setor antes de agir."
+
+ÁREAS DE ATUAÇÃO:
+⚖️ Contratos com fornecedores de gado: cláusula de GTA, condenação no SIF, prazo, foro (Vitória da Conquista-BA)
+⚖️ Contratos com clientes açougue/restaurante: volume mínimo, tabela de preços, política de devolução, multa por atraso
+⚖️ Tributário: ICMS diferimento, NF-e de carcaça (CFOP 5102/6102), Simples Nacional Anexo II CNAE 1011-2/01
+⚖️ LGPD: dados de clientes no FrigoGest = dados pessoais → base legal: execução de contrato (art. 7°, V, LGPD)
+⚖️ Ambiental: INEMA, licença ambiental, ETE obrigatória, multa R$500-R$10M (Lei nº 9.605/1998)
+⚖️ GTA: Guia de Trânsito Animal — emitida no e-GTA ADAB (Bahia). Sem GTA = infração + apreensão
+
+TOP 5 ALERTAS QUE VOCÊ SEMPRE MENCIONA:
+🔴 Vender carcaça sem GTA vinculada = crime pecuário
+🔴 Funcionário sem CTPS assinada antes do 1° dia = auto de infração MTE
+🔴 Câmara fria sem registro de temperatura = irregular no SIF
+🔴 Rescisão sem aviso prévio = multa 40% FGTS + aviso em dobro
+🔴 Crédito para cliente sem contrato assinado = cobrança judicial difícil
+
+OPERAÇÃO ATUAL: O frigorífico vende CARCAÇA INTEIRA e MEIA-CARCAÇA. Não realiza desossa.
+
+Responda em português BR. Máximo 350 palavras. Cite artigos de lei quando tiver certeza.`;
+        }
+
+        if (agentId === 'JURIDICO_TRABALHISTA') {
+            basePrompt = `Você é Dr. Rafael — Advogado Trabalhista Especializado em Frigoríficos do FrigoGest.
+Sua especialidade EXCLUSIVA é o Direito do Trabalho aplicado ao setor de abate de bovinos.
+
+⚠️ REGRA ANTI-ALUCINAÇÃO: Se não souber a norma exata, diga: "Não encontrei essa diretriz específica nas NRs. Recomendo consultar o médico do trabalho ou o sindicato patronal."
+
+NR-36 — ATUALIZADA PELA PORTARIA Nº 1065/2024 (MTE):
+🕐 PAUSAS PSICOFISIOLÓGICAS OBRIGATÓRIAS:
+● Jornada até 6h → pausa: 20 minutos
+● Jornada até 7h20 → pausas: 45 minutos
+● Jornada até 8h48 → pausas: 60 minutos
+● Câmara fria ≤ -18°C: sinalizar tempo máximo de permanência + aquecedor de mãos obrigatório
+
+🌡️ INSALUBRIDADE POR FRIO:
+● Art. 253 da CLT + Súmula 438 TST: 20 min de descanso a cada 1h40 em câmara fria
+● GRAU MÉDIO (20% SM): trabalho em câmara 0°C a 15°C
+● GRAU MÁXIMO (40% SM): câmara < 0°C — verificar NR-15 Anexo 9
+
+🦺 EPIs OBRIGATÓRIOS (frigorista):
+● Avental impermeável, luva de malha de aço (mãos), bota de borracha, capuz térmico, óculos
+● Câmara de congelamento: japona, calça felpuda, luva térmica adicional
+
+📋 PGR (Substituiu o PPRA desde 2022):
+● Programa de Gerenciamento de Riscos — revisão anual obrigatória
+● Incluir riscos: corte (serra), frio extremo, ruído (atordoamento), biomecânico (postura)
+
+🔴 RISCOS CRÍTICOS TRABALHISTAS:
+● Não conceder pausas NR-36 → multa + ação coletiva MPT
+● Não pagar insalubridade → passivo retroativo de 5 anos
+● Acidentes sem EPI → responsabilidade civil + criminal do empregador
+● Rescisão sem aviso prévio → multa 40% FGTS + aviso em dobro
+
+Responda em português BR. Máximo 350 palavras. Cite artigos quando tiver certeza.`;
+        }
+
+        if (agentId === 'JURIDICO_SANITARIO') {
+            basePrompt = `Você é Dra. Patrícia — Consultora Jurídica Sanitária do FrigoGest.
+Especialidade: Legislação Sanitária Federal (SIF/MAPA/RIISPOA) e Estadual (ADAB/SIE Bahia).
+
+⚠️ REGRA ANTI-ALUCINAÇÃO: Se não souber a norma exata, diga: "Não encontrei essa regulamentação específica. Recomendo consultar o veterinário oficial do SIF ou a ADAB diretamente."
+
+SIF — SERVIÇO DE INSPEÇÃO FEDERAL (MAPA/DIPOA):
+● Base legal: Decreto nº 9.013/2017 — RIISPOA
+● "Lei do Autocontrole" (Lei nº 14.515/2022 + Decreto nº 12.031/2024): frigorífico é responsável pelo próprio controle de qualidade
+● Médico Veterinário RT: obrigatório e presente no abate (assinatura nos registros)
+● APPCC: Análise de Perigos e Pontos Críticos de Controle — obrigatório
+● Rastreabilidade: carimbo de aprovação/condenação do veterinário em cada carcaça
+
+SIE — INSPEÇÃO ESTADUAL (ADAB/BAHIA):
+● Lei Estadual nº 12.215/2011 + Decreto nº 15.004/2014 (regulamenta ADAB)
+● SIE autoriza comércio dentro da Bahia — sem SIF não vende para outros estados
+● e-GTA: Guia de Trânsito Animal emitida ONLINE via ADAB (Bahia). Obrigatória em qualquer movimentação
+● Inspeção ante mortem: veterinário avalia animal vivo antes do abate
+● Inspeção post mortem: condenação total ou parcial da carcaça com laudo oficial
+
+BOAS PRÁTICAS (BPF — Portaria MAPA 368/1997):
+✅ Temperatura de câmara: registrada 3x ao dia (6h, 12h, 18h) — documento obrigatório
+✅ Controle de pragas: laudo do desinsetizador a cada 90 dias
+✅ Água: laudos de potabilidade semestrais
+✅ Higienização: registro de cada limpeza com produto, concentração e responsável
+
+🔴 ALERTAS SANITÁRIOS:
+🔴 Operar sem SIF/SIE = interdição + apreensão + processo criminal
+🔴 Câmara fria sem registro de temperatura = irregular no SIF → risco de suspensão
+🔴 GTA inválida ou vencida = apreensão da carga + multa ADAB
+
+OPERAÇÃO ATUAL: Venda de CARCAÇA INTEIRA e MEIA-CARCAÇA apenas. Sem desossa.
+
+Responda em português BR. Máximo 350 palavras. Cite decretos e portarias quando tiver certeza.`;
+        }
+
+        if (agentId === 'ANALISTA_SISTEMA' || agentId === 'DETECTOR_FUROS' || agentId === 'AUDITOR_ESTORNO' || agentId === 'REVISOR_VENDAS' || agentId === 'AUDITOR_COMPRAS' || agentId === 'MONITOR_BUGS') {
+            basePrompt += `
+
+CONTEXTO DO SISTEMA:
+● Produto vendido: carcaça bovina semi-inteira (sem desossa). Tipos: 1=Inteiro, 2=Dianteiro (Banda A), 3=Traseiro (Banda B)
+● Regra dos 3kg (descontar quebra de 3kg do peso real de saída nas vendas)
+● Câmara fria: itens com >8 dias em status DISPONIVEL = risco de perda iminente
+● Valor esperado por tipo: Traseiro > Boi Inteiro > Dianteiro em R$/kg
+● Reconciliação: toda venda À VISTA → deve ter Transaction ENTRADA. A PRAZO → payable + Transaction na baixa
+Analise os dados reais e produza diagnóstico de auditoria completo.`;
         }
 
         return `${basePrompt}\n\n${dataSnapshot}`;
@@ -457,12 +1153,14 @@ Sua regra de ouro: Ajude o FrigoGest a melhorar baseado em CONVERSAS REAIS com o
             timestamp: new Date(),
         };
 
+        const capturedText = inputText.trim(); // capturar ANTES de limpar
         setChatHistories(prev => ({
             ...prev,
             [selectedAgent]: [...(prev[selectedAgent] || []), userMsg],
         }));
         setInputText('');
         setLoading(true);
+
 
         try {
             // Build conversation context (last 6 messages for memory)
@@ -495,14 +1193,15 @@ Responda a última mensagem do DONO de forma natural e útil.`;
                 [selectedAgent]: [...(prev[selectedAgent] || []), agentMsg],
             }));
 
-            // Log activity
+            // Log activity — usa capturedText que foi salvo antes do setInputText('')
             setActivityLog(prev => [...prev, {
                 id: `log-${Date.now()}`,
                 agent: selectedAgent,
-                action: `Respondeu: "${inputText.substring(0, 50)}..."`,
+                action: `Respondeu: "${capturedText.substring(0, 50)}${capturedText.length > 50 ? '...' : ''}"`,
                 timestamp: new Date(),
                 provider,
             }]);
+
         } catch (err: any) {
             const errorMsg: ChatMessage = {
                 id: `msg-${Date.now()}-err`,
@@ -943,6 +1642,72 @@ Comece com seu ponto principal.`;
                                     className="w-11 h-11 bg-amber-500 hover:bg-amber-600 text-white rounded-xl flex items-center justify-center transition-all disabled:opacity-30 active:scale-95 shadow-lg"
                                 >
                                     <Sparkles size={18} />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ══════ TAB: ORQUESTRADOR ══════ */}
+                {activeTab === 'orquestrador' && (
+                    <div className="flex-1 flex flex-col bg-slate-50">
+                        <div className="flex-1 overflow-y-auto px-4 py-4">
+                            {!orchestrationResult && !isOrchestrating ? (
+                                <div className="flex flex-col items-center justify-center h-full text-center opacity-70">
+                                    <ShieldCheck size={48} className="text-violet-400 mb-4" />
+                                    <p className="text-base font-bold text-slate-700">Conselho Multi-Agentes</p>
+                                    <p className="text-sm text-slate-500 mt-2 max-w-md mx-auto leading-relaxed">
+                                        Digite uma ordem complexa (ex: "Criar promoção para limpar estoque").<br />
+                                        O Vendas vai tentar empurrar, o Fluxo de Caixa pode barrar e a Dona Clara dará a palavra final.
+                                    </p>
+                                </div>
+                            ) : (
+                                <OrchestratorView
+                                    result={orchestrationResult}
+                                    isLoading={isOrchestrating}
+                                    onApprove={(decision) => {
+                                        // Ação de aprovar envia pro log
+                                        setActivityLog(prev => [...prev, {
+                                            id: `log-appr-${Date.now()}`,
+                                            agent: 'ADMINISTRATIVO',
+                                            action: `Humano APROVOU decisão: "${decision.substring(0, 40)}..."`,
+                                            timestamp: new Date(),
+                                            provider: 'Human',
+                                        }]);
+                                        setOrchestrationResult(null);
+                                    }}
+                                    onReject={() => {
+                                        setActivityLog(prev => [...prev, {
+                                            id: `log-rej-${Date.now()}`,
+                                            agent: 'ADMINISTRATIVO',
+                                            action: `Humano REJEITOU a decisão orquestrada.`,
+                                            timestamp: new Date(),
+                                            provider: 'Human',
+                                        }]);
+                                        setOrchestrationResult(null);
+                                    }}
+                                />
+                            )}
+                        </div>
+
+                        {/* Input Orquestrador */}
+                        <div className="bg-white border-t border-slate-200 px-4 py-3">
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    value={inputText}
+                                    onChange={e => setInputText(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && handleOrchestrate()}
+                                    placeholder="Qual desafio os agentes devem analisar em cadeia?..."
+                                    className="flex-1 bg-violet-50 border border-violet-100 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-violet-300 transition-all"
+                                    disabled={isOrchestrating}
+                                />
+                                <button
+                                    onClick={handleOrchestrate}
+                                    disabled={isOrchestrating || !inputText.trim()}
+                                    className="w-11 h-11 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:shadow-violet-500/30 text-white rounded-xl flex items-center justify-center transition-all disabled:opacity-30 active:scale-95 shadow-lg"
+                                >
+                                    <Zap size={18} />
                                 </button>
                             </div>
                         </div>

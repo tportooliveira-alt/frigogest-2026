@@ -191,7 +191,25 @@ export interface Payable {
 
 // ═══ MULTI-AGENT AI SYSTEM ═══
 
-export type AgentType = 'ADMINISTRATIVO' | 'PRODUCAO' | 'COMERCIAL' | 'AUDITOR' | 'ESTOQUE' | 'COMPRAS' | 'MERCADO' | 'ROBO_VENDAS' | 'MARKETING' | 'SATISFACAO' | 'CONFERENTE' | 'RELATORIOS' | 'WHATSAPP_BOT' | 'AGENDA' | 'TEMPERATURA' | 'COBRANCA';
+export type AgentType =
+  // Nucleo original (16 agentes)
+  | 'ADMINISTRATIVO' | 'PRODUCAO' | 'COMERCIAL' | 'AUDITOR' | 'ESTOQUE'
+  | 'COMPRAS' | 'MERCADO' | 'ROBO_VENDAS' | 'MARKETING' | 'SATISFACAO'
+  | 'CONFERENTE' | 'RELATORIOS' | 'WHATSAPP_BOT' | 'AGENDA' | 'TEMPERATURA' | 'COBRANCA'
+  // Time de Marketing Digital
+  | 'CONTEUDO' | 'SOCIAL_MEDIA' | 'EMAIL_MKTG' | 'SEO_EXPERT' | 'PARCEIROS'
+  // Agencia de Publicidade
+  | 'COPYWRITER' | 'MEDIA_BUYER' | 'CREATIVE_DIR' | 'INFLUENCER' | 'DATA_MKTG'
+  // Time de Administracao
+  | 'RH_GESTOR' | 'FISCAL_CONTABIL' | 'QUALIDADE' | 'OPERACOES' | 'JURIDICO' | 'BI_EXEC'
+  // Time de Auditoria de Sistema
+  | 'ANALISTA_SISTEMA' | 'DETECTOR_FUROS' | 'AUDITOR_ESTORNO' | 'REVISOR_VENDAS' | 'AUDITOR_COMPRAS' | 'MONITOR_BUGS'
+  // Especialistas Financeiros
+  | 'FLUXO_CAIXA'
+  // Time Jurídico
+  | 'JURIDICO_TRABALHISTA' | 'JURIDICO_SANITARIO'
+  // Suporte a IDs das versoes experimentais de marketing
+  | 'MKT_INSTAGRAM' | 'MKT_COPYWRITER' | 'MKT_TENDENCIAS';
 export type AlertSeverity = 'INFO' | 'ALERTA' | 'CRITICO' | 'BLOQUEIO';
 export type AlertStatus = 'NOVO' | 'VISTO' | 'RESOLVIDO' | 'IGNORADO';
 

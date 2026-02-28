@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import Clients from './components/Clients';
 import Batches from './components/Batches';
+import GTAManager from './components/GTAManager';
 import Stock from './components/Stock';
 import Expedition from './components/Expedition';
 import Financial from './components/Financial';
@@ -26,10 +27,17 @@ import HeiferManager from './components/HeiferManager';
 import SalesAgent from './components/SalesAgent';
 import AuditLogView from './components/AuditLogView';
 import AIAgents from './components/AIAgents';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import AIChat from './components/AIChat';
 import AIMeetingRoom from './components/AIMeetingRoom';
 import MeetingChat from './components/MeetingChat';
 import MarketingHub from './components/MarketingHub';
+import ScenarioSimulator from './components/ScenarioSimulator';
+import { ActionApprovalCenter } from './components/ActionApprovalCenter';
+import { DetectedAction } from './services/actionParserService';
+import { AIOSPanel } from './components/AIOSPanel';
+import { runAutoTriggers, AutoTriggerResult, shouldShowBriefingToday, markBriefingShownToday } from './services/autoTriggerService';
+
 
 const App: React.FC = () => {
   // MODO OFFLINE: mude para true para testar sem internet
@@ -42,6 +50,8 @@ const App: React.FC = () => {
   const [data, setData] = useState<AppState>({ ...MOCK_DATA, scheduledOrders: [], suppliers: [], payables: [] });
   const [loading, setLoading] = useState(!OFFLINE_MODE);
   const [sheetsSyncStatus, setSheetsSyncStatus] = useState<'idle' | 'syncing' | 'ok' | 'error'>('idle');
+  const [aiosAlerts, setAiosAlerts] = useState<AutoTriggerResult[]>([]);
+  const [dismissedAlerts] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (OFFLINE_MODE || !auth) {
@@ -138,8 +148,28 @@ const App: React.FC = () => {
 
       setDbStatus('online');
 
+      // ── AIOS AUTO-TRIGGERS (Agentes Sentinela) ──
+      // Rodam silenciosamente após cada carregamento de dados
+      try {
+        const triggers = runAutoTriggers({
+          batches, stock, sales,
+          clients: clientsWithDebt,
+          transactions,
+          payables,
+          scheduledOrders
+        });
+        setAiosAlerts(triggers);
+        // Marca briefing como mostrado hoje (1x/dia)
+        if (triggers.some(t => t.triggerId.startsWith('briefing-'))) {
+          markBriefingShownToday();
+        }
+      } catch (triggerErr) {
+        console.warn('[AIOS] Erro nos triggers:', triggerErr);
+      }
+
       // ── SYNC GOOGLE SHEETS ──
       if (isSheetsConfigured()) {
+
         setSheetsSyncStatus('syncing');
         syncAllToSheets({
           clients: clientsWithDebt,
@@ -1139,7 +1169,16 @@ const App: React.FC = () => {
         if (r.success) setTimeout(() => setSheetsSyncStatus('idle'), 5000);
       } : undefined} sheetsSyncStatus={sheetsSyncStatus} />}
       {currentView === 'system_reset' && <SystemReset onBack={() => setCurrentView('menu')} refreshData={fetchData} />}
-      {currentView === 'dashboard' && <Dashboard sales={data.sales} stock={closedStock} transactions={data.transactions} batches={closedBatches} clients={data.clients} onBack={() => setCurrentView('menu')} />}
+      {currentView === 'dashboard' && (
+        <div>
+          <AIOSPanel
+            alerts={aiosAlerts}
+            onDismiss={(id) => setAiosAlerts(prev => prev.filter(a => a.triggerId !== id))}
+            onNavigate={(target) => { if (target) setCurrentView(target); }}
+          />
+          <Dashboard sales={data.sales} stock={closedStock} transactions={data.transactions} batches={closedBatches} clients={data.clients} onBack={() => setCurrentView('menu')} />
+        </div>
+      )}
       {
         currentView === 'clients' && <Clients
           clients={data.clients}
@@ -1197,6 +1236,13 @@ const App: React.FC = () => {
           removeStockItem={estornoStockItem}
           registerBatchFinancial={registerBatchFinancial}
           onGoToStock={() => setCurrentView('stock')}
+          onBack={() => setCurrentView('menu')}
+        />
+      }
+      {
+        currentView === 'gta' && <GTAManager
+          batches={data.batches}
+          suppliers={data.suppliers}
           onBack={() => setCurrentView('menu')}
         />
       }
@@ -1339,7 +1385,7 @@ const App: React.FC = () => {
       }
 
       {currentView === 'audit' && <AuditLogView onBack={() => setCurrentView('menu')} />}
-      {currentView === 'ai_agents' && <AIAgents
+      {currentView === 'ai_agents' && <ErrorBoundary><AIAgents
         onBack={() => setCurrentView('menu')}
         batches={data.batches}
         stock={data.stock}
@@ -1349,7 +1395,7 @@ const App: React.FC = () => {
         suppliers={data.suppliers}
         payables={data.payables}
         scheduledOrders={data.scheduledOrders}
-      />}
+      /></ErrorBoundary>}
       {currentView === 'ai_chat' && <AIChat
         onBack={() => setCurrentView('menu')}
         batches={data.batches}
@@ -1361,7 +1407,7 @@ const App: React.FC = () => {
         payables={data.payables}
         scheduledOrders={data.scheduledOrders}
       />}
-      {currentView === 'marketing' && <MarketingHub data={data} />}
+      {currentView === 'marketing' && <MarketingHub data={data} onBack={() => setCurrentView('menu')} />}
       {currentView === 'ai_meeting' && <AIMeetingRoom
         onBack={() => setCurrentView('menu')}
         batches={data.batches}
@@ -1375,43 +1421,40 @@ const App: React.FC = () => {
       />}
       {currentView === 'meeting_chat' && <MeetingChat onBack={() => setCurrentView('menu')} />}
       {currentView === 'system_reset' && <SystemReset onBack={() => setCurrentView('menu')} refreshData={fetchData} />}
+      {currentView === 'scenario_simulator' && <ScenarioSimulator onBack={() => setCurrentView('menu')} onApplyScenario={(simData) => {
+        setData(prev => ({
+          ...prev,
+          clients: simData.clients?.length ? simData.clients : prev.clients,
+          sales: simData.sales?.length ? [...simData.sales, ...prev.sales] : prev.sales,
+          transactions: simData.transactions?.length ? [...simData.transactions, ...prev.transactions] : prev.transactions,
+        }));
+        setCurrentView('menu');
+      }} />}
 
-      {/* SYSTEM STATUS BAR */}
-      <div className="fixed bottom-3 left-3 right-3 md:bottom-8 md:left-8 md:right-auto z-[200] flex flex-col md:flex-row gap-2 md:gap-3 pointer-events-none items-stretch md:items-center">
-        {dbStatus === 'online' && (
-          <div className="bg-white/80 backdrop-blur-xl border border-emerald-50 text-emerald-600 px-4 py-2 rounded-xl md:rounded-2xl font-black text-[8px] md:text-[9px] uppercase tracking-[0.15em] md:tracking-[0.2em] flex items-center justify-center gap-2 shadow-xl shadow-emerald-900/5 animate-reveal">
-            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-            <span className="hidden md:inline">CORE: SINAL_CRIPTOGRAFADO</span>
-            <span className="md:hidden">ONLINE</span>
-          </div>
-        )}
-        {dbStatus === 'offline' && (
-          <div className="bg-white/80 backdrop-blur-xl border border-rose-50 text-rose-600 px-4 py-2 rounded-xl md:rounded-2xl font-black text-[8px] md:text-[9px] uppercase tracking-[0.15em] md:tracking-[0.2em] flex items-center justify-center gap-2 shadow-xl shadow-rose-900/5 animate-reveal">
-            <div className="w-2 h-2 bg-rose-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.5)]" />
-            <span className="hidden md:inline">CORE: LINK_AUSENTE</span>
-            <span className="md:hidden">OFFLINE</span>
-          </div>
-        )}
-
-        {/* Botão Atualizar App - SEMPRE VISÍVEL */}
+      {/* Botão Atualizar App — canto superior direito, discreto mas acessível */}
+      {currentView === 'menu' && (
         <button
           onClick={() => {
-            if (window.confirm('🔄 Atualizar aplicativo?\n\nIsso irá buscar a versão mais recente do app.\n\n⚠️ IMPORTANTE: Seus dados (lotes, financeiro, estoque) NÃO serão afetados!\n\nDeseja continuar?')) {
+            if (window.confirm('🔄 Atualizar app?\n\nSeus dados NÃO serão perdidos.')) {
               window.location.reload();
             }
           }}
-          className="pointer-events-auto bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white px-4 py-2.5 rounded-xl md:rounded-2xl font-black text-[9px] md:text-[10px] uppercase tracking-[0.15em] md:tracking-[0.2em] flex items-center justify-center gap-2 shadow-xl transition-all hover:scale-105 active:scale-95 animate-reveal cursor-pointer"
-          title="Clique para atualizar o app e carregar a versão mais recente"
+          className="fixed top-4 right-4 z-[200] w-9 h-9 bg-white/10 hover:bg-blue-600 backdrop-blur-xl border border-white/20 hover:border-blue-500 rounded-full flex items-center justify-center transition-all shadow-lg hover:shadow-blue-500/30 group"
+          title="Atualizar App"
         >
-          <RefreshCw size={14} className="animate-spin-slow" />
-          <span>Atualizar App</span>
+          <RefreshCw size={14} className="text-white/60 group-hover:text-white group-hover:rotate-180 transition-all duration-500" />
         </button>
+      )}
 
-        <div className="bg-slate-900 text-white px-4 py-2 rounded-xl md:rounded-2xl font-black text-[8px] md:text-[9px] uppercase tracking-[0.15em] md:tracking-[0.2em] flex items-center justify-center gap-2 shadow-[0_20px_40px_rgba(15,23,42,0.3)] animate-reveal">
-          <Activity size={12} className="text-blue-400" />
-          <span className="hidden md:inline">{APP_VERSION_LABEL}</span>
-          <span className="md:hidden">{APP_VERSION_SHORT}</span>
-        </div>
+      {/* STATUS — apenas ponto verde/vermelho fixo no canto inferior esquerdo */}
+      <div className="fixed bottom-3 left-3 z-[200] flex items-center gap-2 pointer-events-none">
+        {dbStatus === 'online' && (
+          <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" title="Online" />
+        )}
+        {dbStatus === 'offline' && (
+          <div className="w-2 h-2 bg-rose-500 rounded-full animate-pulse" title="Offline" />
+        )}
+        <span className="text-white/20 text-[8px] font-black">{APP_VERSION_SHORT}</span>
       </div>
     </div >
   );

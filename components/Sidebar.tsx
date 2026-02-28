@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Users, Package, Truck, Scale, Beef, DollarSign, LogOut, FileText, Zap, Calendar, Bot, Database, ShieldCheck, Sheet, Brain, MessageCircle } from 'lucide-react';
+import { LayoutDashboard, Users, Package, Truck, Scale, Beef, DollarSign, LogOut, FileText, Zap, Calendar, Bot, Database, ShieldCheck, Sheet, Brain, MessageCircle, Megaphone, PlayCircle, ClipboardCheck } from 'lucide-react';
 import { APP_VERSION_SHORT, APP_BUILD_DATE } from '../constants';
 
 interface SidebarProps {
@@ -15,6 +15,7 @@ const Sidebar: React.FC<SidebarProps> = ({ setView, onLogout, onSyncSheets, shee
     { id: 'clients', label: 'Clientes', description: 'Agenda & Contatos', icon: Users, color: 'text-indigo-600', bg: 'bg-indigo-50', glow: 'group-hover:shadow-lg' },
     { id: 'suppliers', label: 'Fornecedores', description: 'Cadastro Rural', icon: Truck, color: 'text-blue-600', bg: 'bg-blue-50', glow: 'group-hover:shadow-lg' },
     { id: 'batches', label: 'Cadastro de Lotes', description: 'Entrada de Gado', icon: Package, color: 'text-purple-600', bg: 'bg-purple-50', glow: 'group-hover:shadow-lg' },
+    { id: 'gta', label: 'GTA de Gado', description: 'Guia de Trânsito Animal', icon: ClipboardCheck, color: 'text-green-600', bg: 'bg-green-50', glow: 'group-hover:shadow-green-500/50' },
     { id: 'stock', label: 'Estoque', description: 'Auditoria Fria', icon: Beef, color: 'text-emerald-600', bg: 'bg-emerald-50', glow: 'group-hover:shadow-lg' },
     { id: 'expedition', label: 'Vendas', description: 'Venda de Peças', icon: Scale, color: 'text-amber-600', bg: 'bg-amber-50', glow: 'group-hover:shadow-lg' },
     { id: 'sales_history', label: 'Histórico', description: 'Relatórios de Venda', icon: FileText, color: 'text-rose-600', bg: 'bg-rose-50', glow: 'group-hover:shadow-lg' },
@@ -24,9 +25,11 @@ const Sidebar: React.FC<SidebarProps> = ({ setView, onLogout, onSyncSheets, shee
     { id: 'ai_agents', label: 'Central IA', description: 'Agentes Inteligentes', icon: Brain, color: 'text-purple-600', bg: 'bg-purple-50', glow: 'group-hover:shadow-lg' },
     { id: 'ai_chat', label: 'Chat IA', description: 'Fale com Gerentes', icon: MessageCircle, color: 'text-indigo-600', bg: 'bg-indigo-50', glow: 'group-hover:shadow-lg' },
     { id: 'ai_meeting', label: 'Sala de Guerra', description: 'Reunião Diretoria', icon: Users, color: 'text-rose-600', bg: 'bg-rose-100', glow: 'group-hover:shadow-rose-500/50' },
+    { id: 'marketing', label: 'Marketing', description: 'Stitch IA & Studio', icon: Megaphone, color: 'text-fuchsia-600', bg: 'bg-fuchsia-100', glow: 'group-hover:shadow-fuchsia-500/50' },
     { id: 'meeting_chat', label: 'Chat Equipe', description: 'Fale com Funcionários', icon: MessageCircle, color: 'text-emerald-600', bg: 'bg-emerald-100', glow: 'group-hover:shadow-emerald-500/50' },
     { id: 'sales_agent', label: 'Agente IA', description: 'Robô de Vendas', icon: Bot, color: 'text-purple-600', bg: 'bg-purple-100', glow: 'group-hover:shadow-lg' },
     { id: 'report', label: 'Relatório', description: 'Resumo Diário', icon: FileText, color: 'text-emerald-600', bg: 'bg-emerald-50', glow: 'group-hover:shadow-lg' },
+    { id: 'scenario_simulator', label: 'Simulação IA', description: 'Modo Teste: Auge→Crise→Recuperação', icon: PlayCircle, color: 'text-violet-600', bg: 'bg-violet-50', glow: 'group-hover:shadow-violet-500/50' },
     { id: 'audit', label: 'Auditoria', description: 'Quem Fez O Quê', icon: ShieldCheck, color: 'text-rose-600', bg: 'bg-rose-50', glow: 'group-hover:shadow-lg' },
   ];
 
