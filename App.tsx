@@ -899,8 +899,14 @@ const App: React.FC = () => {
     const isPrazo = (batch as any).forma_pagamento === 'PRAZO';
 
     if (isVista) {
-      // PAGAMENTO TOTAL A VISTA
-      await addTransaction(transactionData);
+      // GUARD: Verificar se já existe transação de compra para este lote (evita duplicata com addBatch)
+      const existingTx = data.transactions.find(t => t.id === `TR-LOTE-${batch.id_lote}`);
+      if (!existingTx) {
+        // PAGAMENTO TOTAL A VISTA
+        await addTransaction(transactionData);
+      } else {
+        console.log(`⚠️ Transação TR-LOTE-${batch.id_lote} já existe, ignorando duplicata.`);
+      }
     } else if (isPrazo) {
 
       // 1. SE TIVER ENTRADA, LANÇA A SAÍDA DA ENTRADA AGORA
