@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     ArrowLeft, Send, Users, Mic, MicOff, Phone, PhoneOff,
     MessageCircle, Hash, Volume2, VolumeX, Plus, X, Check, CheckCheck,
-    Loader2, Wifi, WifiOff
+    Loader2, Wifi, WifiOff, Video, VideoOff, Monitor, Share2
 } from 'lucide-react';
 import { db } from '../firebaseClient';
 import {
@@ -55,6 +55,9 @@ const MeetingChat: React.FC<MeetingChatProps> = ({ onBack }) => {
     const [isListening, setIsListening] = useState(false);
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [showParticipants, setShowParticipants] = useState(false);
+    const [videoCallActive, setVideoCallActive] = useState(false);
+    const [jitsiRoomId] = useState(`frigogest-suporte-${Date.now().toString(36)}`);
+    const MANAGER_WHATSAPP = '5577999999999'; // Número do dono/gerente
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -371,6 +374,56 @@ const MeetingChat: React.FC<MeetingChatProps> = ({ onBack }) => {
                     )}
                 </div>
 
+                {/* VIDEO CALL BUTTON */}
+                <button
+                    onClick={async () => {
+                        const newState = !videoCallActive;
+                        setVideoCallActive(newState);
+                        // Send system message to chat so online users see it
+                        if (newState && db) {
+                            const jitsiUrl = `https://meet.jit.si/${jitsiRoomId}`;
+                            await addDoc(collection(db, MESSAGES_COLLECTION), {
+                                text: `📹 ${myName} iniciou uma CHAMADA DE VÍDEO!\n🔗 Clique para entrar: ${jitsiUrl}\n📺 Vídeo + Áudio + Compartilhamento de Tela`,
+                                senderName: 'Sistema',
+                                senderRole: '',
+                                senderColor: '#10b981',
+                                timestamp: serverTimestamp(),
+                                type: 'system',
+                            });
+                        }
+                    }}
+                    title={videoCallActive ? 'Encerrar chamada de vídeo' : 'Iniciar suporte remoto (vídeo + tela)'}
+                    className={`p-1.5 rounded-lg transition-all ${videoCallActive
+                        ? 'bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/40'
+                        : 'text-slate-300 hover:text-emerald-400 hover:bg-emerald-500/10'
+                        }`}
+                >
+                    {videoCallActive ? <VideoOff size={18} /> : <Video size={18} />}
+                </button>
+
+                {/* SEND VIA WHATSAPP */}
+                {videoCallActive && (
+                    <button
+                        onClick={() => {
+                            const jitsiUrl = `https://meet.jit.si/${jitsiRoomId}`;
+                            const onlineNames = onlineUsers.filter(u => u.id !== myId).map(u => u.name).join(', ');
+                            const msg = encodeURIComponent(
+                                `🆘 *SUPORTE REMOTO — FrigoGest*\n\n` +
+                                `👤 ${myName} (${myRole}) precisa de ajuda!\n` +
+                                (onlineNames ? `👥 Online agora: ${onlineNames}\n` : '') +
+                                `\n📹 Clique para entrar na chamada:\n${jitsiUrl}\n\n` +
+                                `✅ Vídeo + Áudio + Compartilhamento de Tela`
+                            );
+                            window.open(`https://wa.me/${MANAGER_WHATSAPP}?text=${msg}`, '_blank');
+                        }}
+                        title='Enviar link da chamada via WhatsApp'
+                        className='flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg transition-all active:scale-95'
+                    >
+                        <Share2 size={14} />
+                        📱 WhatsApp
+                    </button>
+                )}
+
                 <button
                     onClick={() => setShowParticipants(!showParticipants)}
                     className="text-slate-300 hover:text-white p-1"
@@ -406,6 +459,65 @@ const MeetingChat: React.FC<MeetingChatProps> = ({ onBack }) => {
                     </div>
                 </div>
             )}
+
+            {/* ═══ JITSI VIDEO CALL PANEL ═══ */}
+            {videoCallActive && (
+                <div className="relative border-b border-white/10 bg-slate-950" style={{ height: '45vh' }}>
+                    {/* Online Users Sidebar inside video */}
+                    <div className="absolute left-2 top-2 bottom-2 z-10 w-36 bg-slate-900/90 backdrop-blur-sm rounded-xl border border-white/10 overflow-hidden flex flex-col">
+                        <div className="px-3 py-2 border-b border-white/10">
+                            <p className="text-emerald-400 text-[10px] font-bold uppercase tracking-widest">🟢 Online ({onlineUsers.length})</p>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+                            {onlineUsers.map(u => (
+                                <div key={u.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
+                                    <div className="relative flex-shrink-0">
+                                        <div
+                                            className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                                            style={{ backgroundColor: u.color }}
+                                        >
+                                            {u.name[0]?.toUpperCase()}
+                                        </div>
+                                        <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full border border-slate-900" />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-white text-xs font-semibold truncate">{u.name}</p>
+                                        <p className="text-slate-500 text-[9px] truncate">{u.role}</p>
+                                    </div>
+                                </div>
+                            ))}
+                            {onlineUsers.length === 1 && (
+                                <p className="text-slate-500 text-[10px] text-center py-2">Aguardando participantes...</p>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Jitsi iframe */}
+                    <iframe
+                        src={`https://meet.jit.si/${jitsiRoomId}#config.startWithVideoMuted=false&config.startWithAudioMuted=false&config.prejoinPageEnabled=false&config.toolbarButtons=["microphone","camera","desktop","fullscreen","hangup","chat","recording","tileview"]&interfaceConfig.TOOLBAR_ALWAYS_VISIBLE=true&interfaceConfig.SHOW_JITSI_WATERMARK=false&interfaceConfig.SHOW_BRAND_WATERMARK=false&interfaceConfig.DEFAULT_BACKGROUND="#0f172a"`}
+                        allow="camera; microphone; fullscreen; display-capture; autoplay; clipboard-write"
+                        title="Chamada de vídeo FrigoGest"
+                        className="w-full h-full"
+                        style={{ border: 'none' }}
+                    />
+
+                    {/* Overlay bar top-right */}
+                    <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
+                        <span className="flex items-center gap-1.5 px-3 py-1 bg-emerald-600/90 text-white text-xs font-bold rounded-full shadow-lg">
+                            <Monitor size={12} /> Suporte Ativo
+                        </span>
+                        <button
+                            onClick={() => setVideoCallActive(false)}
+                            className="w-8 h-8 bg-red-600 hover:bg-red-500 text-white rounded-full flex items-center justify-center transition-all shadow-lg"
+                            title="Encerrar chamada"
+                        >
+                            <X size={14} />
+                        </button>
+                    </div>
+                </div>
+            )}
+
+
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
@@ -448,8 +560,8 @@ const MeetingChat: React.FC<MeetingChatProps> = ({ onBack }) => {
                                 )}
                                 <div
                                     className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${isMe
-                                            ? 'bg-indigo-600 text-white rounded-br-sm'
-                                            : 'bg-white/10 text-slate-100 rounded-bl-sm'
+                                        ? 'bg-indigo-600 text-white rounded-br-sm'
+                                        : 'bg-white/10 text-slate-100 rounded-bl-sm'
                                         }`}
                                 >
                                     {msg.text}
@@ -473,8 +585,8 @@ const MeetingChat: React.FC<MeetingChatProps> = ({ onBack }) => {
                         onClick={toggleMic}
                         title={isListening ? 'Parar gravação' : 'Ditado de voz'}
                         className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${isListening
-                                ? 'bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/40'
-                                : 'bg-white/10 text-slate-400 hover:bg-indigo-600 hover:text-white'
+                            ? 'bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/40'
+                            : 'bg-white/10 text-slate-400 hover:bg-indigo-600 hover:text-white'
                             }`}
                     >
                         {isListening ? <MicOff size={18} /> : <Mic size={18} />}
@@ -489,8 +601,8 @@ const MeetingChat: React.FC<MeetingChatProps> = ({ onBack }) => {
                         onKeyDown={e => e.key === 'Enter' && sendMessage()}
                         placeholder={isListening ? '🔴 Ouvindo...' : 'Mensagem para a equipe...'}
                         className={`flex-1 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition-all ${isListening
-                                ? 'bg-red-900/30 ring-2 ring-red-500/50 placeholder-red-400'
-                                : 'bg-white/10 focus:bg-white/15 focus:ring-2 focus:ring-indigo-500/50'
+                            ? 'bg-red-900/30 ring-2 ring-red-500/50 placeholder-red-400'
+                            : 'bg-white/10 focus:bg-white/15 focus:ring-2 focus:ring-indigo-500/50'
                             }`}
                     />
 
