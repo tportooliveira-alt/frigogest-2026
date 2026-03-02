@@ -424,6 +424,18 @@ const MeetingChat: React.FC<MeetingChatProps> = ({ onBack }) => {
                     </button>
                 )}
 
+                {/* OPEN FULL SCREEN - shows all Jitsi buttons including screen share */}
+                {videoCallActive && (
+                    <button
+                        onClick={() => window.open(`https://meet.jit.si/${jitsiRoomId}`, '_blank')}
+                        title='Abrir chamada em tela cheia (com compartilhar tela)'
+                        className='flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-all active:scale-95'
+                    >
+                        <Monitor size={14} />
+                        🖥️ Tela Cheia
+                    </button>
+                )}
+
                 <button
                     onClick={() => setShowParticipants(!showParticipants)}
                     className="text-slate-300 hover:text-white p-1"
