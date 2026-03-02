@@ -57,7 +57,7 @@ const MeetingChat: React.FC<MeetingChatProps> = ({ onBack }) => {
     const [showParticipants, setShowParticipants] = useState(false);
     const [videoCallActive, setVideoCallActive] = useState(false);
     const [jitsiRoomId] = useState(`frigogest-suporte-${Date.now().toString(36)}`);
-    const MANAGER_WHATSAPP = '5577999999999'; // Número do dono/gerente
+    const MANAGER_WHATSAPP = '5577999226268';
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
