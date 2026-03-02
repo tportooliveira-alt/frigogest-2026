@@ -301,7 +301,7 @@ const triggerContasPagar = (ctx: TriggerContext): AutoTriggerResult[] => {
 
     return [{
         triggerId: `contas-pagar-${Date.now()}`,
-        agentId: 'ANALISTA_SISTEMA',
+        agentId: 'AUDITOR',
         agentName: 'Ana Luiza',
         agentEmoji: '🔍',
         title: `${vencidas.length > 0 ? '🔴' : '🟡'} ${vencendo.length} contas a pagar ${vencidas.length > 0 ? 'vencidas!' : 'vencendo em breve'}`,

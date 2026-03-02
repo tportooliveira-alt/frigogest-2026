@@ -192,24 +192,14 @@ export interface Payable {
 // ═══ MULTI-AGENT AI SYSTEM ═══
 
 export type AgentType =
-  // Nucleo original (16 agentes)
+  // Core (12 agentes com LLM)
   | 'ADMINISTRATIVO' | 'PRODUCAO' | 'COMERCIAL' | 'AUDITOR' | 'ESTOQUE'
-  | 'COMPRAS' | 'MERCADO' | 'ROBO_VENDAS' | 'MARKETING' | 'SATISFACAO'
-  | 'CONFERENTE' | 'RELATORIOS' | 'WHATSAPP_BOT' | 'AGENDA' | 'TEMPERATURA' | 'COBRANCA'
-  // Time de Marketing Digital
-  | 'CONTEUDO' | 'SOCIAL_MEDIA' | 'EMAIL_MKTG' | 'SEO_EXPERT' | 'PARCEIROS'
-  // Agencia de Publicidade
-  | 'COPYWRITER' | 'MEDIA_BUYER' | 'CREATIVE_DIR' | 'INFLUENCER' | 'DATA_MKTG'
-  // Time de Administracao
-  | 'RH_GESTOR' | 'FISCAL_CONTABIL' | 'QUALIDADE' | 'OPERACOES' | 'JURIDICO' | 'BI_EXEC'
-  // Time de Auditoria de Sistema
-  | 'ANALISTA_SISTEMA' | 'DETECTOR_FUROS' | 'AUDITOR_ESTORNO' | 'REVISOR_VENDAS' | 'AUDITOR_COMPRAS' | 'MONITOR_BUGS'
-  // Especialistas Financeiros
+  | 'COMPRAS' | 'MERCADO' | 'MARKETING' | 'SATISFACAO'
+  | 'WHATSAPP_BOT' | 'COBRANCA' | 'JURIDICO'
+  // Orquestração
   | 'FLUXO_CAIXA'
-  // Time Jurídico
-  | 'JURIDICO_TRABALHISTA' | 'JURIDICO_SANITARIO'
-  // Suporte a IDs das versoes experimentais de marketing
-  | 'MKT_INSTAGRAM' | 'MKT_COPYWRITER' | 'MKT_TENDENCIAS';
+  // Opcionais (ativar sob demanda)
+  | 'RH_GESTOR' | 'FISCAL_CONTABIL' | 'QUALIDADE';
 export type AlertSeverity = 'INFO' | 'ALERTA' | 'CRITICO' | 'BLOQUEIO';
 export type AlertStatus = 'NOVO' | 'VISTO' | 'RESOLVIDO' | 'IGNORADO';
 
