@@ -366,7 +366,14 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
       peso_saida: itemWeights[item.id_completo] !== undefined ? itemWeights[item.id_completo] : item.peso_entrada
     }));
 
-    onConfirmSale({ client: selectedClient, items: itemsWithWeights, pricePerKg, extrasCost });
+    onConfirmSale({
+      client: selectedClient,
+      items: itemsWithWeights,
+      pricePerKg,
+      extrasCost,
+      pagoNoAto: true, // Por padrão na expedição assume-se pago ou define-se via UI
+      metodoPagamento: 'DINHEIRO'
+    });
     setSelectedClient(null); setSelectedItems([]); setPricePerKg(0); setExtrasCost(0);
     setShowHistory(true); // Automatically go to history after sale
   };

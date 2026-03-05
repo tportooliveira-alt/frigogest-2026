@@ -17,7 +17,7 @@ import { AppState, Sale, PaymentMethod, StockItem, Batch, Client, Transaction, D
 import { MOCK_DATA, APP_VERSION_LABEL, APP_VERSION_SHORT } from './constants';
 import { auth, db } from './firebaseClient';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, onSnapshot, writeBatch, query, limit } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, onSnapshot, writeBatch, query, limit, where } from 'firebase/firestore';
 import { Cloud, CloudOff, Loader2, ShieldCheck, Activity, RefreshCw } from 'lucide-react';
 import { logAction } from './utils/audit';
 import { syncAllToSheets, forceSyncToSheets, isSheetsConfigured } from './utils/sheetsSync';
@@ -319,17 +319,26 @@ const App: React.FC = () => {
 
     if (OFFLINE_MODE || !db) return; // Sem realtime no modo offline
 
-    // Setup realtime listeners
-    const unsubscribeClients = onSnapshot(collection(db, 'clients'), () => fetchData());
-    const unsubscribeBatches = onSnapshot(collection(db, 'batches'), () => fetchData());
-    const unsubscribeStock = onSnapshot(collection(db, 'stock_items'), () => fetchData());
-    const unsubscribeSales = onSnapshot(collection(db, 'sales'), () => fetchData());
-    const unsubscribeTransactions = onSnapshot(collection(db, 'transactions'), () => fetchData());
-    const unsubscribeOrders = onSnapshot(collection(db, 'scheduled_orders'), () => fetchData());
-    const unsubscribeReports = onSnapshot(collection(db, 'daily_reports'), () => fetchData());
-    const unsubscribePayables = onSnapshot(collection(db, 'payables'), () => fetchData());
+    // DEBOUNCED REALTIME: Evita tempestade de leituras.
+    // Sem debounce: 1 estorno = 4 escritas × 8 listeners × 9 coleções = ~288 leituras
+    // Com debounce: 1 estorno = 1 fetchData() = 9 leituras (economia de ~97%)
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedFetch = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => fetchData(), 500);
+    };
+
+    const unsubscribeClients = onSnapshot(collection(db, 'clients'), debouncedFetch);
+    const unsubscribeBatches = onSnapshot(collection(db, 'batches'), debouncedFetch);
+    const unsubscribeStock = onSnapshot(collection(db, 'stock_items'), debouncedFetch);
+    const unsubscribeSales = onSnapshot(collection(db, 'sales'), debouncedFetch);
+    const unsubscribeTransactions = onSnapshot(collection(db, 'transactions'), debouncedFetch);
+    const unsubscribeOrders = onSnapshot(collection(db, 'scheduled_orders'), debouncedFetch);
+    const unsubscribeReports = onSnapshot(collection(db, 'daily_reports'), debouncedFetch);
+    const unsubscribePayables = onSnapshot(collection(db, 'payables'), debouncedFetch);
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       unsubscribeClients();
       unsubscribeBatches();
       unsubscribeStock();
@@ -486,25 +495,22 @@ const App: React.FC = () => {
   const closedStock = useMemo(() => data.stock.filter(s => closedBatchIds.has(s.id_lote)), [data.stock, closedBatchIds]);
 
   const addBatch = async (batch: any): Promise<{ success: boolean; error?: string }> => {
-    const cleanBatch = { ...batch };
+    // 1. Preservar dados originais ANTES da sanitização
+    const rawFormaPagamento = batch.forma_pagamento || 'OUTROS';
+    const rawDataRecebimento = batch.data_recebimento || todayBR();
+
+    const cleanBatch = sanitize(batch);
 
     // Log
     if (session?.user) {
       logAction(session.user, 'CREATE', 'BATCH', `Novo lote criado: ${cleanBatch.id_lote} - ${cleanBatch.fornecedor}`);
     }
 
-    // Preservar informações de pagamento temporariamente para uso na transação
-    const formPagamento = cleanBatch.forma_pagamento || 'OUTROS';
-    const isVista = cleanBatch.pagamento_a_vista === true;
-
-    delete cleanBatch.pagamento_a_vista;
-    delete cleanBatch.forma_pagamento;
-
-    cleanBatch.peso_total_romaneio = parseFloat(cleanBatch.peso_total_romaneio) || 0;
-    cleanBatch.valor_compra_total = parseFloat(cleanBatch.valor_compra_total) || 0;
-    cleanBatch.frete = parseFloat(cleanBatch.frete) || 0;
-    cleanBatch.gastos_extras = parseFloat(cleanBatch.gastos_extras) || 0;
-    cleanBatch.custo_real_kg = parseFloat(cleanBatch.custo_real_kg) || 0;
+    // Calcular custo total real (compra + frete + extras)
+    const valorCompra = parseFloat(cleanBatch.valor_compra_total) || 0;
+    const frete = parseFloat(cleanBatch.frete) || 0;
+    const extras = parseFloat(cleanBatch.gastos_extras) || 0;
+    const totalCost = valorCompra + frete + extras;
 
     if (OFFLINE_MODE) {
       setData(prev => ({
@@ -517,33 +523,34 @@ const App: React.FC = () => {
     if (!db) return { success: false, error: 'Firebase não configurado' };
 
     try {
+      // Salvar o lote
       await setDoc(doc(db, 'batches', cleanBatch.id_lote), cleanBatch);
 
-      // REGISTRAR NO FINANCEIRO AUTOMATICAMENTE
-      // Se for à vista OU se quiser registrar a despesa mesmo que a prazo (geralmente compra registra na data da compra)
-      // O usuário pediu: "tem que entrar no caixa vermelho e saida"
-      const totalCost = (cleanBatch.valor_compra_total || 0) + (cleanBatch.frete || 0) + (cleanBatch.gastos_extras || 0);
-
-      if (totalCost > 0 && formPagamento === 'VISTA') {
+      // 2. REGISTRAR NO FINANCEIRO AUTOMATICAMENTE (Se À VISTA)
+      // Usamos ID determinístico TR-LOTE-{id} para evitar duplicatas
+      if (totalCost > 0 && rawFormaPagamento === 'VISTA') {
         const transactionData = {
           id: `TR-LOTE-${cleanBatch.id_lote}`,
-          data: cleanBatch.data_recebimento,
+          data: rawDataRecebimento,
           descricao: `Compra Lote ${cleanBatch.id_lote} - ${cleanBatch.fornecedor}`,
           tipo: 'SAIDA',
           categoria: 'COMPRA_GADO',
           valor: totalCost,
-          metodo_pagamento: formPagamento,
+          metodo_pagamento: rawFormaPagamento,
           referencia_id: cleanBatch.id_lote
         };
+
+        console.log(`💰 Registrando saída automática (À VISTA): R$ ${totalCost}`);
         await addTransaction(transactionData as any);
       }
-      // NOTA: Compras a PRAZO são tratadas pela registerBatchFinancial()
-      // que é chamada ao fechar o lote no Batches.tsx, com lógica de
-      // entrada/restante e guard contra duplicatas.
+
+      // NOTA: Compras a PRAZO são tratadas pela registerBatchFinancial() 
+      // que é chamada ao fechar o lote no Batches.tsx.
 
       await fetchData();
       return { success: true };
     } catch (error: any) {
+      console.error('❌ Erro em addBatch:', error);
       return { success: false, error: error.message };
     }
   };
@@ -557,64 +564,138 @@ const App: React.FC = () => {
       return;
     }
 
-    try {
-      const valorPago = (sale as any).valor_pago || 0;
+    const valorPago = (sale as any).valor_pago || 0;
+    const confirmMsg = `Confirmar estorno da venda?\n\nCliente: ${sale.nome_cliente}\nValor pago: R$ ${valorPago.toFixed(2)}\n\nIsso devolverá os itens ao estoque e reverterá o financeiro.`;
+    if (!window.confirm(confirmMsg)) return;
 
-      // 1. Marcar venda como ESTORNADO e zerar valor_pago (P4)
-      await updateDoc(doc(db, 'sales', saleId), { status_pagamento: 'ESTORNADO', valor_pago: 0 });
+    try {
+      console.log(`🔄 Iniciando estorno da venda: ${saleId} (Cliente: ${sale.nome_cliente})`);
+      const batchCommit = writeBatch(db);
+
+      // 1. Marcar venda como ESTORNADO e zerar valor_pago
+      batchCommit.update(doc(db, 'sales', saleId), { status_pagamento: 'ESTORNADO', valor_pago: 0 });
 
       // 2. Devolver item(ns) ao estoque → DISPONÍVEL
-      const stockIds = (sale as any).stock_ids_originais && Array.isArray((sale as any).stock_ids_originais)
+      // Prioridade: stock_ids_originais (IDs reais gravados no momento da venda)
+      // Fallback: id_completo da venda (expande INTEIRO → BANDA_A + BANDA_B)
+      const rawIds: string[] = (sale as any).stock_ids_originais && Array.isArray((sale as any).stock_ids_originais)
         ? (sale as any).stock_ids_originais
         : [sale.id_completo];
 
-      for (const stockId of stockIds) {
-        try {
-          await updateDoc(doc(db, 'stock_items', stockId), { status: 'DISPONIVEL' });
-        } catch (e) {
-          console.warn(`⚠️ Item de estoque ${stockId} não encontrado para devolver`);
+      const refinedIds: string[] = [];
+      rawIds.forEach((id: string) => {
+        if (id.endsWith('-INTEIRO')) {
+          const base = id.replace('-INTEIRO', '');
+          refinedIds.push(`${base}-BANDA_A`, `${base}-BANDA_B`);
+        } else {
+          refinedIds.push(id);
+        }
+      });
+
+      console.log(`📦 Devolvendo itens ao estoque:`, refinedIds);
+      const restoredIds = new Set<string>();
+
+      for (const stockId of refinedIds) {
+        // Para resolver o problema web/local: Primeiro checamos se o documento existe com o ID direto
+        const directDocSnap = await getDocs(query(collection(db, 'stock_items'), where('__name__', '==', stockId)));
+
+        if (!directDocSnap.empty) {
+          batchCommit.update(doc(db, 'stock_items', stockId), { status: 'DISPONIVEL' });
+          restoredIds.add(stockId);
+          console.log(`✅ Item (Found ID) ${stockId} -> DISPONIVEL`);
+        } else {
+          // Tentativa 2: buscar pelo campo id_completo (caso document ID seja diferente)
+          try {
+            const q = query(collection(db, 'stock_items'), where('id_completo', '==', stockId), limit(1));
+            const snap = await getDocs(q);
+            if (!snap.empty) {
+              batchCommit.update(snap.docs[0].ref, { status: 'DISPONIVEL' });
+              restoredIds.add(stockId);
+              console.log(`✅ Item (fallback campo) ${stockId} -> DISPONIVEL`);
+            } else {
+              console.error(`❌ Item ${stockId} não encontrado no Firestore. Verifique o estoque manualmente.`);
+            }
+          } catch (fallbackErr) {
+            console.error(`❌ Falha total ao devolver ${stockId}:`, fallbackErr);
+          }
         }
       }
 
-      // 3. Se já recebeu dinheiro, criar SAÍDA de estorno (dinheiro sai do caixa)
-      if (valorPago > 0) {
-        const estornoTx = {
-          id: `TR-ESTORNO-VENDA-${saleId}-${Date.now()}`,
-          data: new Date().toISOString().split('T')[0],
+      // 3. Reverter financeiro: estornar TODAS as entradas de recebimento desta venda
+      // Inclui TR-VISTA-* (venda à vista) e TR-REC-* (recebimentos parciais/a prazo)
+      const entradasVenda = data.transactions.filter(t =>
+        t.referencia_id === saleId && t.tipo === 'ENTRADA' && t.categoria === 'VENDA'
+      );
+
+      for (const tx of entradasVenda) {
+        const estornoId = `TR-ESTORNO-VENDA-${saleId}-${tx.id}`;
+        batchCommit.set(doc(db, 'transactions', estornoId), sanitize({
+          id: estornoId,
+          data: todayBR(),
+          descricao: `ESTORNO VENDA: ${sale.nome_cliente || 'Cliente'} - ${sale.id_completo}`,
+          tipo: 'SAIDA',
+          categoria: 'ESTORNO',
+          valor: tx.valor,
+          metodo_pagamento: (sale as any).metodo_pagamento || sale.forma_pagamento || 'OUTROS',
+          referencia_id: saleId
+        }));
+      }
+
+      // Fallback: se não havia transações de recebimento mas houve pagamento (valor_pago > 0)
+      if (entradasVenda.length === 0 && valorPago > 0) {
+        const estornoIdDireto = `TR-ESTORNO-VENDA-${saleId}-DIRETO`;
+        batchCommit.set(doc(db, 'transactions', estornoIdDireto), sanitize({
+          id: estornoIdDireto,
+          data: todayBR(),
           descricao: `ESTORNO VENDA: ${sale.nome_cliente || 'Cliente'} - ${sale.id_completo}`,
           tipo: 'SAIDA',
           categoria: 'ESTORNO',
           valor: valorPago,
-          metodo_pagamento: sale.forma_pagamento || 'OUTROS',
+          metodo_pagamento: (sale as any).metodo_pagamento || sale.forma_pagamento || 'OUTROS',
           referencia_id: saleId
-        };
-        await addTransaction(estornoTx as any);
+        }));
       }
 
-      // 4. Reverter descontos (P2): se houve TR-DESC, criar ENTRADA espelho
+      // 4. Reverter descontos: criar ENTRADA espelho para cada TR-DESC desta venda
       const descontosTx = data.transactions.filter(t =>
-        (t.referencia_id === saleId || t.id?.startsWith(`TR-DESC-${saleId}`)) &&
-        t.categoria === 'DESCONTO' && t.tipo === 'SAIDA'
+        t.referencia_id === saleId && t.categoria === 'DESCONTO' && t.tipo === 'SAIDA'
       );
       for (const descTx of descontosTx) {
-        const estornoDesc = {
-          id: `TR-ESTORNO-DESC-${saleId}-${Date.now()}`,
-          data: new Date().toISOString().split('T')[0],
+        const descEstornoId = `TR-ESTORNO-DESC-${saleId}-${descTx.id}`;
+        batchCommit.set(doc(db, 'transactions', descEstornoId), sanitize({
+          id: descEstornoId,
+          data: todayBR(),
           descricao: `ESTORNO DESCONTO: ${descTx.descricao}`,
           tipo: 'ENTRADA',
           categoria: 'ESTORNO',
           valor: descTx.valor,
           metodo_pagamento: 'OUTROS',
           referencia_id: saleId
-        };
-        await addTransaction(estornoDesc as any);
+        }));
       }
 
-      logAction(session?.user, 'ESTORNO', 'SALE', `Venda estornada: ${saleId} (${sale.nome_cliente}) - Pago: R$${valorPago.toFixed(2)}`, { saleId, valorPago });
+      // COMMIT ATÔMICO
+      if (!OFFLINE_MODE) {
+        await batchCommit.commit();
+      }
+
+      // 5. Atualizar estado local imediatamente (UI responde antes do fetchData)
+      setData(prev => ({
+        ...prev,
+        sales: prev.sales.map(s =>
+          s.id_venda === saleId ? { ...s, status_pagamento: 'ESTORNADO' as const, valor_pago: 0 } : s
+        ),
+        stock: prev.stock.map(item =>
+          restoredIds.has(item.id_completo) ? { ...item, status: 'DISPONIVEL' as const } : item
+        )
+      }));
+
+      logAction(session?.user, 'ESTORNO', 'SALE', `Venda estornada: ${saleId} (${sale.nome_cliente}) - Pago: R$${valorPago.toFixed(2)}`, { saleId, valorPago, restoredIds: [...restoredIds] });
+      alert(`✅ Estorno concluído!\n• ${restoredIds.size} item(s) devolvido(s) ao estoque\n• Financeiro revertido: R$ ${valorPago.toFixed(2)}`);
       fetchData();
     } catch (error) {
       console.error('❌ Erro ao estornar venda:', error);
-      alert('Erro ao estornar a venda.');
+      alert('Erro ao estornar a venda. Verifique o console para detalhes.');
     }
   };
 
@@ -635,10 +716,11 @@ const App: React.FC = () => {
 
     try {
       console.log(`🔄 INICIANDO ESTORNO DO LOTE: ${id}`);
+      const batchCommit = writeBatch(db);
 
       // 1. Marcar lote como ESTORNADO
-      await updateDoc(doc(db, 'batches', id), { status: 'ESTORNADO' });
-      console.log(`✅ Lote ${id} marcado como ESTORNADO`);
+      batchCommit.update(doc(db, 'batches', id), { status: 'ESTORNADO' });
+      console.log(`✅ Lote ${id} marcado como ESTORNADO (enfileirado)`);
 
       // 2. Marcar itens de estoque como ESTORNADO
       const stockSnapshot = await getDocs(collection(db, 'stock_items'));
@@ -646,11 +728,11 @@ const App: React.FC = () => {
       for (const docSnap of stockSnapshot.docs) {
         const item = docSnap.data();
         if (item.id_lote === id && item.status !== 'ESTORNADO') {
-          await updateDoc(doc(db, 'stock_items', docSnap.id), { status: 'ESTORNADO' });
+          batchCommit.update(doc(db, 'stock_items', docSnap.id), { status: 'ESTORNADO' });
           stockCount++;
         }
       }
-      console.log(`✅ ${stockCount} itens de estoque estornados`);
+      console.log(`✅ ${stockCount} itens de estoque enfileirados`);
 
       // 3. Estornar payables do lote
       const payablesSnapshot = await getDocs(collection(db, 'payables'));
@@ -666,12 +748,13 @@ const App: React.FC = () => {
           const valorPago = payable.valor_pago || 0;
           const novoStatus = (isPago || isParcial) ? 'ESTORNADO' : 'CANCELADO';
 
-          await updateDoc(doc(db, 'payables', docSnap.id), { status: novoStatus });
+          batchCommit.update(doc(db, 'payables', docSnap.id), { status: novoStatus });
 
           // Se já pagou, criar ENTRADA de estorno
           if ((isPago || isParcial) && valorPago > 0) {
-            await addTransaction({
-              id: `TR-ESTORNO-PAY-${docSnap.id}-${Date.now()}`,
+            const txId = `TR-ESTORNO-PAY-${docSnap.id}-${Date.now()}`;
+            batchCommit.set(doc(db, 'transactions', txId), sanitize({
+              id: txId,
               data: new Date().toISOString().split('T')[0],
               descricao: `ESTORNO LOTE: ${payable.descricao}`,
               tipo: 'ENTRADA',
@@ -679,12 +762,12 @@ const App: React.FC = () => {
               valor: isPago ? payable.valor : valorPago,
               metodo_pagamento: 'OUTROS',
               referencia_id: id
-            } as any);
+            }));
           }
           payablesCount++;
         }
       }
-      console.log(`✅ ${payablesCount} contas a pagar estornadas`);
+      console.log(`✅ ${payablesCount} contas a pagar enfileiradas`);
 
       // 4. Estornar vendas do lote
       const salesSnapshot = await getDocs(collection(db, 'sales'));
@@ -694,12 +777,13 @@ const App: React.FC = () => {
         if (sale.id_completo && sale.id_completo.startsWith(id) && sale.status_pagamento !== 'ESTORNADO') {
           const valorPago = sale.valor_pago || 0;
 
-          await updateDoc(doc(db, 'sales', docSnap.id), { status_pagamento: 'ESTORNADO' });
+          batchCommit.update(doc(db, 'sales', docSnap.id), { status_pagamento: 'ESTORNADO' });
 
           // Se já recebeu $, criar SAÍDA de estorno
           if (valorPago > 0) {
-            await addTransaction({
-              id: `TR-ESTORNO-VENDA-${docSnap.id}-${Date.now()}`,
+            const txVendaId = `TR-ESTORNO-VENDA-${docSnap.id}-${Date.now()}`;
+            batchCommit.set(doc(db, 'transactions', txVendaId), sanitize({
+              id: txVendaId,
               data: new Date().toISOString().split('T')[0],
               descricao: `ESTORNO LOTE: Venda ${sale.nome_cliente || 'Cliente'} - ${sale.id_completo}`,
               tipo: 'SAIDA',
@@ -707,12 +791,12 @@ const App: React.FC = () => {
               valor: valorPago,
               metodo_pagamento: 'OUTROS',
               referencia_id: id
-            } as any);
+            }));
           }
           salesCount++;
         }
       }
-      console.log(`✅ ${salesCount} vendas estornadas`);
+      console.log(`✅ ${salesCount} vendas enfileiradas`);
 
       // 5. Criar transação de estorno para transações de compra já lançadas
       const transactionsSnapshot = await getDocs(collection(db, 'transactions'));
@@ -722,8 +806,9 @@ const App: React.FC = () => {
         // Estornar transações de COMPRA deste lote (criar ENTRADA inversa)
         if ((tx.referencia_id === id || (tx.descricao && tx.descricao.includes(id)))
           && tx.categoria === 'COMPRA_GADO' && !tx.descricao?.includes('ESTORNO')) {
-          await addTransaction({
-            id: `TR-ESTORNO-${docSnap.id}-${Date.now()}`,
+          const estornoTxId = `TR-ESTORNO-${docSnap.id}-${Date.now()}`;
+          batchCommit.set(doc(db, 'transactions', estornoTxId), sanitize({
+            id: estornoTxId,
             data: new Date().toISOString().split('T')[0],
             descricao: `ESTORNO LOTE: ${tx.descricao}`,
             tipo: 'ENTRADA',
@@ -731,13 +816,16 @@ const App: React.FC = () => {
             valor: tx.valor,
             metodo_pagamento: 'OUTROS',
             referencia_id: id
-          } as any);
+          }));
           txCount++;
         }
       }
-      console.log(`✅ ${txCount} transações de compra estornadas`);
+      console.log(`✅ ${txCount} transações de compra enfileiradas`);
 
-      console.log(`🎯 LOTE ${id} COMPLETAMENTE ESTORNADO!`);
+      // COMMIT ATÔMICO FIREBASE
+      await batchCommit.commit();
+
+      console.log(`🎯 LOTE ${id} COMPLETAMENTE ESTORNADO (Transação Atômica)!`);
 
       if (session?.user) {
         logAction(
@@ -880,72 +968,89 @@ const App: React.FC = () => {
   };
 
   const registerBatchFinancial = async (batch: Batch) => {
-    const totalCost = (batch.valor_compra_total || 0) + (batch.frete || 0) + (batch.gastos_extras || 0);
+    // 1. Calcular custo total de aquisição
+    const valorCompra = parseFloat(batch.valor_compra_total as any) || 0;
+    const frete = parseFloat(batch.frete as any) || 0;
+    const extras = parseFloat(batch.gastos_extras as any) || 0;
+    const totalCost = valorCompra + frete + extras;
+
     if (totalCost === 0) return;
 
-    const transactionData = {
-      id: `TR-LOTE-${batch.id_lote}`,
-      data: batch.data_recebimento,
-      descricao: `Compra Lote ${batch.id_lote} - ${batch.fornecedor}`,
-      tipo: 'SAIDA',
-      categoria: 'COMPRA_GADO',
-      valor: totalCost,
-      metodo_pagamento: (batch as any).forma_pagamento || 'OUTROS',
-      referencia_id: batch.id_lote
-    };
+    const formaPagamento = (batch as any).forma_pagamento || 'OUTROS';
+    const valorEntrada = parseFloat((batch as any).valor_entrada) || 0;
+    const dataRecebimento = batch.data_recebimento || todayBR();
 
-    const valorEntrada = (batch as any).valor_entrada || 0;
-    const isVista = (batch as any).forma_pagamento === 'VISTA';
-    const isPrazo = (batch as any).forma_pagamento === 'PRAZO';
+    console.log(`🏦 registerBatchFinancial Lote: ${batch.id_lote} | Total: R$ ${totalCost} | Form: ${formaPagamento}`);
 
-    if (isVista) {
-      // GUARD: Verificar se já existe transação de compra para este lote (evita duplicata com addBatch)
-      const existingTx = data.transactions.find(t => t.id === `TR-LOTE-${batch.id_lote}`);
+    if (formaPagamento === 'VISTA') {
+      // PAGAMENTO TOTAL À VISTA
+      // Verificamos se addBatch já não criou essa transação
+      const txId = `TR-LOTE-${batch.id_lote}`;
+      const existingTx = data.transactions.find(t => t.id === txId);
+
       if (!existingTx) {
-        // PAGAMENTO TOTAL A VISTA
-        await addTransaction(transactionData);
+        await addTransaction({
+          id: txId,
+          data: dataRecebimento,
+          descricao: `Compra Lote ${batch.id_lote} - ${batch.fornecedor}`,
+          tipo: 'SAIDA',
+          categoria: 'COMPRA_GADO',
+          valor: totalCost,
+          metodo_pagamento: formaPagamento,
+          referencia_id: batch.id_lote
+        } as any);
       } else {
-        console.log(`⚠️ Transação TR-LOTE-${batch.id_lote} já existe, ignorando duplicata.`);
+        console.log(`⚠️ Transação ${txId} já existe, ignorando.`);
       }
-    } else if (isPrazo) {
+    } else if (formaPagamento === 'PRAZO') {
+      // COMPRA A PRAZO (Pode ter entrada)
 
-      // 1. SE TIVER ENTRADA, LANÇA A SAÍDA DA ENTRADA AGORA
+      // 1. SE TIVER ENTRADA, LANÇA A SAÍDA AGORA
       if (valorEntrada > 0) {
-        const entradaTransaction = {
-          ...transactionData,
-          id: `TR-LOTE-ENTRADA-${batch.id_lote}`,
-          descricao: `Entrada/Adiantamento Lote ${batch.id_lote} - ${batch.fornecedor}`,
-          valor: valorEntrada
-        };
-        await addTransaction(entradaTransaction);
+        const txEntradaId = `TR-LOTE-ENTRADA-${batch.id_lote}`;
+        const existingEntrada = data.transactions.find(t => t.id === txEntradaId);
+
+        if (!existingEntrada) {
+          await addTransaction({
+            id: txEntradaId,
+            data: dataRecebimento,
+            descricao: `Entrada/Adiantamento Lote ${batch.id_lote} - ${batch.fornecedor}`,
+            tipo: 'SAIDA',
+            categoria: 'COMPRA_GADO',
+            valor: valorEntrada,
+            metodo_pagamento: 'OUTROS',
+            referencia_id: batch.id_lote
+          } as any);
+        }
       }
 
-      // 2. O RESTANTE VAI PARA CONTAS A PAGAR
+      // 2. REGISTRAR O RESTANTE COMO CONTA A PAGAR (PAYABLE)
       const valorRestante = totalCost - valorEntrada;
       if (valorRestante > 0) {
-        // GUARD: Verificar se já existe payable para este lote
-        const existingPayables = data.payables.filter(p => p.id_lote === batch.id_lote || p.id === `PAY-LOTE-${batch.id_lote}`);
-        if (existingPayables.length > 0) {
-          console.log(`⚠️ Payable já existe para lote ${batch.id_lote}, ignorando duplicata.`);
-          return;
-        }
+        const payableId = `PAY-LOTE-${batch.id_lote}`;
+        const existingPayables = data.payables.filter(p => p.id_lote === batch.id_lote || p.id === payableId);
 
-        const payableData: Payable = {
-          id: `PAY-LOTE-${batch.id_lote}`,
-          descricao: `Restante Lote ${batch.id_lote} - ${batch.fornecedor}`,
-          valor: valorRestante,
-          data_vencimento: new Date(Date.now() + ((batch as any).prazo_dias || 30) * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          status: 'PENDENTE',
-          categoria: 'COMPRA_GADO',
-          observacoes: `Compra a Prazo (Entrada: ${valorEntrada > 0 ? valorEntrada : 'Não'})`,
-          fornecedor_id: batch.fornecedor,
-          id_lote: batch.id_lote
-        };
-        // Usar doc com ID determinístico para evitar duplicatas
-        const docRef = doc(db, 'payables', `PAY-LOTE-${batch.id_lote}`);
-        await setDoc(docRef, payableData);
+        if (existingPayables.length === 0) {
+          await handleAddPayable({
+            id: payableId,
+            id_lote: batch.id_lote,
+            descricao: `Pagamento Lote ${batch.id_lote} - ${batch.fornecedor} (Restante)`,
+            beneficiario: batch.fornecedor,
+            valor: valorRestante,
+            valor_pago: 0,
+            data_vencimento: (() => {
+              const d = new Date(dataRecebimento);
+              d.setDate(d.getDate() + ((batch as any).prazo_dias || 30));
+              return d.toISOString().split('T')[0];
+            })(),
+            status: 'PENDENTE',
+            categoria: 'COMPRA_GADO'
+          } as any);
+        }
       }
     }
+
+    await fetchData();
   };
 
   const addSales = async (newSales: Sale[]): Promise<{ success: boolean; error?: string }> => {
@@ -1303,7 +1408,7 @@ const App: React.FC = () => {
             const profit = revenue - cost - groupExtraCost;
 
             const idCompleto = isCarcacaInteira
-              ? `${groupItems[0].id_lote}-${groupItems[0].sequencia}-INTEIRO`
+              ? `${groupItems[0].id_lote}-${String(groupItems[0].sequencia).padStart(3, '0')}-INTEIRO`
               : groupItems[0].id_completo;
 
             const valorTotal = pesoSaidaTotal * pricePerKg;

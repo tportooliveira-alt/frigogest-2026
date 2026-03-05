@@ -1332,7 +1332,7 @@ ${sales.filter(s => s.status_pagamento === 'PENDENTE' && new Date(s.data_vencime
                     }
 
 FORNECEDORES(análise contratual):
-${suppliers.slice(0, 5).map(f => `- ${f.nome_fantasia} | ${f.cidade || 'N/A'} | Contato: ${f.contato_principal || 'N/A'}`).join('\n') || '- Sem fornecedores cadastrados'}
+${suppliers.slice(0, 5).map(f => `- ${f.nome_fantasia} | ${f.cidade || 'N/A'} | Contato: ${(f as any).contato_principal || 'N/A'}`).join('\n') || '- Sem fornecedores cadastrados'}
 
 FUNCIONÁRIOS / RH:
 - Alertas trabalhistas: ${agentAlerts.filter(a => a.agent === 'JURIDICO' || a.agent === 'RH_GESTOR').length}
@@ -1362,7 +1362,7 @@ CONTEXTO DO NEGÓCIO(para estratégia de conteúdo):
 - Faixa de preço: produto premium local, preço justo pelo mercado regional
 
 AUDIÊNCIA PARA CONTEÚDO:
-${clients.slice(0, 5).map(c => `- ${c.nome_social} | Perfil: ${c.perfil_compra || 'N/A'} | Cidade: ${c.cidade_entrega || 'N/A'}`).join('\n') || '- Cadastrar perfil de clientes para segmentação'}
+${clients.slice(0, 5).map(c => `- ${c.nome_social} | Perfil: ${c.perfil_compra || 'N/A'} | Cidade: ${(c as any).cidade_entrega || 'N/A'}`).join('\n') || '- Cadastrar perfil de clientes para segmentação'}
 
 MISSÃO DA LUNA: criar conteúdo visual, textos e artes que fortaleçam a marca do frigorífico junto aos clientes açougues e restaurantes.Foque em: fotos de cortes, vídeos do processo, receitas, dicas de manipulação, certificações de qualidade.`.trim(),
 
@@ -1389,7 +1389,7 @@ NÃO analise caixa ou operações financeiras.Isso não é sua área.
 
 LISTA DE CLIENTES PARA E - MAIL:
 ${clients.filter(c => c.status !== 'INATIVO').slice(0, 10).map(c =>
-                    `- ${c.nome_social} | Contato: ${c.telefone || 'N/A'} | Cidade: ${c.cidade_entrega || 'N/A'}`
+                    `- ${c.nome_social} | Contato: ${(c as any).telefone || 'N/A'} | Cidade: ${(c as any).cidade_entrega || 'N/A'}`
                 ).join('\n') || '- Sem clientes ativos para e-mail'
                     }
 

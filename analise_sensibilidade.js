@@ -1,4 +1,4 @@
-daos muit daods ora ser cruzado // Script JS Puro
+// daos muit daods ora ser cruzado // Script JS Puro
 
 // HISTÓRICO REAL 2021-2025 (Dados para treinar o peso de correlação)
 const historico = [

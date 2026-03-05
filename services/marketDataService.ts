@@ -12,7 +12,7 @@ export interface MarketData {
     cepeaBoi: { valor: number; data: string; variacao: number; fonte: string };
     selic: { valor: number; data: string; fonte: string };
     milho: { valor: number; data: string; fonte: string };
-    b3Futuro: { valor: number; vencimento: string; fonte: string };
+    b3Futuro: { valor: number; vencimento: string; data: string; fonte: string };
     updatedAt: Date;
     errors: string[];
 }

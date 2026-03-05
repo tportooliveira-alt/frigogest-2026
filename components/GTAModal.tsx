@@ -49,7 +49,7 @@ const GTAModal: React.FC<GTAModalProps> = ({ batch, supplier, onClose }) => {
         { id: 'mortos', label: 'Mortalidade no Transporte', value: String(batch.qtd_mortos || 0), fixed: false },
         { id: 'peso_vivo', label: 'Peso Vivo Total Estimado (kg)', value: pesoVivoTotal > 0 ? `${pesoVivoTotal} kg` : '—', fixed: false },
         { id: 'data', label: 'Data do Trânsito', value: formatDate(batch.data_recebimento), fixed: false },
-        { id: 'remetente', label: 'Remetente (Fazenda Origem)', value: supplier?.nome || batch.fornecedor || '—', fixed: false },
+        { id: 'remetente', label: 'Remetente (Fazenda Origem)', value: supplier?.nome_fantasia || batch.fornecedor || '—', fixed: false },
         { id: 'origem', label: 'Município de Origem', value: (supplier as any)?.municipio_fazenda || (supplier as any)?.cidade_entrega || 'Verificar cadastro do fornecedor', fixed: false },
         { id: 'destinatario', label: 'Destinatário (Frigorífico)', value: 'FrigoGest Frigorífico Ltda', fixed: false },
         { id: 'destino', label: 'Município de Destino', value: 'Vitória da Conquista — BA', fixed: false },
