@@ -145,7 +145,7 @@ const FALLBACK_DATA: MarketData = {
     cepeaBoi: { valor: 352.80, data: '28/02/2026', variacao: 0.45, fonte: '⚠️ Fallback (CEPEA manual)' },
     selic: { valor: 13.25, data: '28/02/2026', fonte: '⚠️ Fallback (BCB manual)' },
     milho: { valor: 69.53, data: '28/02/2026', fonte: '⚠️ Fallback (CEPEA manual)' },
-    b3Futuro: { valor: 350.15, data: '28/02/2026', vencimento: 'Mar/26', fonte: '⚠️ Sem API B3 pública' },
+    b3Futuro: { valor: 350.15, vencimento: 'Mar/26', fonte: '⚠️ Sem API B3 pública' },
     updatedAt: new Date(),
     errors: ['Usando dados fallback — APIs indisponíveis']
 };

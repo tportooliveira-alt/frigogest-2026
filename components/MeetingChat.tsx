@@ -424,17 +424,7 @@ const MeetingChat: React.FC<MeetingChatProps> = ({ onBack }) => {
                     </button>
                 )}
 
-                {/* OPEN FULL SCREEN - shows all Jitsi buttons including screen share */}
-                {videoCallActive && (
-                    <button
-                        onClick={() => window.open(`https://meet.jit.si/${jitsiRoomId}`, '_blank')}
-                        title='Abrir chamada em tela cheia (com compartilhar tela)'
-                        className='flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-all active:scale-95'
-                    >
-                        <Monitor size={14} />
-                        🖥️ Tela Cheia
-                    </button>
-                )}
+
 
                 <button
                     onClick={() => setShowParticipants(!showParticipants)}
@@ -474,57 +464,66 @@ const MeetingChat: React.FC<MeetingChatProps> = ({ onBack }) => {
 
             {/* ═══ JITSI VIDEO CALL PANEL ═══ */}
             {videoCallActive && (
-                <div className="relative border-b border-white/10 bg-slate-950" style={{ height: '45vh' }}>
-                    {/* Online Users Sidebar inside video */}
-                    <div className="absolute left-2 top-2 bottom-2 z-10 w-36 bg-slate-900/90 backdrop-blur-sm rounded-xl border border-white/10 overflow-hidden flex flex-col">
-                        <div className="px-3 py-2 border-b border-white/10">
-                            <p className="text-emerald-400 text-[10px] font-bold uppercase tracking-widest">🟢 Online ({onlineUsers.length})</p>
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+                <div className="border-b border-white/10 bg-slate-950">
+                    {/* Online Users Bar - horizontal */}
+                    <div className="flex items-center gap-3 px-4 py-2 bg-slate-900/80 border-b border-white/5">
+                        <span className="text-emerald-400 text-[10px] font-bold uppercase tracking-widest flex-shrink-0">🟢 Online</span>
+                        <div className="flex items-center gap-2 overflow-x-auto">
                             {onlineUsers.map(u => (
-                                <div key={u.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
-                                    <div className="relative flex-shrink-0">
-                                        <div
-                                            className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold"
-                                            style={{ backgroundColor: u.color }}
-                                        >
-                                            {u.name[0]?.toUpperCase()}
-                                        </div>
-                                        <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full border border-slate-900" />
+                                <div key={u.id} className="flex items-center gap-1.5 bg-white/5 rounded-full px-2.5 py-1 flex-shrink-0">
+                                    <div
+                                        className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold"
+                                        style={{ backgroundColor: u.color }}
+                                    >
+                                        {u.name[0]?.toUpperCase()}
                                     </div>
-                                    <div className="min-w-0">
-                                        <p className="text-white text-xs font-semibold truncate">{u.name}</p>
-                                        <p className="text-slate-500 text-[9px] truncate">{u.role}</p>
-                                    </div>
+                                    <span className="text-white text-[11px] font-medium">{u.name}</span>
                                 </div>
                             ))}
-                            {onlineUsers.length === 1 && (
-                                <p className="text-slate-500 text-[10px] text-center py-2">Aguardando participantes...</p>
-                            )}
                         </div>
                     </div>
 
-                    {/* Jitsi iframe */}
-                    <iframe
-                        src={`https://meet.jit.si/${jitsiRoomId}#config.startWithVideoMuted=false&config.startWithAudioMuted=false&config.prejoinPageEnabled=false&config.toolbarButtons=["microphone","camera","desktop","fullscreen","hangup","chat","recording","tileview"]&interfaceConfig.TOOLBAR_ALWAYS_VISIBLE=true&interfaceConfig.SHOW_JITSI_WATERMARK=false&interfaceConfig.SHOW_BRAND_WATERMARK=false&interfaceConfig.DEFAULT_BACKGROUND="#0f172a"`}
-                        allow="camera; microphone; fullscreen; display-capture; autoplay; clipboard-write"
-                        title="Chamada de vídeo FrigoGest"
-                        className="w-full h-full"
-                        style={{ border: 'none' }}
-                    />
-
-                    {/* Overlay bar top-right */}
-                    <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
-                        <span className="flex items-center gap-1.5 px-3 py-1 bg-emerald-600/90 text-white text-xs font-bold rounded-full shadow-lg">
-                            <Monitor size={12} /> Suporte Ativo
-                        </span>
+                    {/* Instruction Banner */}
+                    <div className="flex items-center gap-3 px-4 py-2.5 bg-amber-500/10 border-b border-amber-500/20">
+                        <Monitor size={16} className="text-amber-400 flex-shrink-0" />
+                        <p className="text-amber-200 text-xs flex-1">
+                            📹 <strong>Câmera e áudio</strong> funcionam aqui. Para <strong>compartilhar sua tela</strong>, clique no botão abaixo:
+                        </p>
                         <button
-                            onClick={() => setVideoCallActive(false)}
-                            className="w-8 h-8 bg-red-600 hover:bg-red-500 text-white rounded-full flex items-center justify-center transition-all shadow-lg"
-                            title="Encerrar chamada"
+                            onClick={() => {
+                                const url = `https://meet.jit.si/${jitsiRoomId}#config.prejoinPageEnabled=false&config.startWithVideoMuted=false&config.startWithAudioMuted=false`;
+                                window.open(url, 'frigogest_suporte', 'width=1200,height=800,menubar=no,toolbar=no,location=no,status=no');
+                            }}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-xs font-extrabold rounded-lg transition-all active:scale-95 shadow-lg shadow-amber-500/30 flex-shrink-0 animate-pulse"
                         >
-                            <X size={14} />
+                            <Monitor size={14} />
+                            🖥️ ABRIR TELA CHEIA
                         </button>
+                    </div>
+
+                    {/* Jitsi Video */}
+                    <div className="relative" style={{ height: '40vh' }}>
+                        <iframe
+                            src={`https://meet.jit.si/${jitsiRoomId}#config.startWithVideoMuted=false&config.startWithAudioMuted=false&config.prejoinPageEnabled=false&config.toolbarButtons=["microphone","camera","desktop","fullscreen","hangup","tileview"]&interfaceConfig.TOOLBAR_ALWAYS_VISIBLE=true&interfaceConfig.SHOW_JITSI_WATERMARK=false&interfaceConfig.SHOW_BRAND_WATERMARK=false`}
+                            allow="camera; microphone; fullscreen; display-capture; autoplay; clipboard-write"
+                            title="Chamada de vídeo FrigoGest"
+                            className="w-full h-full"
+                            style={{ border: 'none' }}
+                        />
+
+                        {/* Overlay controls */}
+                        <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
+                            <span className="flex items-center gap-1.5 px-3 py-1 bg-emerald-600/90 text-white text-xs font-bold rounded-full shadow-lg">
+                                <Monitor size={12} /> Suporte Ativo
+                            </span>
+                            <button
+                                onClick={() => setVideoCallActive(false)}
+                                className="w-8 h-8 bg-red-600 hover:bg-red-500 text-white rounded-full flex items-center justify-center transition-all shadow-lg"
+                                title="Encerrar chamada"
+                            >
+                                <X size={14} />
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

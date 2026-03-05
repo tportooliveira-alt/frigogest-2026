@@ -27,6 +27,7 @@ import HeiferManager from './components/HeiferManager';
 import SalesAgent from './components/SalesAgent';
 import AuditLogView from './components/AuditLogView';
 import AIAgents from './components/AIAgents';
+import DataIntegrityWatchdog from './components/DataIntegrityWatchdog';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import AIChat from './components/AIChat';
 import AIMeetingRoom from './components/AIMeetingRoom';
@@ -493,12 +494,14 @@ const App: React.FC = () => {
       logAction(session.user, 'CREATE', 'BATCH', `Novo lote criado: ${cleanBatch.id_lote} - ${cleanBatch.fornecedor}`);
     }
 
-    // Preservar informações de pagamento temporariamente para uso na transação
-    const formPagamento = cleanBatch.forma_pagamento || 'OUTROS';
-    const isVista = cleanBatch.pagamento_a_vista === true;
-
-    delete cleanBatch.pagamento_a_vista;
-    delete cleanBatch.forma_pagamento;
+    // CORREÇÃO AUDITORIA #1: PRESERVAR forma_pagamento e prazo_dias no Firestore!
+    // Antes esses campos eram deletados, fazendo registerBatchFinancial não saber
+    // se a compra era à vista ou a prazo. Agora salvamos tudo.
+    // Normalizar pagamento_a_vista → forma_pagamento
+    if (cleanBatch.pagamento_a_vista === true && !cleanBatch.forma_pagamento) {
+      cleanBatch.forma_pagamento = 'VISTA';
+    }
+    delete cleanBatch.pagamento_a_vista; // campo auxiliar de UI, não precisa no Firestore
 
     cleanBatch.peso_total_romaneio = parseFloat(cleanBatch.peso_total_romaneio) || 0;
     cleanBatch.valor_compra_total = parseFloat(cleanBatch.valor_compra_total) || 0;
@@ -519,27 +522,10 @@ const App: React.FC = () => {
     try {
       await setDoc(doc(db, 'batches', cleanBatch.id_lote), cleanBatch);
 
-      // REGISTRAR NO FINANCEIRO AUTOMATICAMENTE
-      // Se for à vista OU se quiser registrar a despesa mesmo que a prazo (geralmente compra registra na data da compra)
-      // O usuário pediu: "tem que entrar no caixa vermelho e saida"
-      const totalCost = (cleanBatch.valor_compra_total || 0) + (cleanBatch.frete || 0) + (cleanBatch.gastos_extras || 0);
-
-      if (totalCost > 0 && formPagamento === 'VISTA') {
-        const transactionData = {
-          id: `TR-LOTE-${cleanBatch.id_lote}`,
-          data: cleanBatch.data_recebimento,
-          descricao: `Compra Lote ${cleanBatch.id_lote} - ${cleanBatch.fornecedor}`,
-          tipo: 'SAIDA',
-          categoria: 'COMPRA_GADO',
-          valor: totalCost,
-          metodo_pagamento: formPagamento,
-          referencia_id: cleanBatch.id_lote
-        };
-        await addTransaction(transactionData as any);
-      }
-      // NOTA: Compras a PRAZO são tratadas pela registerBatchFinancial()
-      // que é chamada ao fechar o lote no Batches.tsx, com lógica de
-      // entrada/restante e guard contra duplicatas.
+      // CORREÇÃO AUDITORIA #2: REMOVIDO o bloco duplicado de criação de transação.
+      // TODA a lógica financeira (à vista, a prazo, frete, entrada) é tratada
+      // EXCLUSIVAMENTE por registerBatchFinancial() quando o lote é FECHADO.
+      // Isso elimina o conflito de dois caminhos fazendo a mesma coisa.
 
       await fetchData();
       return { success: true };
@@ -548,77 +534,117 @@ const App: React.FC = () => {
     }
   };
 
-  // ===== ESTORNO DE VENDA INDIVIDUAL =====
+  // ===== ESTORNO DE VENDA INDIVIDUAL (BLINDADO) =====
   const estornoSale = async (saleId: string) => {
     if (!db) return;
+
+    // 1. Encontrar a venda
     const sale = data.sales.find(s => s.id_venda === saleId);
-    if (!sale || sale.status_pagamento === 'ESTORNADO') {
-      if (sale?.status_pagamento === 'ESTORNADO') alert('Esta venda já foi estornada.');
+    if (!sale) {
+      alert('Venda não encontrada.');
+      return;
+    }
+    if (sale.status_pagamento === 'ESTORNADO') {
+      alert('Esta venda já foi estornada.');
       return;
     }
 
     try {
-      const valorPago = (sale as any).valor_pago || 0;
+      const valorPago = sale.valor_pago || 0;
+      const batch = writeBatch(db); // INÍCIO DA TRANSAÇÃO
 
-      // 1. Marcar venda como ESTORNADO e zerar valor_pago (P4)
-      await updateDoc(doc(db, 'sales', saleId), { status_pagamento: 'ESTORNADO', valor_pago: 0 });
+      // 2. Marcar a venda atual como ESTORNADO
+      batch.update(doc(db, 'sales', saleId), {
+        status_pagamento: 'ESTORNADO'
+        // NOTA ERP: NÃO ZERAMOS o valor_pago na nota original. O valor pago fica registrado
+        // para histórico contábil, enquanto lançamos uma SAÍDA no fluxo de caixa compensando.
+      });
 
-      // 2. Devolver item(ns) ao estoque → DISPONÍVEL
-      const stockIds = (sale as any).stock_ids_originais && Array.isArray((sale as any).stock_ids_originais)
-        ? (sale as any).stock_ids_originais
-        : [sale.id_completo];
-
-      for (const stockId of stockIds) {
-        try {
-          await updateDoc(doc(db, 'stock_items', stockId), { status: 'DISPONIVEL' });
-        } catch (e) {
-          console.warn(`⚠️ Item de estoque ${stockId} não encontrado para devolver`);
-        }
+      // 3. Devolver item(ns) ao estoque → DISPONÍVEL
+      // Se tiver stock_ids_originais (ex: carcaça inteira juntou Banda A + Banda B), usa eles.
+      const stockIdsToRestore: string[] = [];
+      if ((sale as any).stock_ids_originais && Array.isArray((sale as any).stock_ids_originais)) {
+        stockIdsToRestore.push(...((sale as any).stock_ids_originais));
+      } else {
+        stockIdsToRestore.push(sale.id_completo);
       }
 
-      // 3. Se já recebeu dinheiro, criar SAÍDA de estorno (dinheiro sai do caixa)
+      let itensDevolvidos = 0;
+
+      // Procura ativamente todos os itens no State atual (data.stock)
+      const itemsToUpdate = data.stock.filter(item => {
+        if (item.status === 'VENDIDO' || item.status === 'SAIDA') {
+          // Correção: Extrair a base do ID para suportar 'LOTE-123-1-INTEIRO' casando com 'LOTE-123-1-BANDA A'
+          return stockIdsToRestore.some(sid => {
+            const sidBase = sid.replace('-INTEIRO', '');
+            const itemBase = item.id_completo.replace(/-BANDA (A|B)$/, '');
+            return sid === item.id_completo || sidBase === item.id_completo || itemBase === sidBase || item.id_completo.startsWith(sidBase);
+          });
+        }
+        return false;
+      });
+
+      for (const item of itemsToUpdate) {
+        // Rastreabilidade: O item volta a ficar DISPONIVEL e perde a marcação de saída
+        batch.update(doc(db, 'stock_items', item.id_completo), { status: 'DISPONIVEL' });
+        itensDevolvidos++;
+      }
+
+      if (itensDevolvidos === 0) {
+        console.warn(`⚠️ ALERTA DE RASTREABILIDADE: Nenhum item físico correspondente a ${saleId} foi encontrado para devolução. O estoque físico pode estar quebrado.`);
+      }
+
+      // 4. Se a venda já tinha dinheiro recebido (À VISTA, ou já baixado), OBRIGATÓRIO lançar SAÍDA
       if (valorPago > 0) {
-        const estornoTx = {
-          id: `TR-ESTORNO-VENDA-${saleId}-${Date.now()}`,
+        const txId = `TR-ESTORNO-VENDA-${saleId}-${Date.now()}`;
+        batch.set(doc(db, 'transactions', txId), {
+          id: txId,
           data: new Date().toISOString().split('T')[0],
-          descricao: `ESTORNO VENDA: ${sale.nome_cliente || 'Cliente'} - ${sale.id_completo}`,
-          tipo: 'SAIDA',
+          descricao: `ESTORNO (DEVOLUÇÃO CLIENTE): Venda ${sale.nome_cliente || 'Desconhecido'} - ${sale.id_completo}`,
+          tipo: 'SAIDA', // Dinheiro saindo da conta do Frigorífico voltando pro Cliente
           categoria: 'ESTORNO',
           valor: valorPago,
           metodo_pagamento: sale.forma_pagamento || 'OUTROS',
           referencia_id: saleId
-        };
-        await addTransaction(estornoTx as any);
+        });
       }
 
-      // 4. Reverter descontos (P2): se houve TR-DESC, criar ENTRADA espelho
-      const descontosTx = data.transactions.filter(t =>
+      // 5. Reverter descontos financeiros cedidos: Se o frigorífico "perdeu" dinheiro no desconto (SAÍDA),
+      // o cancelamento da dívida "recupera" esse valor contábil (ENTRADA)
+      const descontosConcedidos = data.transactions.filter(t =>
         (t.referencia_id === saleId || t.id?.startsWith(`TR-DESC-${saleId}`)) &&
         t.categoria === 'DESCONTO' && t.tipo === 'SAIDA'
       );
-      for (const descTx of descontosTx) {
-        const estornoDesc = {
-          id: `TR-ESTORNO-DESC-${saleId}-${Date.now()}`,
+
+      for (const descTx of descontosConcedidos) {
+        const txDescId = `TR-ESTORNO-DESC-${saleId}-${Date.now()}`;
+        batch.set(doc(db, 'transactions', txDescId), {
+          id: txDescId,
           data: new Date().toISOString().split('T')[0],
-          descricao: `ESTORNO DESCONTO: ${descTx.descricao}`,
+          descricao: `RESTITUIÇÃO DE DESCONTO (ESTORNO): ${descTx.descricao}`,
           tipo: 'ENTRADA',
           categoria: 'ESTORNO',
           valor: descTx.valor,
           metodo_pagamento: 'OUTROS',
           referencia_id: saleId
-        };
-        await addTransaction(estornoDesc as any);
+        });
       }
 
-      logAction(session?.user, 'ESTORNO', 'SALE', `Venda estornada: ${saleId} (${sale.nome_cliente}) - Pago: R$${valorPago.toFixed(2)}`, { saleId, valorPago });
+      await batch.commit(); // CONFIRMA TUDO ATOMICAMENTE
+
+      if (session?.user) {
+        logAction(session.user, 'ESTORNO', 'SALE', `Estorno Auditado: Venda ${saleId} (${sale.nome_cliente}). Peças restuaradas: ${itensDevolvidos}. Caixa estornado: R$${valorPago.toFixed(2)}`, { saleId, valorPago });
+      }
+      alert('Venda estornada com sucesso. O estoque foi devolvido e o fluxo de caixa revertido contabilmente.');
       fetchData();
-    } catch (error) {
-      console.error('❌ Erro ao estornar venda:', error);
-      alert('Erro ao estornar a venda.');
+    } catch (error: any) {
+      console.error('❌ FATAL: Erro arquitetural ao estornar venda:', error);
+      alert(`Erro crítico ao tentar estornar a venda: ${error.message}. Nenhuma alteração foi feita.`);
     }
   };
 
-  // ===== ESTORNO DE LOTE (CASCATA) =====
+
+  // ===== ESTORNO DE LOTE BLINDADO (CASCATA ATÔMICA) =====
   const estornoBatch = async (id: string) => {
     if (OFFLINE_MODE) {
       setData(prev => ({
@@ -626,7 +652,7 @@ const App: React.FC = () => {
         batches: prev.batches.map(b => b.id_lote === id ? { ...b, status: 'ESTORNADO' as const } : b),
         stock: prev.stock.map(s => s.id_lote === id ? { ...s, status: 'ESTORNADO' as const } : s),
         payables: prev.payables.map(p => p.id_lote === id ? { ...p, status: 'CANCELADO' as const } : p),
-        sales: prev.sales.map(s => s.id_completo.startsWith(id) ? { ...s, status_pagamento: 'ESTORNADO' as const } : s),
+        sales: prev.sales.map(s => s.id_completo.includes(id) ? { ...s, status_pagamento: 'ESTORNADO' as const } : s),
       }));
       return;
     }
@@ -635,10 +661,11 @@ const App: React.FC = () => {
 
     try {
       console.log(`🔄 INICIANDO ESTORNO DO LOTE: ${id}`);
+      const batchOp = writeBatch(db); // INÍCIO DA TRANSAÇÃO ATÔMICA
 
       // 1. Marcar lote como ESTORNADO
-      await updateDoc(doc(db, 'batches', id), { status: 'ESTORNADO' });
-      console.log(`✅ Lote ${id} marcado como ESTORNADO`);
+      batchOp.update(doc(db, 'batches', id), { status: 'ESTORNADO' });
+      console.log(`✅ Lote ${id} preparado para ESTORNADO`);
 
       // 2. Marcar itens de estoque como ESTORNADO
       const stockSnapshot = await getDocs(collection(db, 'stock_items'));
@@ -646,60 +673,52 @@ const App: React.FC = () => {
       for (const docSnap of stockSnapshot.docs) {
         const item = docSnap.data();
         if (item.id_lote === id && item.status !== 'ESTORNADO') {
-          await updateDoc(doc(db, 'stock_items', docSnap.id), { status: 'ESTORNADO' });
+          batchOp.update(doc(db, 'stock_items', docSnap.id), { status: 'ESTORNADO' });
           stockCount++;
         }
       }
-      console.log(`✅ ${stockCount} itens de estoque estornados`);
+      console.log(`✅ ${stockCount} itens de estoque preparados para estorno`);
 
-      // 3. Estornar payables do lote
+      // 3. Estornar payables do lote (Cancela os pagamentos pendentes)
       const payablesSnapshot = await getDocs(collection(db, 'payables'));
+      const linkedPayableIds = new Set<string>(); // Rastrear quais payables são deste lote
       let payablesCount = 0;
+
       for (const docSnap of payablesSnapshot.docs) {
         const payable = docSnap.data();
         const matchByIdLote = payable.id_lote === id;
         const matchById = payable.id && payable.id.includes(id);
         const matchByDescricao = payable.descricao && payable.descricao.includes(id);
-        if ((matchByIdLote || matchById || matchByDescricao) && payable.status !== 'ESTORNADO' && payable.status !== 'CANCELADO') {
-          const isPago = payable.status === 'PAGO';
-          const isParcial = payable.status === 'PARCIAL';
-          const valorPago = payable.valor_pago || 0;
-          const novoStatus = (isPago || isParcial) ? 'ESTORNADO' : 'CANCELADO';
 
-          await updateDoc(doc(db, 'payables', docSnap.id), { status: novoStatus });
-
-          // Se já pagou, criar ENTRADA de estorno
-          if ((isPago || isParcial) && valorPago > 0) {
-            await addTransaction({
-              id: `TR-ESTORNO-PAY-${docSnap.id}-${Date.now()}`,
-              data: new Date().toISOString().split('T')[0],
-              descricao: `ESTORNO LOTE: ${payable.descricao}`,
-              tipo: 'ENTRADA',
-              categoria: 'ESTORNO',
-              valor: isPago ? payable.valor : valorPago,
-              metodo_pagamento: 'OUTROS',
-              referencia_id: id
-            } as any);
+        if (matchByIdLote || matchById || matchByDescricao) {
+          linkedPayableIds.add(docSnap.id);
+          if (payable.status !== 'ESTORNADO' && payable.status !== 'CANCELADO') {
+            const isPago = payable.status === 'PAGO';
+            const isParcial = payable.status === 'PARCIAL';
+            const novoStatus = (isPago || isParcial) ? 'ESTORNADO' : 'CANCELADO';
+            batchOp.update(doc(db, 'payables', docSnap.id), { status: novoStatus });
+            payablesCount++;
           }
-          payablesCount++;
         }
       }
-      console.log(`✅ ${payablesCount} contas a pagar estornadas`);
+      console.log(`✅ ${payablesCount} contas a pagar preparadas para estorno/cancelamento`);
 
       // 4. Estornar vendas do lote
       const salesSnapshot = await getDocs(collection(db, 'sales'));
       let salesCount = 0;
       for (const docSnap of salesSnapshot.docs) {
         const sale = docSnap.data();
-        if (sale.id_completo && sale.id_completo.startsWith(id) && sale.status_pagamento !== 'ESTORNADO') {
+        // CORREÇÃO AUDITORIA #5: Usar includes() ao invés de startsWith()
+        if (sale.id_completo && sale.id_completo.includes(id) && sale.status_pagamento !== 'ESTORNADO') {
           const valorPago = sale.valor_pago || 0;
 
-          await updateDoc(doc(db, 'sales', docSnap.id), { status_pagamento: 'ESTORNADO' });
+          batchOp.update(doc(db, 'sales', docSnap.id), { status_pagamento: 'ESTORNADO' });
 
-          // Se já recebeu $, criar SAÍDA de estorno
+          // Se já recebeu $, criar SAÍDA de estorno no Fluxo de Caixa
           if (valorPago > 0) {
-            await addTransaction({
-              id: `TR-ESTORNO-VENDA-${docSnap.id}-${Date.now()}`,
+            const txId = `TR-ESTORNO-VENDA-${docSnap.id}-${Date.now()}`;
+            batchOp.set(doc(db, 'transactions', txId), {
+              id: txId,
               data: new Date().toISOString().split('T')[0],
               descricao: `ESTORNO LOTE: Venda ${sale.nome_cliente || 'Cliente'} - ${sale.id_completo}`,
               tipo: 'SAIDA',
@@ -707,37 +726,46 @@ const App: React.FC = () => {
               valor: valorPago,
               metodo_pagamento: 'OUTROS',
               referencia_id: id
-            } as any);
+            });
           }
           salesCount++;
         }
       }
-      console.log(`✅ ${salesCount} vendas estornadas`);
+      console.log(`✅ ${salesCount} vendas preparadas para estorno`);
 
       // 5. Criar transação de estorno para transações de compra já lançadas
       const transactionsSnapshot = await getDocs(collection(db, 'transactions'));
       let txCount = 0;
       for (const docSnap of transactionsSnapshot.docs) {
         const tx = docSnap.data();
-        // Estornar transações de COMPRA deste lote (criar ENTRADA inversa)
-        if ((tx.referencia_id === id || (tx.descricao && tx.descricao.includes(id)))
-          && tx.categoria === 'COMPRA_GADO' && !tx.descricao?.includes('ESTORNO')) {
-          await addTransaction({
-            id: `TR-ESTORNO-${docSnap.id}-${Date.now()}`,
+        const isCategoriaDeLote = tx.categoria === 'COMPRA_GADO' || tx.categoria === 'FRETE';
+
+        // Vinculo direto ao Lote OU vinculo a um Payable que é deste lote
+        const isVinculadoLote = tx.referencia_id === id
+          || (tx.descricao && tx.descricao.includes(id))
+          || (tx.referencia_id && linkedPayableIds.has(tx.referencia_id))
+          || (tx.id && tx.id.includes(id));
+
+        if (isVinculadoLote && tx.tipo === 'SAIDA' && !tx.categoria?.includes('ESTORNO') && !tx.descricao?.includes('ESTORNO')) {
+          const txId = `TR-ESTORNO-${docSnap.id}-${Date.now()}`;
+          batchOp.set(doc(db, 'transactions', txId), {
+            id: txId,
             data: new Date().toISOString().split('T')[0],
-            descricao: `ESTORNO LOTE: ${tx.descricao}`,
+            descricao: `ESTORNO LOTE: Devolução de ${tx.descricao}`,
             tipo: 'ENTRADA',
             categoria: 'ESTORNO',
             valor: tx.valor,
             metodo_pagamento: 'OUTROS',
             referencia_id: id
-          } as any);
+          });
           txCount++;
         }
       }
-      console.log(`✅ ${txCount} transações de compra estornadas`);
+      console.log(`✅ ${txCount} transações preparadas para estorno de fluxo de caixa`);
 
-      console.log(`🎯 LOTE ${id} COMPLETAMENTE ESTORNADO!`);
+      // COMMIT DA TRANSAÇÃO ATÔMICA - Tudo ou Nada
+      await batchOp.commit();
+      console.log(`🎯 LOTE ${id} COMPLETAMENTE ESTORNADO NO BANCO DE DADOS!`);
 
       if (session?.user) {
         logAction(
@@ -749,9 +777,9 @@ const App: React.FC = () => {
       }
 
       fetchData();
-    } catch (error) {
-      console.error('❌ Erro ao estornar lote:', error);
-      alert('Erro ao estornar o lote. Verifique o console.');
+    } catch (error: any) {
+      console.error('❌ Erro FATAL ao estornar lote (Cascata abortada!):', error);
+      alert(`Erro crítico ao tentar estornar o lote: ${error.message}. NENHUMA alteração foi feita.`);
     }
   };
 
@@ -880,72 +908,96 @@ const App: React.FC = () => {
   };
 
   const registerBatchFinancial = async (batch: Batch) => {
-    const totalCost = (batch.valor_compra_total || 0) + (batch.frete || 0) + (batch.gastos_extras || 0);
-    if (totalCost === 0) return;
+    // 1. CUSTO DO GADO E GASTOS (Separado do Frete)
+    const custoGado = (batch.valor_compra_total || 0) + (batch.gastos_extras || 0);
+    const custoFrete = batch.frete || 0;
 
-    const transactionData = {
-      id: `TR-LOTE-${batch.id_lote}`,
-      data: batch.data_recebimento,
-      descricao: `Compra Lote ${batch.id_lote} - ${batch.fornecedor}`,
-      tipo: 'SAIDA',
-      categoria: 'COMPRA_GADO',
-      valor: totalCost,
-      metodo_pagamento: (batch as any).forma_pagamento || 'OUTROS',
-      referencia_id: batch.id_lote
-    };
+    if (custoGado === 0 && custoFrete === 0) return;
 
     const valorEntrada = (batch as any).valor_entrada || 0;
     const isVista = (batch as any).forma_pagamento === 'VISTA';
     const isPrazo = (batch as any).forma_pagamento === 'PRAZO';
 
-    if (isVista) {
-      // GUARD: Verificar se já existe transação de compra para este lote (evita duplicata com addBatch)
-      const existingTx = data.transactions.find(t => t.id === `TR-LOTE-${batch.id_lote}`);
-      if (!existingTx) {
-        // PAGAMENTO TOTAL A VISTA
-        await addTransaction(transactionData);
-      } else {
-        console.log(`⚠️ Transação TR-LOTE-${batch.id_lote} já existe, ignorando duplicata.`);
-      }
-    } else if (isPrazo) {
+    // FUNÇÕES AUXILIARES DE LANÇAMENTO
+    const lancarGado = async () => {
+      if (custoGado === 0) return;
 
-      // 1. SE TIVER ENTRADA, LANÇA A SAÍDA DA ENTRADA AGORA
-      if (valorEntrada > 0) {
-        const entradaTransaction = {
-          ...transactionData,
-          id: `TR-LOTE-ENTRADA-${batch.id_lote}`,
-          descricao: `Entrada/Adiantamento Lote ${batch.id_lote} - ${batch.fornecedor}`,
-          valor: valorEntrada
-        };
-        await addTransaction(entradaTransaction);
-      }
+      const transactionData = {
+        id: `TR-LOTE-${batch.id_lote}`,
+        data: batch.data_recebimento,
+        descricao: `Compra Lote ${batch.id_lote} - ${batch.fornecedor}`,
+        tipo: 'SAIDA',
+        categoria: 'COMPRA_GADO',
+        valor: custoGado,
+        metodo_pagamento: (batch as any).forma_pagamento || 'OUTROS',
+        referencia_id: batch.id_lote
+      };
 
-      // 2. O RESTANTE VAI PARA CONTAS A PAGAR
-      const valorRestante = totalCost - valorEntrada;
-      if (valorRestante > 0) {
-        // GUARD: Verificar se já existe payable para este lote
-        const existingPayables = data.payables.filter(p => p.id_lote === batch.id_lote || p.id === `PAY-LOTE-${batch.id_lote}`);
-        if (existingPayables.length > 0) {
-          console.log(`⚠️ Payable já existe para lote ${batch.id_lote}, ignorando duplicata.`);
-          return;
+      if (isVista) {
+        const existingTx = data.transactions.find(t => t.id === `TR-LOTE-${batch.id_lote}`);
+        if (!existingTx) await addTransaction(transactionData as any);
+      } else if (isPrazo) {
+        if (valorEntrada > 0) {
+          await addTransaction({
+            ...transactionData,
+            id: `TR-LOTE-ENTRADA-${batch.id_lote}`,
+            descricao: `Entrada/Adiantamento Lote ${batch.id_lote} - ${batch.fornecedor}`,
+            valor: valorEntrada
+          } as any);
         }
-
-        const payableData: Payable = {
-          id: `PAY-LOTE-${batch.id_lote}`,
-          descricao: `Restante Lote ${batch.id_lote} - ${batch.fornecedor}`,
-          valor: valorRestante,
-          data_vencimento: new Date(Date.now() + ((batch as any).prazo_dias || 30) * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          status: 'PENDENTE',
-          categoria: 'COMPRA_GADO',
-          observacoes: `Compra a Prazo (Entrada: ${valorEntrada > 0 ? valorEntrada : 'Não'})`,
-          fornecedor_id: batch.fornecedor,
-          id_lote: batch.id_lote
-        };
-        // Usar doc com ID determinístico para evitar duplicatas
-        const docRef = doc(db, 'payables', `PAY-LOTE-${batch.id_lote}`);
-        await setDoc(docRef, payableData);
+        const valorRestante = custoGado - valorEntrada;
+        if (valorRestante > 0) {
+          const payableData: Payable = {
+            id: `PAY-LOTE-${batch.id_lote}`,
+            descricao: `Gado Lote ${batch.id_lote} - ${batch.fornecedor}`,
+            valor: valorRestante,
+            data_vencimento: new Date(Date.now() + ((batch as any).prazo_dias || 30) * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            status: 'PENDENTE',
+            categoria: 'COMPRA_GADO',
+            observacoes: `Compra a Prazo (Entrada: ${valorEntrada > 0 ? valorEntrada : 'Não'})`,
+            fornecedor_id: batch.fornecedor,
+            id_lote: batch.id_lote
+          };
+          await setDoc(doc(db, 'payables', payableData.id), payableData);
+        }
       }
     }
+
+    const lancarFrete = async () => {
+      if (custoFrete === 0) return;
+      // O frete VAI SEMPRE para Contas a Pagar, separado, com vencimento em 15 dias (padrão) ou à vista se definido.
+      // Se a compra for "VISTA", consideramos o frete também à vista, mas lançamos separado.
+      if (isVista) {
+        const freteTx = {
+          id: `TR-LOTE-FRETE-${batch.id_lote}`,
+          data: batch.data_recebimento,
+          descricao: `Frete Lote ${batch.id_lote}`,
+          tipo: 'SAIDA',
+          categoria: 'FRETE',
+          valor: custoFrete,
+          metodo_pagamento: 'OUTROS',
+          referencia_id: batch.id_lote
+        };
+        const existingTx = data.transactions.find(t => t.id === `TR-LOTE-FRETE-${batch.id_lote}`);
+        if (!existingTx) await addTransaction(freteTx as any);
+      } else {
+        const payableFrete: Payable = {
+          id: `PAY-FRETE-${batch.id_lote}`,
+          descricao: `Frete Lote ${batch.id_lote}`,
+          valor: custoFrete,
+          data_vencimento: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 15 dias para frete
+          status: 'PENDENTE',
+          categoria: 'COMPRA_GADO', // CORREÇÃO AUDITORIA #4: Usar mesma categoria que o gado para que o estorno e Watchdog encontrem
+          observacoes: `Frete desmembrado do Lote ${batch.id_lote}`,
+          fornecedor_id: 'TRANSPORTADORA', // Ideal seria pegar a transportadora, fixado para manter lógica atual
+          id_lote: batch.id_lote
+        };
+        await setDoc(doc(db, 'payables', payableFrete.id), payableFrete);
+      }
+    }
+
+    await lancarGado();
+    await lancarFrete();
   };
 
   const addSales = async (newSales: Sale[]): Promise<{ success: boolean; error?: string }> => {
@@ -1063,21 +1115,25 @@ const App: React.FC = () => {
     const sale = data.sales.find(s => s.id_venda === saleId);
     if (!sale || !db) return;
 
-    const valorTotal = sale.peso_real_saida * sale.preco_venda_kg;
-    const valorPagoAtual = (sale as any).valor_pago || 0;
-    const novoValorPago = valorPagoAtual + valorPagamento;
-    const status = novoValorPago >= valorTotal ? 'PAGO' : 'PENDENTE';
-
     try {
-      await updateDoc(doc(db, 'sales', saleId), {
+      const batchOp = writeBatch(db);
+
+      const valorTotal = sale.peso_real_saida * sale.preco_venda_kg;
+      const valorPagoAtual = (sale as any).valor_pago || 0;
+      const novoValorPago = valorPagoAtual + valorPagamento;
+      const status = novoValorPago >= valorTotal ? 'PAGO' : 'PENDENTE';
+
+      batchOp.update(doc(db, 'sales', saleId), {
         valor_pago: novoValorPago,
         status_pagamento: status,
         forma_pagamento: method
       });
 
-      // CORREÇÃO AUDITORIA #1: NÃO criar transação aqui.
-      // A transação de ENTRADA já é criada por Financial.confirmPartialPayment().
-      // Criar aqui também causava DUPLICAÇÃO no fluxo de caixa.
+      // Se for acionado de forma isolada, geramos a transação aqui (O receiveClientPayment tbm chama, 
+      // mas vamos centralizar se quisermos).
+      // Porém, como o botão "Pagar" único chama o receiveClientPayment, vamos manter simple.
+
+      await batchOp.commit();
       fetchData();
     } catch (error) {
       console.error('Error adding partial payment:', error);
@@ -1085,6 +1141,8 @@ const App: React.FC = () => {
   };
 
   const receiveClientPayment = async (clientId: string, amount: number, method: PaymentMethod, date: string) => {
+    if (!db) return;
+
     const pendingSales = data.sales
       .filter(s => s.id_cliente === clientId && s.status_pagamento === 'PENDENTE')
       .sort((a, b) => new Date(a.data_venda).getTime() - new Date(b.data_venda).getTime());
@@ -1093,37 +1151,52 @@ const App: React.FC = () => {
     let count = 0;
     const clientName = data.clients.find(c => c.id_ferro === clientId)?.nome_social || 'Cliente';
 
-    for (const sale of pendingSales) {
-      if (remaining <= 0.01) break;
-      const total = sale.peso_real_saida * sale.preco_venda_kg;
-      const pago = (sale as any).valor_pago || 0;
-      const devendo = total - pago;
-      const pagarNesta = Math.min(devendo, remaining);
+    try {
+      const batchOp = writeBatch(db); // TRANSAÇÃO ATÔMICA
 
-      if (pagarNesta > 0) {
-        await addPartialPayment(sale.id_venda, pagarNesta, method, date);
+      for (const sale of pendingSales) {
+        if (remaining <= 0.01) break;
+        const total = sale.peso_real_saida * sale.preco_venda_kg;
+        const pago = (sale as any).valor_pago || 0;
+        const devendo = total - pago;
+        const pagarNesta = Math.min(devendo, remaining);
 
-        // CORREÇÃO AUDITORIA #2: Criar Transaction ENTRADA no caixa
-        // addPartialPayment só atualiza o sale, não cria Transaction
-        await addTransaction({
-          id: `TR-REC-CLIENT-${sale.id_venda}-${Date.now()}`,
-          data: date,
-          descricao: `Recebimento ${clientName} - ${sale.id_completo}`,
-          tipo: 'ENTRADA',
-          categoria: 'VENDA',
-          valor: pagarNesta,
-          metodo_pagamento: method,
-          referencia_id: sale.id_venda
-        } as any);
+        if (pagarNesta > 0) {
+          // Atualiza a venda
+          const novoValorPago = pago + pagarNesta;
+          const status = novoValorPago >= total ? 'PAGO' : 'PENDENTE';
+          batchOp.update(doc(db, 'sales', sale.id_venda), {
+            valor_pago: novoValorPago,
+            status_pagamento: status,
+            forma_pagamento: method
+          });
 
-        remaining -= pagarNesta;
-        count++;
+          // Cria a transação de caixa (ENTRADA)
+          const txId = `TR-REC-CLIENT-${sale.id_venda}-${Date.now()}`;
+          batchOp.set(doc(db, 'transactions', txId), {
+            id: txId,
+            data: date,
+            descricao: `Recebimento ${clientName} - ${sale.id_completo}`,
+            tipo: 'ENTRADA',
+            categoria: 'VENDA',
+            valor: pagarNesta,
+            metodo_pagamento: method,
+            referencia_id: sale.id_venda
+          });
+
+          remaining -= pagarNesta;
+          count++;
+        }
       }
-    }
 
-    if (count > 0) {
-      if (session?.user) logAction(session.user, 'CREATE', 'TRANSACTION', `Pagamento recebido de cliente ${clientName}: R$${amount} (${method})`);
-      fetchData();
+      if (count > 0) {
+        await batchOp.commit(); // TUDO OU NADA!
+        if (session?.user) logAction(session.user, 'CREATE', 'TRANSACTION', `Pagamento recebido de cliente ${clientName}: R$${amount} (${method})`);
+        fetchData();
+      }
+    } catch (e: any) {
+      console.error('❌ Erro no pagamento de cliente:', e);
+      alert('Erro crítico ao salvar o pagamento online: ' + e.message);
     }
   };
 
@@ -1320,8 +1393,8 @@ const App: React.FC = () => {
               quebra_kg: quebraTotal,
               lucro_liquido_unitario: profit,
               custo_extras_total: groupExtraCost,
-              prazo_dias: pagoNoAto ? 0 : 30,
-              data_vencimento: (() => { const d = new Date(); d.setDate(d.getDate() + (pagoNoAto ? 0 : 30)); return d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); })(),
+              prazo_dias: pagoNoAto ? 0 : (saleData.prazoDias || 30),
+              data_vencimento: (() => { const d = new Date(); d.setDate(d.getDate() + (pagoNoAto ? 0 : (saleData.prazoDias || 30))); return d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); })(),
               forma_pagamento: pagoNoAto ? metodo : 'OUTROS',
               // PAGO NO ATO: já marca como PAGO e registra valor
               status_pagamento: pagoNoAto ? 'PAGO' : 'PENDENTE',
@@ -1468,6 +1541,16 @@ const App: React.FC = () => {
         )}
         <span className="text-white/20 text-[8px] font-black">{APP_VERSION_SHORT}</span>
       </div>
+
+      {/* 🔴 IA Auditora de Integridade Global (Watchdog) */}
+      <DataIntegrityWatchdog
+        stock={data.stock}
+        sales={data.sales}
+        transactions={data.transactions}
+        payables={data.payables}
+        batches={data.batches}
+      />
+
     </div >
   );
 };

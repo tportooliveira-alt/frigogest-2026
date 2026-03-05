@@ -266,8 +266,8 @@ const Financial: React.FC<FinancialProps> = ({
   // CORREÇÃO: Filtrar apenas sales de lotes válidos (verifica se o id_completo corresponde a um lote existente)
   const pendingSales = useMemo(() => {
     const validSales = sales.filter(s => {
-      const loteFromSale = s.id_completo.split('-')[0] + '-' + s.id_completo.split('-')[1] + '-' + s.id_completo.split('-')[2];
-      return validLoteIds.has(loteFromSale);
+      // Usar 'includes' ao invés de split() ingênuo para suportar qualquer formato de nome do Lote (ex: Lote X, ou Lote-123)
+      return Array.from(validLoteIds).some(loteId => s.id_completo.includes(loteId));
     });
     // Filtrar vendas ESTORNADAS da lista de contas a receber
     return validSales.filter(s => s.status_pagamento !== 'ESTORNADO' && getSaleBalance(s).saldoDevedor > 0.01).sort((a, b) => a.data_vencimento.localeCompare(b.data_vencimento));
@@ -317,8 +317,7 @@ const Financial: React.FC<FinancialProps> = ({
     // CORREÇÃO: Usar apenas sales de lotes válidos e excluir ESTORNADOS
     const validSales = sales.filter(s => {
       if (s.status_pagamento === 'ESTORNADO') return false;
-      const loteFromSale = s.id_completo.split('-')[0] + '-' + s.id_completo.split('-')[1] + '-' + s.id_completo.split('-')[2];
-      return validLoteIds.has(loteFromSale);
+      return Array.from(validLoteIds).some(loteId => s.id_completo.includes(loteId));
     });
 
     return validSales.reduce((acc, sale) => {
