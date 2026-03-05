@@ -1,0 +1,6 @@
+components/AIAgents.tsx(1335,94): error TS2339: Property 'contato_principal' does not exist on type 'Supplier'.
+components/AIAgents.tsx(1365,104): error TS2339: Property 'cidade_entrega' does not exist on type 'Client'.
+components/AIAgents.tsx(1392,56): error TS2339: Property 'telefone' does not exist on type 'Client'.
+components/AIAgents.tsx(1392,89): error TS2339: Property 'cidade_entrega' does not exist on type 'Client'.
+components/GTAModal.tsx(52,82): error TS2339: Property 'nome' does not exist on type 'Supplier'.
+services/marketDataService.ts(148,32): error TS2353: Object literal may only specify known properties, and 'data' does not exist in type '{ valor: number; vencimento: string; fonte: string; }'.

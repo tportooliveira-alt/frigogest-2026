@@ -27,6 +27,7 @@ import HeiferManager from './components/HeiferManager';
 import SalesAgent from './components/SalesAgent';
 import AuditLogView from './components/AuditLogView';
 import AIAgents from './components/AIAgents';
+import DataIntegrityWatchdog from './components/DataIntegrityWatchdog';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import AIChat from './components/AIChat';
 import AIMeetingRoom from './components/AIMeetingRoom';
@@ -555,12 +556,18 @@ const App: React.FC = () => {
     }
   };
 
-  // ===== ESTORNO DE VENDA INDIVIDUAL =====
+  // ===== ESTORNO DE VENDA INDIVIDUAL (BLINDADO) =====
   const estornoSale = async (saleId: string) => {
     if (!db) return;
+
+    // 1. Encontrar a venda
     const sale = data.sales.find(s => s.id_venda === saleId);
-    if (!sale || sale.status_pagamento === 'ESTORNADO') {
-      if (sale?.status_pagamento === 'ESTORNADO') alert('Esta venda já foi estornada.');
+    if (!sale) {
+      alert('Venda não encontrada.');
+      return;
+    }
+    if (sale.status_pagamento === 'ESTORNADO') {
+      alert('Esta venda já foi estornada.');
       return;
     }
 
@@ -699,7 +706,8 @@ const App: React.FC = () => {
     }
   };
 
-  // ===== ESTORNO DE LOTE (CASCATA) =====
+
+  // ===== ESTORNO DE LOTE BLINDADO (CASCATA ATÔMICA) =====
   const estornoBatch = async (id: string) => {
     if (OFFLINE_MODE) {
       setData(prev => ({
@@ -707,7 +715,7 @@ const App: React.FC = () => {
         batches: prev.batches.map(b => b.id_lote === id ? { ...b, status: 'ESTORNADO' as const } : b),
         stock: prev.stock.map(s => s.id_lote === id ? { ...s, status: 'ESTORNADO' as const } : s),
         payables: prev.payables.map(p => p.id_lote === id ? { ...p, status: 'CANCELADO' as const } : p),
-        sales: prev.sales.map(s => s.id_completo.startsWith(id) ? { ...s, status_pagamento: 'ESTORNADO' as const } : s),
+        sales: prev.sales.map(s => s.id_completo.includes(id) ? { ...s, status_pagamento: 'ESTORNADO' as const } : s),
       }));
       return;
     }
@@ -734,19 +742,16 @@ const App: React.FC = () => {
       }
       console.log(`✅ ${stockCount} itens de estoque enfileirados`);
 
-      // 3. Estornar payables do lote
+      // 3. Estornar payables do lote (Cancela os pagamentos pendentes)
       const payablesSnapshot = await getDocs(collection(db, 'payables'));
+      const linkedPayableIds = new Set<string>(); // Rastrear quais payables são deste lote
       let payablesCount = 0;
+
       for (const docSnap of payablesSnapshot.docs) {
         const payable = docSnap.data();
         const matchByIdLote = payable.id_lote === id;
         const matchById = payable.id && payable.id.includes(id);
         const matchByDescricao = payable.descricao && payable.descricao.includes(id);
-        if ((matchByIdLote || matchById || matchByDescricao) && payable.status !== 'ESTORNADO' && payable.status !== 'CANCELADO') {
-          const isPago = payable.status === 'PAGO';
-          const isParcial = payable.status === 'PARCIAL';
-          const valorPago = payable.valor_pago || 0;
-          const novoStatus = (isPago || isParcial) ? 'ESTORNADO' : 'CANCELADO';
 
           batchCommit.update(doc(db, 'payables', docSnap.id), { status: novoStatus });
 
@@ -764,7 +769,6 @@ const App: React.FC = () => {
               referencia_id: id
             }));
           }
-          payablesCount++;
         }
       }
       console.log(`✅ ${payablesCount} contas a pagar enfileiradas`);
@@ -774,12 +778,13 @@ const App: React.FC = () => {
       let salesCount = 0;
       for (const docSnap of salesSnapshot.docs) {
         const sale = docSnap.data();
-        if (sale.id_completo && sale.id_completo.startsWith(id) && sale.status_pagamento !== 'ESTORNADO') {
+        // CORREÇÃO AUDITORIA #5: Usar includes() ao invés de startsWith()
+        if (sale.id_completo && sale.id_completo.includes(id) && sale.status_pagamento !== 'ESTORNADO') {
           const valorPago = sale.valor_pago || 0;
 
           batchCommit.update(doc(db, 'sales', docSnap.id), { status_pagamento: 'ESTORNADO' });
 
-          // Se já recebeu $, criar SAÍDA de estorno
+          // Se já recebeu $, criar SAÍDA de estorno no Fluxo de Caixa
           if (valorPago > 0) {
             const txVendaId = `TR-ESTORNO-VENDA-${docSnap.id}-${Date.now()}`;
             batchCommit.set(doc(db, 'transactions', txVendaId), sanitize({
@@ -810,7 +815,7 @@ const App: React.FC = () => {
           batchCommit.set(doc(db, 'transactions', estornoTxId), sanitize({
             id: estornoTxId,
             data: new Date().toISOString().split('T')[0],
-            descricao: `ESTORNO LOTE: ${tx.descricao}`,
+            descricao: `ESTORNO LOTE: Devolução de ${tx.descricao}`,
             tipo: 'ENTRADA',
             categoria: 'ESTORNO',
             valor: tx.valor,
@@ -837,9 +842,9 @@ const App: React.FC = () => {
       }
 
       fetchData();
-    } catch (error) {
-      console.error('❌ Erro ao estornar lote:', error);
-      alert('Erro ao estornar o lote. Verifique o console.');
+    } catch (error: any) {
+      console.error('❌ Erro FATAL ao estornar lote (Cascata abortada!):', error);
+      alert(`Erro crítico ao tentar estornar o lote: ${error.message}. NENHUMA alteração foi feita.`);
     }
   };
 
@@ -1168,21 +1173,25 @@ const App: React.FC = () => {
     const sale = data.sales.find(s => s.id_venda === saleId);
     if (!sale || !db) return;
 
-    const valorTotal = sale.peso_real_saida * sale.preco_venda_kg;
-    const valorPagoAtual = (sale as any).valor_pago || 0;
-    const novoValorPago = valorPagoAtual + valorPagamento;
-    const status = novoValorPago >= valorTotal ? 'PAGO' : 'PENDENTE';
-
     try {
-      await updateDoc(doc(db, 'sales', saleId), {
+      const batchOp = writeBatch(db);
+
+      const valorTotal = sale.peso_real_saida * sale.preco_venda_kg;
+      const valorPagoAtual = (sale as any).valor_pago || 0;
+      const novoValorPago = valorPagoAtual + valorPagamento;
+      const status = novoValorPago >= valorTotal ? 'PAGO' : 'PENDENTE';
+
+      batchOp.update(doc(db, 'sales', saleId), {
         valor_pago: novoValorPago,
         status_pagamento: status,
         forma_pagamento: method
       });
 
-      // CORREÇÃO AUDITORIA #1: NÃO criar transação aqui.
-      // A transação de ENTRADA já é criada por Financial.confirmPartialPayment().
-      // Criar aqui também causava DUPLICAÇÃO no fluxo de caixa.
+      // Se for acionado de forma isolada, geramos a transação aqui (O receiveClientPayment tbm chama, 
+      // mas vamos centralizar se quisermos).
+      // Porém, como o botão "Pagar" único chama o receiveClientPayment, vamos manter simple.
+
+      await batchOp.commit();
       fetchData();
     } catch (error) {
       console.error('Error adding partial payment:', error);
@@ -1190,6 +1199,8 @@ const App: React.FC = () => {
   };
 
   const receiveClientPayment = async (clientId: string, amount: number, method: PaymentMethod, date: string) => {
+    if (!db) return;
+
     const pendingSales = data.sales
       .filter(s => s.id_cliente === clientId && s.status_pagamento === 'PENDENTE')
       .sort((a, b) => new Date(a.data_venda).getTime() - new Date(b.data_venda).getTime());
@@ -1198,37 +1209,52 @@ const App: React.FC = () => {
     let count = 0;
     const clientName = data.clients.find(c => c.id_ferro === clientId)?.nome_social || 'Cliente';
 
-    for (const sale of pendingSales) {
-      if (remaining <= 0.01) break;
-      const total = sale.peso_real_saida * sale.preco_venda_kg;
-      const pago = (sale as any).valor_pago || 0;
-      const devendo = total - pago;
-      const pagarNesta = Math.min(devendo, remaining);
+    try {
+      const batchOp = writeBatch(db); // TRANSAÇÃO ATÔMICA
 
-      if (pagarNesta > 0) {
-        await addPartialPayment(sale.id_venda, pagarNesta, method, date);
+      for (const sale of pendingSales) {
+        if (remaining <= 0.01) break;
+        const total = sale.peso_real_saida * sale.preco_venda_kg;
+        const pago = (sale as any).valor_pago || 0;
+        const devendo = total - pago;
+        const pagarNesta = Math.min(devendo, remaining);
 
-        // CORREÇÃO AUDITORIA #2: Criar Transaction ENTRADA no caixa
-        // addPartialPayment só atualiza o sale, não cria Transaction
-        await addTransaction({
-          id: `TR-REC-CLIENT-${sale.id_venda}-${Date.now()}`,
-          data: date,
-          descricao: `Recebimento ${clientName} - ${sale.id_completo}`,
-          tipo: 'ENTRADA',
-          categoria: 'VENDA',
-          valor: pagarNesta,
-          metodo_pagamento: method,
-          referencia_id: sale.id_venda
-        } as any);
+        if (pagarNesta > 0) {
+          // Atualiza a venda
+          const novoValorPago = pago + pagarNesta;
+          const status = novoValorPago >= total ? 'PAGO' : 'PENDENTE';
+          batchOp.update(doc(db, 'sales', sale.id_venda), {
+            valor_pago: novoValorPago,
+            status_pagamento: status,
+            forma_pagamento: method
+          });
 
-        remaining -= pagarNesta;
-        count++;
+          // Cria a transação de caixa (ENTRADA)
+          const txId = `TR-REC-CLIENT-${sale.id_venda}-${Date.now()}`;
+          batchOp.set(doc(db, 'transactions', txId), {
+            id: txId,
+            data: date,
+            descricao: `Recebimento ${clientName} - ${sale.id_completo}`,
+            tipo: 'ENTRADA',
+            categoria: 'VENDA',
+            valor: pagarNesta,
+            metodo_pagamento: method,
+            referencia_id: sale.id_venda
+          });
+
+          remaining -= pagarNesta;
+          count++;
+        }
       }
-    }
 
-    if (count > 0) {
-      if (session?.user) logAction(session.user, 'CREATE', 'TRANSACTION', `Pagamento recebido de cliente ${clientName}: R$${amount} (${method})`);
-      fetchData();
+      if (count > 0) {
+        await batchOp.commit(); // TUDO OU NADA!
+        if (session?.user) logAction(session.user, 'CREATE', 'TRANSACTION', `Pagamento recebido de cliente ${clientName}: R$${amount} (${method})`);
+        fetchData();
+      }
+    } catch (e: any) {
+      console.error('❌ Erro no pagamento de cliente:', e);
+      alert('Erro crítico ao salvar o pagamento online: ' + e.message);
     }
   };
 
@@ -1425,8 +1451,8 @@ const App: React.FC = () => {
               quebra_kg: quebraTotal,
               lucro_liquido_unitario: profit,
               custo_extras_total: groupExtraCost,
-              prazo_dias: pagoNoAto ? 0 : 30,
-              data_vencimento: (() => { const d = new Date(); d.setDate(d.getDate() + (pagoNoAto ? 0 : 30)); return d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); })(),
+              prazo_dias: pagoNoAto ? 0 : (saleData.prazoDias || 30),
+              data_vencimento: (() => { const d = new Date(); d.setDate(d.getDate() + (pagoNoAto ? 0 : (saleData.prazoDias || 30))); return d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); })(),
               forma_pagamento: pagoNoAto ? metodo : 'OUTROS',
               // PAGO NO ATO: já marca como PAGO e registra valor
               status_pagamento: pagoNoAto ? 'PAGO' : 'PENDENTE',
@@ -1573,6 +1599,16 @@ const App: React.FC = () => {
         )}
         <span className="text-white/20 text-[8px] font-black">{APP_VERSION_SHORT}</span>
       </div>
+
+      {/* 🔴 IA Auditora de Integridade Global (Watchdog) */}
+      <DataIntegrityWatchdog
+        stock={data.stock}
+        sales={data.sales}
+        transactions={data.transactions}
+        payables={data.payables}
+        batches={data.batches}
+      />
+
     </div >
   );
 };

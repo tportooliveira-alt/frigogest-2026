@@ -945,19 +945,19 @@ Se algum item tiver discrepância que você não conseguiu resolver, marque vali
                   <div className="grid grid-cols-3 gap-3">
                     {/* Peso Vivo — só aparece se modalidade = PESO_VIVO ou se já tem valor cadastrado */}
                     {((newBatch as any).modalidade_compra === 'PESO_VIVO' || (selectedBatch && (selectedBatch as any).peso_vivo_medio > 0)) && (
-                    <div>
-                      <label className="text-[10px] font-bold text-blue-500 uppercase tracking-widest block mb-2 px-1">⚖️ Peso Vivo Médio</label>
-                      <DecimalInput
-                        className="modern-input border-blue-200 bg-blue-50 text-xs"
-                        placeholder="kg/cab"
-                        value={selectedBatch ? (selectedBatch as any).peso_vivo_medio || 0 : (newBatch.peso_vivo_medio || 0)}
-                        onValueChange={v => {
-                          if (selectedBatch && draftBatch) setDraftBatch(prev => prev ? { ...prev, peso_vivo_medio: v } as any : prev);
-                          else setNewBatch({ ...newBatch, peso_vivo_medio: v });
-                        }}
-                      />
-                      <p className="text-[9px] text-blue-400 mt-1 px-1">Preenchido → calcula rendimento</p>
-                    </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-blue-500 uppercase tracking-widest block mb-2 px-1">⚖️ Peso Vivo Médio</label>
+                        <DecimalInput
+                          className="modern-input border-blue-200 bg-blue-50 text-xs"
+                          placeholder="kg/cab"
+                          value={selectedBatch ? (selectedBatch as any).peso_vivo_medio || 0 : (newBatch.peso_vivo_medio || 0)}
+                          onValueChange={v => {
+                            if (selectedBatch && draftBatch) setDraftBatch(prev => prev ? { ...prev, peso_vivo_medio: v } as any : prev);
+                            else setNewBatch({ ...newBatch, peso_vivo_medio: v });
+                          }}
+                        />
+                        <p className="text-[9px] text-blue-400 mt-1 px-1">Preenchido → calcula rendimento</p>
+                      </div>
                     )}
                     <div>
                       <label className="text-[10px] font-bold text-orange-500 uppercase tracking-widest block mb-2 px-1">✂️ Toalete (kg)</label>
@@ -1004,6 +1004,30 @@ Se algum item tiver discrepância que você não conseguiu resolver, marque vali
                       <button onClick={() => setNewBatch({ ...newBatch, forma_pagamento: 'VISTA' })} className={`py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${newBatch.forma_pagamento === 'VISTA' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>À Vista</button>
                       <button onClick={() => setNewBatch({ ...newBatch, forma_pagamento: 'PRAZO' })} className={`py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${newBatch.forma_pagamento === 'PRAZO' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>À Prazo</button>
                     </div>
+
+                    {newBatch.forma_pagamento === 'PRAZO' && (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Entrada / Adiant. (R$)</label>
+                          <DecimalInput
+                            className="modern-input"
+                            placeholder="R$ 0,00"
+                            value={newBatch.valor_entrada || 0}
+                            onValueChange={v => setNewBatch({ ...newBatch, valor_entrada: v })}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Prazo (Dias)</label>
+                          <input
+                            type="number"
+                            className="modern-input h-14"
+                            placeholder="Ex: 30"
+                            value={newBatch.prazo_dias || ''}
+                            onChange={e => setNewBatch({ ...newBatch, prazo_dias: parseInt(e.target.value) || 0 })}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="bg-slate-900 rounded-3xl p-6 flex justify-between items-center text-white">
@@ -1231,9 +1255,8 @@ Se algum item tiver discrepância que você não conseguiu resolver, marque vali
                           <button
                             type="button"
                             onClick={() => setPesoUnit(u => u === 'KG' ? 'G' : 'KG')}
-                            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[8px] font-black transition-all ${
-                              pesoUnit === 'G' ? 'bg-amber-500 text-white' : 'bg-slate-700 text-slate-400 hover:text-white'
-                            }`}
+                            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[8px] font-black transition-all ${pesoUnit === 'G' ? 'bg-amber-500 text-white' : 'bg-slate-700 text-slate-400 hover:text-white'
+                              }`}
                             title="Alternar entre KG e Gramas"
                           >
                             {pesoUnit === 'KG' ? '⚖️ KG' : '🔢 GRAMAS'}

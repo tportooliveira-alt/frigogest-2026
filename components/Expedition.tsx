@@ -121,6 +121,9 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
   const totalWeight = getTotalWeight();
   const [pricePerKg, setPricePerKg] = useState<number>(0);
   const [extrasCost, setExtrasCost] = useState<number>(0);
+  const [pagoNoAto, setPagoNoAto] = useState(false);
+  const [prazoDias, setPrazoDias] = useState<number>(30);
+  const [metodoPagamento, setMetodoPagamento] = useState('OUTROS');
   const totalValue = totalWeight * pricePerKg;
 
   const handleWeightChange = (itemId: string, newWeight: number) => {
@@ -814,6 +817,40 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-4 border-t border-white/10 pt-4">
+                <div className="space-y-1.5 flex flex-col justify-end">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest px-1">Pagamento no Ato?</label>
+                    <input type="checkbox" checked={pagoNoAto} onChange={e => setPagoNoAto(e.target.checked)} className="w-4 h-4 rounded" />
+                  </div>
+                  {pagoNoAto && (
+                    <select
+                      className="w-full bg-white/10 border border-white/10 text-white text-[10px] font-black uppercase p-2 rounded-xl outline-none focus:bg-white/20"
+                      value={metodoPagamento} onChange={e => setMetodoPagamento(e.target.value)} title="Método de Pagamento"
+                    >
+                      <option value="DINHEIRO" className="text-slate-900">DINHEIRO</option>
+                      <option value="PIX" className="text-slate-900">PIX</option>
+                      <option value="TED" className="text-slate-900">TED/DOC</option>
+                      <option value="OUTROS" className="text-slate-900">OUTROS</option>
+                    </select>
+                  )}
+                </div>
+                {!pagoNoAto && (
+                  <div className="space-y-1.5 flex flex-col justify-end">
+                    <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest px-1">Prazo (Dias)</label>
+                    <div className="flex items-center bg-white/10 border border-white/10 rounded-xl px-4 h-10 focus-within:bg-white/20 transition-all">
+                      <input
+                        type="number"
+                        className="w-full bg-transparent text-white font-black text-sm outline-none"
+                        value={prazoDias}
+                        onChange={e => setPrazoDias(parseInt(e.target.value) || 0)}
+                        min={0}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="pt-4 border-t border-white/10">
                 <div className="flex justify-between items-center mb-4">
                   <div>
@@ -831,6 +868,7 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
                   <button
                     onClick={handleConfirm}
                     disabled={selectedItems.length === 0 || !selectedClient || pricePerKg <= 0}
+                    title="Confirmar Entrega"
                     className="w-full py-4 bg-blue-600 rounded-xl text-white font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-white hover:text-slate-900 transition-all disabled:opacity-20 active:scale-95 shadow-xl shadow-blue-500/20"
                   >
                     <ShieldCheck size={20} /> Confirmar Entrega [THIAGO 704]
