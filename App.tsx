@@ -753,6 +753,12 @@ const App: React.FC = () => {
         const matchById = payable.id && payable.id.includes(id);
         const matchByDescricao = payable.descricao && payable.descricao.includes(id);
 
+        if (matchByIdLote || matchById || matchByDescricao) {
+          const isPago = payable.status === 'PAGO';
+          const isParcial = payable.status === 'PARCIAL';
+          const valorPago = payable.valor_pago || 0;
+          const novoStatus = 'CANCELADO';
+
           batchCommit.update(doc(db, 'payables', docSnap.id), { status: novoStatus });
 
           // Se já pagou, criar ENTRADA de estorno
