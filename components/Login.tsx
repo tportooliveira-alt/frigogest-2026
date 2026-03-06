@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { auth } from '../firebaseClient';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { supabase } from '../supabaseClient';
 import { Lock, Mail, Loader2, ShieldAlert, Activity, ShieldCheck, Fingerprint, ScanFace } from 'lucide-react';
 import { APP_VERSION_SHORT } from '../constants';
 
@@ -40,8 +39,9 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     setError(null);
 
     try {
-      if (!auth) throw new Error("FIREBASE_CORE_OFFLINE");
-      await signInWithEmailAndPassword(auth, email.trim(), password);
+      if (!supabase) throw new Error("SUPABASE_OFFLINE");
+      const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (authError) throw authError;
 
       // Salvar apenas email se "Lembrar-me" estiver ativo (senha nunca é salva)
       if (rememberMe) {
@@ -49,13 +49,12 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
       } else {
         localStorage.removeItem('fg_saved_email');
       }
-      // Garantir que senha antiga nunca fique no storage
       localStorage.removeItem('fg_saved_password');
 
       onLoginSuccess();
     } catch (err: any) {
       console.error(err);
-      setError(err.code?.includes('auth/') ? "CREDENCIAIS INVÁLIDAS" : "ERRO DE PROTOCOLO DE REDE");
+      setError(err.message?.includes('Invalid') || err.message?.includes('credentials') ? "CREDENCIAIS INVÁLIDAS" : "ERRO DE PROTOCOLO DE REDE");
     } finally {
       setLoading(false);
     }
@@ -89,8 +88,9 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
       });
 
       // Se passou pela biometria, fazer login com credenciais salvas
-      if (!auth) throw new Error("FIREBASE_CORE_OFFLINE");
-      await signInWithEmailAndPassword(auth, savedEmail, savedPassword);
+      if (!supabase) throw new Error("SUPABASE_OFFLINE");
+      const { error: bioError } = await supabase.auth.signInWithPassword({ email: savedEmail, password: savedPassword });
+      if (bioError) throw bioError;
       onLoginSuccess();
 
     } catch (err: any) {

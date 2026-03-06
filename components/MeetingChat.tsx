@@ -4,11 +4,7 @@ import {
     MessageCircle, Hash, Volume2, VolumeX, Plus, X, Check, CheckCheck,
     Loader2, Wifi, WifiOff, Video, VideoOff, Monitor, Share2
 } from 'lucide-react';
-import { db } from '../firebaseClient';
-import {
-    collection, addDoc, onSnapshot, query, orderBy,
-    serverTimestamp, limit, Timestamp, doc, setDoc, deleteDoc, getDocs, where
-} from 'firebase/firestore';
+import { supabase } from '../supabaseClient';
 
 // ═══ TYPES ═══
 interface ChatMessage {
@@ -17,7 +13,7 @@ interface ChatMessage {
     senderName: string;
     senderRole: string;
     senderColor: string;
-    timestamp: Timestamp | null;
+    timestamp: string | null;
     type: 'message' | 'system';
 }
 
@@ -26,7 +22,7 @@ interface OnlineUser {
     name: string;
     role: string;
     color: string;
-    lastSeen: Timestamp | null;
+    lastSeen: string | null;
 }
 
 interface MeetingChatProps {
@@ -67,8 +63,6 @@ const MeetingChat: React.FC<MeetingChatProps> = ({ onBack }) => {
     const presenceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const ROOM_ID = 'sala-principal';
-    const MESSAGES_COLLECTION = `meetingRooms/${ROOM_ID}/messages`;
-    const PRESENCE_COLLECTION = `meetingRooms/${ROOM_ID}/presence`;
 
     // ═══ SCROLL TO BOTTOM ═══
     const scrollToBottom = useCallback(() => {
@@ -109,42 +103,30 @@ const MeetingChat: React.FC<MeetingChatProps> = ({ onBack }) => {
     // ═══ PRESENCE: JOIN MEETING ═══
     const joinMeeting = useCallback(async () => {
         if (!myName.trim()) return;
-        if (!db) { alert('Firebase não configurado.'); return; }
+        if (!supabase) { alert('Supabase não configurado.'); return; }
 
         setIsLoading(true);
         try {
-            // Register presence
-            await setDoc(doc(db, PRESENCE_COLLECTION, myId), {
-                id: myId,
-                name: myName.trim(),
-                role: myRole,
-                color: myColor,
-                lastSeen: serverTimestamp(),
+            await supabase.from('meeting_presence').upsert({
+                id: myId, room_id: ROOM_ID,
+                name: myName.trim(), role: myRole,
+                color: myColor, last_seen: new Date().toISOString()
             });
-
-            // Send join system message
-            await addDoc(collection(db, MESSAGES_COLLECTION), {
-                text: `${myName.trim()} entrou na reunião.`,
-                senderName: 'Sistema',
-                senderRole: '',
-                senderColor: '#64748b',
-                timestamp: serverTimestamp(),
-                type: 'system',
+            await supabase.from('meeting_messages').insert({
+                room_id: ROOM_ID, text: `${myName.trim()} entrou na reunião.`,
+                sender_name: 'Sistema', sender_role: '', sender_color: '#64748b',
+                timestamp: new Date().toISOString(), type: 'system'
             });
-
             // Update presence every 15s
             presenceIntervalRef.current = setInterval(async () => {
-                if (db) {
-                    await setDoc(doc(db, PRESENCE_COLLECTION, myId), {
-                        id: myId,
-                        name: myName.trim(),
-                        role: myRole,
-                        color: myColor,
-                        lastSeen: serverTimestamp(),
-                    }, { merge: true });
+                if (supabase) {
+                    await supabase.from('meeting_presence').upsert({
+                        id: myId, room_id: ROOM_ID,
+                        name: myName.trim(), role: myRole,
+                        color: myColor, last_seen: new Date().toISOString()
+                    });
                 }
             }, 15000);
-
             setJoined(true);
             setIsConnected(true);
         } catch (err) {
@@ -152,68 +134,85 @@ const MeetingChat: React.FC<MeetingChatProps> = ({ onBack }) => {
             alert('Erro ao entrar na reunião. Verifique a conexão.');
         }
         setIsLoading(false);
-    }, [myName, myRole, myColor, myId, MESSAGES_COLLECTION, PRESENCE_COLLECTION]);
+    }, [myName, myRole, myColor, myId, ROOM_ID]);
 
-    // ═══ LISTEN TO MESSAGES ═══
+    // ═══ LISTEN TO MESSAGES (Supabase Realtime) ═══
     useEffect(() => {
-        if (!joined || !db) return;
+        if (!joined || !supabase) return;
 
-        const q = query(
-            collection(db, MESSAGES_COLLECTION),
-            orderBy('timestamp', 'asc'),
-            limit(100)
-        );
-        unsubMessagesRef.current = onSnapshot(q, (snap) => {
-            const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatMessage));
-            setMessages(msgs);
-        });
+        // Carregar histórico inicial
+        supabase.from('meeting_messages')
+            .select('*').eq('room_id', ROOM_ID)
+            .order('timestamp', { ascending: true }).limit(100)
+            .then(({ data }) => { if (data) setMessages(data.map(mapMsg)); });
 
+        const channel = supabase.channel(`messages-${ROOM_ID}`)
+            .on('postgres_changes', {
+                event: 'INSERT', schema: 'public', table: 'meeting_messages',
+                filter: `room_id=eq.${ROOM_ID}`
+            }, (payload) => {
+                setMessages(prev => [...prev, mapMsg(payload.new)]);
+            })
+            .subscribe();
+
+        unsubMessagesRef.current = () => supabase.removeChannel(channel);
         return () => unsubMessagesRef.current?.();
-    }, [joined, MESSAGES_COLLECTION]);
+    }, [joined, ROOM_ID]);
 
-    // ═══ LISTEN TO ONLINE USERS ═══
+    // ═══ LISTEN TO ONLINE USERS (Supabase Realtime) ═══
     useEffect(() => {
-        if (!joined || !db) return;
+        if (!joined || !supabase) return;
 
-        // Clean stale users (>60s) periodically
-        const cleanStale = async () => {
-            if (!db) return;
-            const cutoff = new Date(Date.now() - 60000);
-            try {
-                const stale = await getDocs(query(
-                    collection(db, PRESENCE_COLLECTION),
-                    where('lastSeen', '<', Timestamp.fromDate(cutoff))
-                ));
-                stale.forEach(d => deleteDoc(d.ref));
-            } catch { }
-        };
+        // Carregar presença inicial
+        supabase.from('meeting_presence').select('*').eq('room_id', ROOM_ID)
+            .then(({ data }) => { if (data) setOnlineUsers(data.map(mapUser)); });
 
-        unsubUsersRef.current = onSnapshot(collection(db, PRESENCE_COLLECTION), (snap) => {
-            const users = snap.docs.map(d => ({ id: d.id, ...d.data() } as OnlineUser));
-            setOnlineUsers(users);
-        });
+        const channel = supabase.channel(`presence-${ROOM_ID}`)
+            .on('postgres_changes', {
+                event: '*', schema: 'public', table: 'meeting_presence',
+                filter: `room_id=eq.${ROOM_ID}`
+            }, async () => {
+                const { data } = await supabase.from('meeting_presence')
+                    .select('*').eq('room_id', ROOM_ID);
+                if (data) setOnlineUsers(data.map(mapUser));
+            })
+            .subscribe();
 
-        const cleanInterval = setInterval(cleanStale, 30000);
+        // Limpar usuários inativos >60s
+        const cleanInterval = setInterval(async () => {
+            const cutoff = new Date(Date.now() - 60000).toISOString();
+            await supabase.from('meeting_presence')
+                .delete().eq('room_id', ROOM_ID).lt('last_seen', cutoff);
+        }, 30000);
 
+        unsubUsersRef.current = () => supabase.removeChannel(channel);
         return () => {
             unsubUsersRef.current?.();
             clearInterval(cleanInterval);
         };
-    }, [joined, PRESENCE_COLLECTION]);
+    }, [joined, ROOM_ID]);
+
+    // ═══ MAPPERS ═══
+    const mapMsg = (r: any): ChatMessage => ({
+        id: r.id, text: r.text, senderName: r.sender_name,
+        senderRole: r.sender_role, senderColor: r.sender_color,
+        timestamp: r.timestamp, type: r.type
+    });
+    const mapUser = (r: any): OnlineUser => ({
+        id: r.id, name: r.name, role: r.role,
+        color: r.color, lastSeen: r.last_seen
+    });
 
     // ═══ LEAVE MEETING ═══
     const leaveMeeting = useCallback(async () => {
         if (presenceIntervalRef.current) clearInterval(presenceIntervalRef.current);
-        if (db) {
+        if (supabase) {
             try {
-                await deleteDoc(doc(db, PRESENCE_COLLECTION, myId));
-                await addDoc(collection(db, MESSAGES_COLLECTION), {
-                    text: `${myName} saiu da reunião.`,
-                    senderName: 'Sistema',
-                    senderRole: '',
-                    senderColor: '#64748b',
-                    timestamp: serverTimestamp(),
-                    type: 'system',
+                await supabase.from('meeting_presence').delete().eq('id', myId);
+                await supabase.from('meeting_messages').insert({
+                    room_id: ROOM_ID, text: `${myName} saiu da reunião.`,
+                    sender_name: 'Sistema', sender_role: '', sender_color: '#64748b',
+                    timestamp: new Date().toISOString(), type: 'system'
                 });
             } catch { }
         }
@@ -223,42 +222,38 @@ const MeetingChat: React.FC<MeetingChatProps> = ({ onBack }) => {
         setIsConnected(false);
         setMessages([]);
         onBack();
-    }, [myId, myName, MESSAGES_COLLECTION, PRESENCE_COLLECTION, onBack]);
+    }, [myId, myName, ROOM_ID, onBack]);
 
     // Cleanup on unmount
     useEffect(() => {
         return () => {
             if (presenceIntervalRef.current) clearInterval(presenceIntervalRef.current);
-            if (db && joined) {
-                deleteDoc(doc(db, PRESENCE_COLLECTION, myId)).catch(() => { });
+            if (supabase && joined) {
+                supabase.from('meeting_presence').delete().eq('id', myId).then(() => { });
             }
         };
-    }, [myId, joined, PRESENCE_COLLECTION]);
+    }, [myId, joined]);
 
     // ═══ SEND MESSAGE ═══
     const sendMessage = useCallback(async () => {
-        if (!inputText.trim() || !db) return;
+        if (!inputText.trim() || !supabase) return;
         const text = inputText.trim();
         setInputText('');
         try {
-            await addDoc(collection(db, MESSAGES_COLLECTION), {
-                text,
-                senderName: myName,
-                senderRole: myRole,
-                senderColor: myColor,
-                timestamp: serverTimestamp(),
-                type: 'message',
+            await supabase.from('meeting_messages').insert({
+                room_id: ROOM_ID, text,
+                sender_name: myName, sender_role: myRole, sender_color: myColor,
+                timestamp: new Date().toISOString(), type: 'message'
             });
         } catch (err) {
             console.error(err);
-            setInputText(text); // restore if failed
+            setInputText(text);
         }
-    }, [inputText, myName, myRole, myColor, MESSAGES_COLLECTION]);
+    }, [inputText, myName, myRole, myColor, ROOM_ID]);
 
-    const formatTime = (ts: Timestamp | null) => {
+    const formatTime = (ts: string | null) => {
         if (!ts) return '';
-        const d = ts.toDate();
-        return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        return new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     };
 
     // ═══ JOIN SCREEN ═══
@@ -380,15 +375,14 @@ const MeetingChat: React.FC<MeetingChatProps> = ({ onBack }) => {
                         const newState = !videoCallActive;
                         setVideoCallActive(newState);
                         // Send system message to chat so online users see it
-                        if (newState && db) {
+                        if (newState && supabase) {
                             const jitsiUrl = `https://meet.jit.si/${jitsiRoomId}`;
-                            await addDoc(collection(db, MESSAGES_COLLECTION), {
+                            await supabase.from('meeting_messages').insert({
+                                room_id: ROOM_ID,
                                 text: `📹 ${myName} iniciou uma CHAMADA DE VÍDEO!\n🔗 Clique para entrar: ${jitsiUrl}\n📺 Vídeo + Áudio + Compartilhamento de Tela`,
-                                senderName: 'Sistema',
-                                senderRole: '',
-                                senderColor: '#10b981',
-                                timestamp: serverTimestamp(),
-                                type: 'system',
+                                sender_name: 'Sistema', sender_role: '',
+                                sender_color: '#10b981',
+                                timestamp: new Date().toISOString(), type: 'system'
                             });
                         }
                     }}

@@ -15,9 +15,7 @@ import SystemReset from './components/SystemReset';
 import Suppliers from './components/Suppliers';
 import { AppState, Sale, PaymentMethod, StockItem, Batch, Client, Transaction, DailyReport, Supplier, Payable } from './types';
 import { MOCK_DATA, APP_VERSION_LABEL, APP_VERSION_SHORT } from './constants';
-import { auth, db } from './firebaseClient';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, onSnapshot, writeBatch, query, limit, where } from 'firebase/firestore';
+import { supabase } from './supabaseClient';
 import { Cloud, CloudOff, Loader2, ShieldCheck, Activity, RefreshCw } from 'lucide-react';
 import { logAction } from './utils/audit';
 import { syncAllToSheets, forceSyncToSheets, isSheetsConfigured } from './utils/sheetsSync';
@@ -58,75 +56,66 @@ const App: React.FC = () => {
   const [dismissedAlerts] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    if (OFFLINE_MODE || !auth) {
-      // Modo offline: pula autenticação
+    if (OFFLINE_MODE || !supabase) {
       setSession({ user: { email: 'offline@local' } });
       setLoading(false);
       setDbStatus('offline');
       return;
     }
 
-    // Timeout de segurança: se depois de 5s não carregar, mostra o login
-    const timeout = setTimeout(() => {
-      setLoading(false);
-    }, 5000);
+    const timeout = setTimeout(() => { setLoading(false); }, 5000);
 
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setSession(user ? { user } : null);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoading(false);
+      clearTimeout(timeout);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
       setLoading(false);
       clearTimeout(timeout);
     });
 
     return () => {
       clearTimeout(timeout);
-      unsubscribe();
+      subscription.unsubscribe();
     };
   }, []);
 
   const fetchData = useCallback(async () => {
-    if (!session || OFFLINE_MODE || !db) return;
+    if (!session || OFFLINE_MODE || !supabase) return;
 
     setDbStatus('checking');
 
     try {
       const [
-        clientsSnapshot,
-        batchesSnapshot,
-        stockSnapshot,
-        salesSnapshot,
-        transactionsSnapshot,
-        ordersSnapshot,
-        reportsSnapshot,
-        suppliersSnapshot,
-        payablesSnapshot
+        clientsRes, batchesRes, stockRes, salesRes,
+        transactionsRes, ordersRes, reportsRes, suppliersRes, payablesRes
       ] = await Promise.all([
-        getDocs(collection(db, 'clients')),
-        getDocs(collection(db, 'batches')),
-        getDocs(collection(db, 'stock_items')),
-        getDocs(collection(db, 'sales')),
-        getDocs(collection(db, 'transactions')),
-        getDocs(collection(db, 'scheduled_orders')),
-        getDocs(query(collection(db, 'daily_reports'), limit(50))),
-        getDocs(collection(db, 'suppliers')),
-        getDocs(collection(db, 'payables'))
+        supabase.from('clients').select('*'),
+        supabase.from('batches').select('*'),
+        supabase.from('stock_items').select('*'),
+        supabase.from('sales').select('*'),
+        supabase.from('transactions').select('*'),
+        supabase.from('scheduled_orders').select('*'),
+        supabase.from('daily_reports').select('*').order('date', { ascending: false }).limit(50),
+        supabase.from('suppliers').select('*'),
+        supabase.from('payables').select('*'),
       ]);
 
-      const clients = clientsSnapshot.docs.map(doc => ({ ...doc.data() } as Client));
-      const batches = batchesSnapshot.docs.map(doc => ({ ...doc.data() } as Batch));
-      const stock = stockSnapshot.docs.map(doc => ({ ...doc.data() } as StockItem));
-      const sales = salesSnapshot.docs.map(doc => ({ ...doc.data() } as Sale));
-      const transactions = transactionsSnapshot.docs.map(doc => ({ ...doc.data() } as Transaction));
-      const scheduledOrders = ordersSnapshot.docs.map(doc => ({ ...doc.data() } as any));
-      const reports = reportsSnapshot.docs.map(doc => ({ ...doc.data() } as DailyReport));
-      const suppliers = suppliersSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Supplier));
-      const payables = (payablesSnapshot?.docs || []).map(doc => {
-        const d = doc.data();
-        return {
-          ...d,
-          id: doc.id,
-          valor: d.valor !== undefined ? Number(d.valor) : Number(d.valor_total || 0) // Force number casting
-        } as Payable;
-      });
+      const clients = (clientsRes.data || []) as Client[];
+      const batches = (batchesRes.data || []) as Batch[];
+      const stock = (stockRes.data || []) as StockItem[];
+      const sales = (salesRes.data || []) as Sale[];
+      const transactions = (transactionsRes.data || []) as Transaction[];
+      const scheduledOrders = (ordersRes.data || []) as any[];
+      const reports = (reportsRes.data || []) as DailyReport[];
+      const suppliers = (suppliersRes.data || []) as Supplier[];
+      const payables = (payablesRes.data || []).map((d: any) => ({
+        ...d,
+        valor: d.valor !== undefined ? Number(d.valor) : Number(d.valor_total || 0)
+      })) as Payable[];
 
       const clientsWithDebt = clients.map(client => {
         const clientSales = sales.filter(s => s.id_cliente === client.id_ferro && s.status_pagamento === 'PENDENTE');
@@ -201,173 +190,79 @@ const App: React.FC = () => {
 
     // Limpa TODOS os dados órfãos automaticamente ao iniciar
     const cleanupOrphans = async () => {
-      if (OFFLINE_MODE || !db) return;
+      if (OFFLINE_MODE || !supabase) return;
 
-      // Aguarda um pouco para garantir que os dados foram carregados
+      // Limpeza de órfãos via Supabase (após 2s para dados carregarem)
       setTimeout(async () => {
+        if (!supabase) return;
         try {
-          const [batchesSnapshot, payablesSnapshot, stockSnapshot, salesSnapshot, transactionsSnapshot] = await Promise.all([
-            getDocs(collection(db, 'batches')),
-            getDocs(collection(db, 'payables')),
-            getDocs(collection(db, 'stock_items')),
-            getDocs(collection(db, 'sales')),
-            getDocs(collection(db, 'transactions'))
-          ]);
+          const { data: batches } = await supabase.from('batches').select('id_lote');
+          if (!batches) return;
+          const existingLoteIds = new Set(batches.map((b: any) => b.id_lote));
 
-          const existingLoteIds = new Set(batchesSnapshot.docs.map(d => d.data().id_lote));
-          const batch = writeBatch(db);
-          let orphanCount = 0;
-
-          // 1. Limpar PAYABLES órfãos
-          payablesSnapshot.forEach(docSnap => {
-            const payable = docSnap.data();
-            if (payable.categoria === 'COMPRA_GADO') {
-              let loteId = payable.id_lote;
-              if (!loteId && payable.descricao) {
-                const match = payable.descricao.match(/Lote ([A-Z0-9]+-\d{4}-\d+)/);
-                if (match) loteId = match[1];
-              }
-              if (loteId && !existingLoteIds.has(loteId)) {
-                batch.delete(docSnap.ref);
-                orphanCount++;
-                console.log(`🗑️ Payable órfão: ${payable.descricao}`);
-              }
+          // Payables órfãos de COMPRA_GADO
+          const { data: payables } = await supabase.from('payables')
+            .select('id,id_lote,descricao,categoria').eq('categoria', 'COMPRA_GADO');
+          for (const p of payables || []) {
+            const loteId = p.id_lote || p.descricao?.match(/Lote ([A-Z0-9-]+)/)?.[1];
+            if (loteId && !existingLoteIds.has(loteId)) {
+              await supabase.from('payables').delete().eq('id', p.id);
+              console.log(`🗑️ Payable órfão removido: ${p.descricao}`);
             }
-          });
-
-          // 1b. Limpar PAYABLES DUPLICADOS (Compra Lote vs Restante Lote)
-          const payablesByLote = new Map<string, Array<{ ref: any, data: any, docId: string }>>();
-          payablesSnapshot.forEach(docSnap => {
-            const payable = docSnap.data();
-            if (payable.categoria === 'COMPRA_GADO') {
-              let loteId = payable.id_lote;
-              if (!loteId && payable.descricao) {
-                const match = payable.descricao.match(/Lote (LOTE-[A-Z0-9]+-\d+)/);
-                if (match) loteId = match[1];
-              }
-              if (loteId) {
-                if (!payablesByLote.has(loteId)) payablesByLote.set(loteId, []);
-                payablesByLote.get(loteId)!.push({ ref: docSnap.ref, data: payable, docId: docSnap.id });
-              }
-            }
-          });
-          payablesByLote.forEach((entries, loteId) => {
-            if (entries.length > 1) {
-              // Manter o que tem ID determinístico (PAY-LOTE-X), deletar os outros
-              const hasDetId = entries.some(e => e.docId.startsWith('PAY-LOTE-'));
-              if (hasDetId) {
-                entries.forEach(e => {
-                  if (!e.docId.startsWith('PAY-LOTE-')) {
-                    batch.delete(e.ref);
-                    orphanCount++;
-                    console.log(`🗑️ Payable DUPLICADO removido: "${e.data.descricao}" (ID: ${e.docId})`);
-                  }
-                });
-              }
-            }
-          });
-
-          // 2. Limpar STOCK_ITEMS órfãos
-          stockSnapshot.forEach(docSnap => {
-            const item = docSnap.data();
-            if (item.id_lote && !existingLoteIds.has(item.id_lote)) {
-              batch.delete(docSnap.ref);
-              orphanCount++;
-              console.log(`🗑️ Estoque órfão: ${item.id_completo}`);
-            }
-          });
-
-          // 3. Limpar SALES órfãs
-          salesSnapshot.forEach(docSnap => {
-            const sale = docSnap.data();
-            if (sale.id_completo) {
-              // Extrai id_lote do id_completo (formato: LOTE-SEQ-TIPO)
-              const parts = sale.id_completo.split('-');
-              if (parts.length >= 3) {
-                const loteId = `${parts[0]}-${parts[1]}-${parts[2]}`;
-                if (!existingLoteIds.has(loteId)) {
-                  batch.delete(docSnap.ref);
-                  orphanCount++;
-                  console.log(`🗑️ Venda órfã: ${sale.id_venda}`);
-                }
-              }
-            }
-          });
-
-          // 4. Limpar TRANSACTIONS órfãs (relacionadas a lotes)
-          transactionsSnapshot.forEach(docSnap => {
-            const t = docSnap.data();
-            if (t.referencia_id && t.categoria === 'COMPRA_GADO') {
-              if (!existingLoteIds.has(t.referencia_id)) {
-                batch.delete(docSnap.ref);
-                orphanCount++;
-                console.log(`🗑️ Transação órfã: ${t.descricao}`);
-              }
-            }
-          });
-
-          if (orphanCount > 0) {
-            await batch.commit();
-            console.log(`✅ ${orphanCount} registros órfãos removidos automaticamente`);
-            fetchData();
           }
-        } catch (e) {
-          console.error('Erro limpando órfãos:', e);
-        }
+
+          // Stock órfão
+          const { data: orphanStock } = await supabase.from('stock_items')
+            .select('id_completo,id_lote').not('id_lote', 'is', null);
+          for (const s of orphanStock || []) {
+            if (!existingLoteIds.has(s.id_lote)) {
+              await supabase.from('stock_items').delete().eq('id_completo', s.id_completo);
+            }
+          }
+
+          fetchData();
+        } catch (e) { console.error('Erro limpando órfãos:', e); }
       }, 2000);
     };
     cleanupOrphans();
 
-    if (OFFLINE_MODE || !db) return; // Sem realtime no modo offline
+    if (OFFLINE_MODE || !supabase) return;
 
-    // DEBOUNCED REALTIME: Evita tempestade de leituras.
-    // Sem debounce: 1 estorno = 4 escritas × 8 listeners × 9 coleções = ~288 leituras
-    // Com debounce: 1 estorno = 1 fetchData() = 9 leituras (economia de ~97%)
+    // REALTIME via Supabase — debounced para evitar excesso de chamadas
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const debouncedFetch = () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => fetchData(), 500);
     };
 
-    const unsubscribeClients = onSnapshot(collection(db, 'clients'), debouncedFetch);
-    const unsubscribeBatches = onSnapshot(collection(db, 'batches'), debouncedFetch);
-    const unsubscribeStock = onSnapshot(collection(db, 'stock_items'), debouncedFetch);
-    const unsubscribeSales = onSnapshot(collection(db, 'sales'), debouncedFetch);
-    const unsubscribeTransactions = onSnapshot(collection(db, 'transactions'), debouncedFetch);
-    const unsubscribeOrders = onSnapshot(collection(db, 'scheduled_orders'), debouncedFetch);
-    const unsubscribeReports = onSnapshot(collection(db, 'daily_reports'), debouncedFetch);
-    const unsubscribePayables = onSnapshot(collection(db, 'payables'), debouncedFetch);
+    const channel = supabase.channel('app-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'clients' }, debouncedFetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'batches' }, debouncedFetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_items' }, debouncedFetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, debouncedFetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, debouncedFetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'scheduled_orders' }, debouncedFetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_reports' }, debouncedFetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payables' }, debouncedFetch)
+      .subscribe();
 
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer);
-      unsubscribeClients();
-      unsubscribeBatches();
-      unsubscribeStock();
-      unsubscribeSales();
-      unsubscribeTransactions();
-      unsubscribeOrders();
-      unsubscribeReports();
-      unsubscribePayables();
+      supabase.removeChannel(channel);
     };
   }, [fetchData]);
 
   // --- CRUD SUPPLIER ---
   const handleAddSupplier = async (newSupplier: Supplier) => {
     try {
-      if (OFFLINE_MODE) {
-        setData(prev => ({ ...prev, suppliers: [...prev.suppliers, newSupplier] }));
-        return;
-      }
-      const docRef = await addDoc(collection(db, 'suppliers'), newSupplier);
-      const supplierWithId = { ...newSupplier, id: docRef.id };
-      await setDoc(docRef, supplierWithId); // Update with ID
-      setData(prev => ({ ...prev, suppliers: [...prev.suppliers, supplierWithId] }));
+      if (OFFLINE_MODE) { setData(prev => ({ ...prev, suppliers: [...prev.suppliers, newSupplier] })); return; }
+      if (!supabase) return;
+      const { error } = await supabase.from('suppliers').upsert(newSupplier);
+      if (error) throw error;
+      setData(prev => ({ ...prev, suppliers: [...prev.suppliers, newSupplier] }));
       logAction(session.user, 'CREATE', 'OTHER', `Novo fornecedor: ${newSupplier.nome_fantasia}`, newSupplier);
       alert('Fornecedor cadastrado com sucesso!');
-    } catch (e) {
-      console.error(e);
-      alert('Erro ao salvar fornecedor.');
-    }
+    } catch (e) { console.error(e); alert('Erro ao salvar fornecedor.'); }
   };
 
   const handleUpdateSupplier = async (updatedSupplier: Supplier) => {
@@ -376,7 +271,9 @@ const App: React.FC = () => {
         setData(prev => ({ ...prev, suppliers: prev.suppliers.map(s => s.id === updatedSupplier.id ? updatedSupplier : s) }));
         return;
       }
-      await setDoc(doc(db, 'suppliers', updatedSupplier.id), updatedSupplier);
+      if (!supabase) return;
+      const { error } = await supabase.from('suppliers').upsert(updatedSupplier);
+      if (error) throw error;
       setData(prev => ({ ...prev, suppliers: prev.suppliers.map(s => s.id === updatedSupplier.id ? updatedSupplier : s) }));
       logAction(session.user, 'UPDATE', 'OTHER', `Fornecedor atualizado: ${updatedSupplier.nome_fantasia}`, updatedSupplier);
       alert('Fornecedor atualizado!');
@@ -392,7 +289,9 @@ const App: React.FC = () => {
         setData(prev => ({ ...prev, suppliers: prev.suppliers.filter(s => s.id !== id) }));
         return;
       }
-      await deleteDoc(doc(db, 'suppliers', id));
+      if (!supabase) return;
+      const { error } = await supabase.from('suppliers').delete().eq('id', id);
+      if (error) throw error;
       setData(prev => ({ ...prev, suppliers: prev.suppliers.filter(s => s.id !== id) }));
       logAction(session.user, 'DELETE', 'OTHER', `Fornecedor removido ID: ${id}`, { id });
       alert('Fornecedor removido.');
@@ -409,12 +308,11 @@ const App: React.FC = () => {
         setData(prev => ({ ...prev, payables: [...prev.payables, newPayable] }));
         return;
       }
-      // Usar ID determinístico (newPayable.id) ou gerar um novo — NUNCA addDoc
-      // addDoc ignora o campo 'id' e gera um ID aleatório do Firestore, quebrando
-      // o updateDoc posterior que usa o campo 'id' como chave do documento.
-      const docId = newPayable.id || doc(collection(db!, 'payables')).id;
+      if (!supabase) return;
+      const docId = newPayable.id || `PAY-${Date.now()}`;
       const payableWithId = { ...newPayable, id: docId };
-      await setDoc(doc(db!, 'payables', docId), payableWithId);
+      const { error } = await supabase.from('payables').upsert(payableWithId);
+      if (error) throw error;
       setData(prev => ({ ...prev, payables: [...prev.payables, payableWithId] }));
       logAction(session.user, 'CREATE', 'OTHER', `Nova conta a pagar: ${payableWithId.descricao}`, payableWithId);
     } catch (e) {
@@ -429,7 +327,9 @@ const App: React.FC = () => {
         setData(prev => ({ ...prev, payables: prev.payables.map(p => p.id === updatedPayable.id ? updatedPayable : p) }));
         return;
       }
-      await setDoc(doc(db, 'payables', updatedPayable.id), updatedPayable);
+      if (!supabase) return;
+      const { error } = await supabase.from('payables').upsert(updatedPayable);
+      if (error) throw error;
       setData(prev => ({ ...prev, payables: prev.payables.map(p => p.id === updatedPayable.id ? updatedPayable : p) }));
       logAction(session.user, 'UPDATE', 'OTHER', `Conta atualizada: ${updatedPayable.descricao}`, updatedPayable);
     } catch (e) {
@@ -460,10 +360,10 @@ const App: React.FC = () => {
 
       // Marcar o payable como ESTORNADO ou CANCELADO
       const novoStatus = (isPago || isParcial) ? 'ESTORNADO' : 'CANCELADO';
-      await updateDoc(doc(db, 'payables', id), { status: novoStatus });
+      await supabase!.from('payables').update({ status: novoStatus }).eq('id', id);
 
       // Se já foi pago (total ou parcial), criar transação inversa (ENTRADA de estorno)
-      if ((isPago || isParcial) && valorPago > 0 && db) {
+      if ((isPago || isParcial) && valorPago > 0 && supabase) {
         const estornoTransaction = {
           id: `TR-ESTORNO-PAY-${id}-${Date.now()}`,
           data: new Date().toISOString().split('T')[0],
@@ -524,11 +424,12 @@ const App: React.FC = () => {
       return { success: true };
     }
 
-    if (!db) return { success: false, error: 'Firebase não configurado' };
+    if (!supabase) return { success: false, error: 'Supabase não configurado' };
 
     try {
       // Salvar o lote
-      await setDoc(doc(db, 'batches', cleanBatch.id_lote), cleanBatch);
+      const { error: batchError } = await supabase.from('batches').upsert(cleanBatch);
+      if (batchError) throw batchError;
 
       // FINANCEIRO: Toda lógica de transação é responsabilidade exclusiva de
       // registerBatchFinancial() chamada pelo Batches.tsx ao fechar o lote.
@@ -545,7 +446,7 @@ const App: React.FC = () => {
 
   // ===== ESTORNO DE VENDA INDIVIDUAL (BLINDADO) =====
   const estornoSale = async (saleId: string) => {
-    if (!db) return;
+    if (!supabase) return;
 
     // 1. Encontrar a venda
     const sale = data.sales.find(s => s.id_venda === saleId);
@@ -564,14 +465,11 @@ const App: React.FC = () => {
 
     try {
       console.log(`🔄 Iniciando estorno da venda: ${saleId} (Cliente: ${sale.nome_cliente})`);
-      const batchCommit = writeBatch(db);
 
       // 1. Marcar venda como ESTORNADO e zerar valor_pago
-      batchCommit.update(doc(db, 'sales', saleId), { status_pagamento: 'ESTORNADO', valor_pago: 0 });
+      await supabase.from('sales').update({ status_pagamento: 'ESTORNADO', valor_pago: 0 }).eq('id_venda', saleId);
 
       // 2. Devolver item(ns) ao estoque → DISPONÍVEL
-      // Prioridade: stock_ids_originais (IDs reais gravados no momento da venda)
-      // Fallback: id_completo da venda (expande INTEIRO → BANDA_A + BANDA_B)
       const rawIds: string[] = (sale as any).stock_ids_originais && Array.isArray((sale as any).stock_ids_originais)
         ? (sale as any).stock_ids_originais
         : [sale.id_completo];
@@ -590,18 +488,15 @@ const App: React.FC = () => {
       const restoredIds = new Set<string>();
 
       for (const stockId of refinedIds) {
-        // Busca sempre pelo campo id_completo (campo da aplicação, não o __name__ do Firestore).
-        // where('__name__') falha quando o Document ID do Firestore difere do id_completo
-        // (ex: carcaças inteiras salvas como BANDA_A/BANDA_B mas referenciadas como INTEIRO).
         try {
-          const q = query(collection(db, 'stock_items'), where('id_completo', '==', stockId), limit(1));
-          const snap = await getDocs(q);
-          if (!snap.empty) {
-            batchCommit.update(snap.docs[0].ref, { status: 'DISPONIVEL' });
+          const { data: found, error } = await supabase.from('stock_items')
+            .select('id_completo').eq('id_completo', stockId).limit(1);
+          if (!error && found && found.length > 0) {
+            await supabase.from('stock_items').update({ status: 'DISPONIVEL' }).eq('id_completo', stockId);
             restoredIds.add(stockId);
             console.log(`✅ Item ${stockId} -> DISPONIVEL`);
           } else {
-            console.error(`❌ Item ${stockId} não encontrado no Firestore. Verifique o estoque manualmente.`);
+            console.error(`❌ Item ${stockId} não encontrado. Verifique o estoque manualmente.`);
           }
         } catch (findErr) {
           console.error(`❌ Erro ao buscar item ${stockId}:`, findErr);
@@ -609,14 +504,13 @@ const App: React.FC = () => {
       }
 
       // 3. Reverter financeiro: estornar TODAS as entradas de recebimento desta venda
-      // Inclui TR-VISTA-* (venda à vista) e TR-REC-* (recebimentos parciais/a prazo)
       const entradasVenda = data.transactions.filter(t =>
         t.referencia_id === saleId && t.tipo === 'ENTRADA' && t.categoria === 'VENDA'
       );
 
       for (const tx of entradasVenda) {
         const estornoId = `TR-ESTORNO-VENDA-${saleId}-${tx.id}`;
-        batchCommit.set(doc(db, 'transactions', estornoId), sanitize({
+        await supabase.from('transactions').upsert(sanitize({
           id: estornoId,
           data: todayBR(),
           descricao: `ESTORNO VENDA: ${sale.nome_cliente || 'Cliente'} - ${sale.id_completo}`,
@@ -631,7 +525,7 @@ const App: React.FC = () => {
       // Fallback: se não havia transações de recebimento mas houve pagamento (valor_pago > 0)
       if (entradasVenda.length === 0 && valorPago > 0) {
         const estornoIdDireto = `TR-ESTORNO-VENDA-${saleId}-DIRETO`;
-        batchCommit.set(doc(db, 'transactions', estornoIdDireto), sanitize({
+        await supabase.from('transactions').upsert(sanitize({
           id: estornoIdDireto,
           data: todayBR(),
           descricao: `ESTORNO VENDA: ${sale.nome_cliente || 'Cliente'} - ${sale.id_completo}`,
@@ -643,13 +537,13 @@ const App: React.FC = () => {
         }));
       }
 
-      // 4. Reverter descontos: criar ENTRADA espelho para cada TR-DESC desta venda
+      // 4. Reverter descontos
       const descontosTx = data.transactions.filter(t =>
         t.referencia_id === saleId && t.categoria === 'DESCONTO' && t.tipo === 'SAIDA'
       );
       for (const descTx of descontosTx) {
         const descEstornoId = `TR-ESTORNO-DESC-${saleId}-${descTx.id}`;
-        batchCommit.set(doc(db, 'transactions', descEstornoId), sanitize({
+        await supabase.from('transactions').upsert(sanitize({
           id: descEstornoId,
           data: todayBR(),
           descricao: `ESTORNO DESCONTO: ${descTx.descricao}`,
@@ -659,11 +553,6 @@ const App: React.FC = () => {
           metodo_pagamento: 'OUTROS',
           referencia_id: saleId
         }));
-      }
-
-      // COMMIT ATÔMICO
-      if (!OFFLINE_MODE) {
-        await batchCommit.commit();
       }
 
       // 5. Atualizar estado local imediatamente (UI responde antes do fetchData)
@@ -700,35 +589,29 @@ const App: React.FC = () => {
       return;
     }
 
-    if (!db) return;
+    if (!supabase) return;
 
     try {
       console.log(`🔄 INICIANDO ESTORNO DO LOTE: ${id}`);
-      const batchCommit = writeBatch(db);
 
       // 1. Marcar lote como ESTORNADO
-      batchCommit.update(doc(db, 'batches', id), { status: 'ESTORNADO' });
-      console.log(`✅ Lote ${id} marcado como ESTORNADO (enfileirado)`);
+      await supabase.from('batches').update({ status: 'ESTORNADO' }).eq('id_lote', id);
+      console.log(`✅ Lote ${id} marcado como ESTORNADO`);
 
       // 2. Marcar itens de estoque como ESTORNADO
-      const stockSnapshot = await getDocs(collection(db, 'stock_items'));
+      const { data: stockItems } = await supabase.from('stock_items').select('*').eq('id_lote', id).neq('status', 'ESTORNADO');
       let stockCount = 0;
-      for (const docSnap of stockSnapshot.docs) {
-        const item = docSnap.data();
-        if (item.id_lote === id && item.status !== 'ESTORNADO') {
-          batchCommit.update(doc(db, 'stock_items', docSnap.id), { status: 'ESTORNADO' });
-          stockCount++;
-        }
+      for (const item of stockItems || []) {
+        await supabase.from('stock_items').update({ status: 'ESTORNADO' }).eq('id_completo', item.id_completo);
+        stockCount++;
       }
-      console.log(`✅ ${stockCount} itens de estoque enfileirados`);
+      console.log(`✅ ${stockCount} itens de estoque atualizados`);
 
-      // 3. Estornar payables do lote (Cancela os pagamentos pendentes)
-      const payablesSnapshot = await getDocs(collection(db, 'payables'));
-      const linkedPayableIds = new Set<string>(); // Rastrear quais payables são deste lote
+      // 3. Estornar payables do lote
+      const { data: allPayables } = await supabase.from('payables').select('*');
       let payablesCount = 0;
 
-      for (const docSnap of payablesSnapshot.docs) {
-        const payable = docSnap.data();
+      for (const payable of allPayables || []) {
         const matchByIdLote = payable.id_lote === id;
         const matchById = payable.id && payable.id.includes(id);
         const matchByDescricao = payable.descricao && payable.descricao.includes(id);
@@ -737,14 +620,12 @@ const App: React.FC = () => {
           const isPago = payable.status === 'PAGO';
           const isParcial = payable.status === 'PARCIAL';
           const valorPago = payable.valor_pago || 0;
-          const novoStatus = 'CANCELADO';
 
-          batchCommit.update(doc(db, 'payables', docSnap.id), { status: novoStatus });
+          await supabase.from('payables').update({ status: 'CANCELADO' }).eq('id', payable.id);
 
-          // Se já pagou, criar ENTRADA de estorno
           if ((isPago || isParcial) && valorPago > 0) {
-            const txId = `TR-ESTORNO-PAY-${docSnap.id}-${Date.now()}`;
-            batchCommit.set(doc(db, 'transactions', txId), sanitize({
+            const txId = `TR-ESTORNO-PAY-${payable.id}-${Date.now()}`;
+            await supabase.from('transactions').upsert(sanitize({
               id: txId,
               data: new Date().toISOString().split('T')[0],
               descricao: `ESTORNO LOTE: ${payable.descricao}`,
@@ -755,25 +636,23 @@ const App: React.FC = () => {
               referencia_id: id
             }));
           }
+          payablesCount++;
         }
       }
-      console.log(`✅ ${payablesCount} contas a pagar enfileiradas`);
+      console.log(`✅ ${payablesCount} contas a pagar atualizadas`);
 
       // 4. Estornar vendas do lote
-      const salesSnapshot = await getDocs(collection(db, 'sales'));
+      const { data: allSales } = await supabase.from('sales').select('*');
       let salesCount = 0;
-      for (const docSnap of salesSnapshot.docs) {
-        const sale = docSnap.data();
-        // CORREÇÃO AUDITORIA #5: Usar includes() ao invés de startsWith()
+      for (const sale of allSales || []) {
         if (sale.id_completo && sale.id_completo.includes(id) && sale.status_pagamento !== 'ESTORNADO') {
           const valorPago = sale.valor_pago || 0;
 
-          batchCommit.update(doc(db, 'sales', docSnap.id), { status_pagamento: 'ESTORNADO' });
+          await supabase.from('sales').update({ status_pagamento: 'ESTORNADO' }).eq('id_venda', sale.id_venda);
 
-          // Se já recebeu $, criar SAÍDA de estorno no Fluxo de Caixa
           if (valorPago > 0) {
-            const txVendaId = `TR-ESTORNO-VENDA-${docSnap.id}-${Date.now()}`;
-            batchCommit.set(doc(db, 'transactions', txVendaId), sanitize({
+            const txVendaId = `TR-ESTORNO-VENDA-${sale.id_venda}-${Date.now()}`;
+            await supabase.from('transactions').upsert(sanitize({
               id: txVendaId,
               data: new Date().toISOString().split('T')[0],
               descricao: `ESTORNO LOTE: Venda ${sale.nome_cliente || 'Cliente'} - ${sale.id_completo}`,
@@ -787,18 +666,16 @@ const App: React.FC = () => {
           salesCount++;
         }
       }
-      console.log(`✅ ${salesCount} vendas enfileiradas`);
+      console.log(`✅ ${salesCount} vendas atualizadas`);
 
       // 5. Criar transação de estorno para transações de compra já lançadas
-      const transactionsSnapshot = await getDocs(collection(db, 'transactions'));
+      const { data: allTransactions } = await supabase.from('transactions').select('*');
       let txCount = 0;
-      for (const docSnap of transactionsSnapshot.docs) {
-        const tx = docSnap.data();
-        // Estornar transações de COMPRA deste lote (criar ENTRADA inversa)
+      for (const tx of allTransactions || []) {
         if ((tx.referencia_id === id || (tx.descricao && tx.descricao.includes(id)))
           && tx.categoria === 'COMPRA_GADO' && !tx.descricao?.includes('ESTORNO')) {
-          const estornoTxId = `TR-ESTORNO-${docSnap.id}-${Date.now()}`;
-          batchCommit.set(doc(db, 'transactions', estornoTxId), sanitize({
+          const estornoTxId = `TR-ESTORNO-${tx.id}-${Date.now()}`;
+          await supabase.from('transactions').upsert(sanitize({
             id: estornoTxId,
             data: new Date().toISOString().split('T')[0],
             descricao: `ESTORNO LOTE: Devolução de ${tx.descricao}`,
@@ -811,10 +688,7 @@ const App: React.FC = () => {
           txCount++;
         }
       }
-      console.log(`✅ ${txCount} transações de compra enfileiradas`);
-
-      // COMMIT ATÔMICO FIREBASE
-      await batchCommit.commit();
+      console.log(`✅ ${txCount} transações de compra estornadas`);
 
       console.log(`🎯 LOTE ${id} COMPLETAMENTE ESTORNADO (Transação Atômica)!`);
 
@@ -835,7 +709,7 @@ const App: React.FC = () => {
   };
 
   const cleanAllFinancialData = async () => {
-    if (!db) {
+    if (!supabase) {
       alert('❌ Banco de dados não disponível');
       return;
     }
@@ -843,22 +717,16 @@ const App: React.FC = () => {
     try {
       console.log('🧹 LIMPEZA COMPLETA DO SISTEMA INICIADA');
 
-      const collections = ['batches', 'sales', 'stock_items', 'transactions', 'scheduled_orders', 'daily_reports', 'payables'];
+      const tables = ['batches', 'sales', 'stock_items', 'transactions', 'scheduled_orders', 'daily_reports', 'payables'];
 
-      for (const colName of collections) {
-        console.log(`🗑️ Limpando: ${colName}...`);
-        const snap = await getDocs(collection(db, colName));
-
-        if (snap.empty) {
-          console.log(`  ✅ ${colName} já vazio`);
-          continue;
+      for (const tableName of tables) {
+        console.log(`🗑️ Limpando: ${tableName}...`);
+        const { error } = await supabase.from(tableName).delete().neq('id', '');
+        if (error) {
+          console.error(`  ❌ Erro ao limpar ${tableName}:`, error);
+        } else {
+          console.log(`  ✅ ${tableName} limpo`);
         }
-
-        const batch = writeBatch(db);
-        snap.docs.forEach(d => batch.delete(d.ref));
-        await batch.commit();
-
-        console.log(`  ✅ ${snap.docs.length} registros deletados de ${colName}`);
       }
 
       console.log('✅ LIMPEZA COMPLETA FINALIZADA');
@@ -877,46 +745,38 @@ const App: React.FC = () => {
 
   // NOVA: Limpa payables órfãos (de lotes que não existem mais)
   const cleanOrphanPayables = async () => {
-    if (!db) return;
+    if (!supabase) return;
 
     try {
-      const [batchesSnapshot, payablesSnapshot] = await Promise.all([
-        getDocs(collection(db, 'batches')),
-        getDocs(collection(db, 'payables'))
+      const [{ data: batchesData }, { data: payablesData }] = await Promise.all([
+        supabase.from('batches').select('id_lote'),
+        supabase.from('payables').select('*').eq('categoria', 'COMPRA_GADO')
       ]);
 
-      const existingLoteIds = new Set(batchesSnapshot.docs.map(d => d.data().id_lote));
-      const deletePromises: Promise<void>[] = [];
+      const existingLoteIds = new Set((batchesData || []).map((b: any) => b.id_lote));
       let orphanCount = 0;
 
-      payablesSnapshot.forEach(docSnap => {
-        const payable = docSnap.data();
-        // Verifica se é um payable de lote (COMPRA_GADO) e se o lote não existe mais
-        if (payable.categoria === 'COMPRA_GADO') {
-          // Tenta extrair o id_lote da descrição ou do campo id_lote
-          let loteId = payable.id_lote;
-          if (!loteId && payable.descricao) {
-            const match = payable.descricao.match(/Lote ([A-Z0-9-]+)/);
-            if (match) loteId = match[1];
-          }
-          if (!loteId && payable.id) {
-            const match = payable.id.match(/PAY-LOTE-([A-Z0-9-]+)/);
-            if (match) loteId = match[1];
-          }
-
-          // Se o lote não existe mais, deleta o payable
-          if (loteId && !existingLoteIds.has(loteId)) {
-            deletePromises.push(deleteDoc(doc(db, 'payables', docSnap.id)));
-            orphanCount++;
-            console.log(`🗑️ Removendo payable órfão: ${payable.descricao} (lote ${loteId} não existe)`);
-          }
+      for (const payable of payablesData || []) {
+        let loteId = payable.id_lote;
+        if (!loteId && payable.descricao) {
+          const match = payable.descricao.match(/Lote ([A-Z0-9-]+)/);
+          if (match) loteId = match[1];
         }
-      });
+        if (!loteId && payable.id) {
+          const match = payable.id.match(/PAY-LOTE-([A-Z0-9-]+)/);
+          if (match) loteId = match[1];
+        }
+
+        if (loteId && !existingLoteIds.has(loteId)) {
+          await supabase.from('payables').delete().eq('id', payable.id);
+          orphanCount++;
+          console.log(`🗑️ Removendo payable órfão: ${payable.descricao} (lote ${loteId} não existe)`);
+        }
+      }
 
       if (orphanCount > 0) {
-        await Promise.all(deletePromises);
         console.log(`✅ ${orphanCount} payables órfãos removidos automaticamente`);
-        fetchData(); // Recarrega os dados
+        fetchData();
       }
     } catch (error) {
       console.error('Erro ao limpar payables órfãos:', error);
@@ -933,10 +793,11 @@ const App: React.FC = () => {
       return { success: true };
     }
 
-    if (!db) return { success: false, error: 'Firebase não configurado' };
+    if (!supabase) return { success: false, error: 'Supabase não configurado' };
 
     try {
-      await setDoc(doc(db, 'stock_items', cleanItem.id_completo), cleanItem);
+      const { error } = await supabase.from('stock_items').upsert(cleanItem);
+      if (error) throw error;
       if (session?.user) logAction(session.user, 'CREATE', 'STOCK', `Item de estoque adicionado: ${cleanItem.id_completo}`);
       fetchData();
       return { success: true };
@@ -946,14 +807,14 @@ const App: React.FC = () => {
   };
 
   const updateStockItem = async (id: string, updates: Partial<StockItem>) => {
-    if (!db) return;
-    await updateDoc(doc(db, 'stock_items', id), sanitize(updates));
+    if (!supabase) return;
+    await supabase.from('stock_items').update(sanitize(updates)).eq('id_completo', id);
     fetchData();
   };
 
   const addTransaction = async (transaction: any) => {
-    if (!db) return;
-    await setDoc(doc(db, 'transactions', transaction.id), sanitize(transaction));
+    if (!supabase) return;
+    await supabase.from('transactions').upsert(sanitize(transaction));
     if (session?.user) logAction(session.user, 'CREATE', 'TRANSACTION', `Transação adicionada: ${transaction.tipo} ${transaction.valor} (${transaction.descricao})`);
     fetchData();
   };
@@ -975,13 +836,11 @@ const App: React.FC = () => {
 
     if (formaPagamento === 'VISTA') {
       // PAGAMENTO TOTAL À VISTA
-      // Guard consultando DIRETAMENTE o Firestore (não o state React, que pode estar desatualizado)
+      // Guard consultando DIRETAMENTE o Supabase (não o state React, que pode estar desatualizado)
       const txId = `TR-LOTE-${batch.id_lote}`;
-      const existingTxSnap = await getDocs(
-        query(collection(db!, 'transactions'), where('id', '==', txId), limit(1))
-      );
+      const { data: existingTx } = await supabase!.from('transactions').select('id').eq('id', txId).limit(1);
 
-      if (existingTxSnap.empty) {
+      if (!existingTx || existingTx.length === 0) {
         await addTransaction({
           id: txId,
           data: dataRecebimento,
@@ -994,19 +853,17 @@ const App: React.FC = () => {
         } as any);
         console.log(`💰 Saída À VISTA registrada: R$ ${totalCost}`);
       } else {
-        console.log(`⚠️ Transação ${txId} já existe no Firestore, ignorando.`);
+        console.log(`⚠️ Transação ${txId} já existe no Supabase, ignorando.`);
       }
     } else if (formaPagamento === 'PRAZO') {
       // COMPRA A PRAZO (Pode ter entrada)
 
-      // 1. SE TIVER ENTRADA, LANÇA A SAÍDA AGORA (guard via Firestore direto)
+      // 1. SE TIVER ENTRADA, LANÇA A SAÍDA AGORA (guard via Supabase direto)
       if (valorEntrada > 0) {
         const txEntradaId = `TR-LOTE-ENTRADA-${batch.id_lote}`;
-        const existingEntradaSnap = await getDocs(
-          query(collection(db!, 'transactions'), where('id', '==', txEntradaId), limit(1))
-        );
+        const { data: existingEntrada } = await supabase!.from('transactions').select('id').eq('id', txEntradaId).limit(1);
 
-        if (existingEntradaSnap.empty) {
+        if (!existingEntrada || existingEntrada.length === 0) {
           await addTransaction({
             id: txEntradaId,
             data: dataRecebimento,
@@ -1024,12 +881,10 @@ const App: React.FC = () => {
       const valorRestante = totalCost - valorEntrada;
       if (valorRestante > 0) {
         const payableId = `PAY-LOTE-${batch.id_lote}`;
-        // Guard via Firestore direto (não state React, que pode estar desatualizado)
-        const existingPaySnap = await getDocs(
-          query(collection(db!, 'payables'), where('id', '==', payableId), limit(1))
-        );
+        // Guard via Supabase direto (não state React, que pode estar desatualizado)
+        const { data: existingPay } = await supabase!.from('payables').select('id').eq('id', payableId).limit(1);
 
-        if (existingPaySnap.empty) {
+        if (!existingPay || existingPay.length === 0) {
           await handleAddPayable({
             id: payableId,
             id_lote: batch.id_lote,
@@ -1046,7 +901,7 @@ const App: React.FC = () => {
             categoria: 'COMPRA_GADO'
           } as any);
         } else {
-          console.log(`⚠️ Payable ${payableId} já existe no Firestore, ignorando.`);
+          console.log(`⚠️ Payable ${payableId} já existe no Supabase, ignorando.`);
         }
       }
     }
@@ -1079,30 +934,23 @@ const App: React.FC = () => {
       return { success: true };
     }
 
-    if (!db) return { success: false, error: 'Firebase não configurado' };
+    if (!supabase) return { success: false, error: 'Supabase não configurado' };
 
     try {
-      const batch = writeBatch(db);
-
-      // Add sales
-      cleanSales.forEach((sale: Sale) => {
-        const saleRef = doc(db, 'sales', sale.id_venda);
-        batch.set(saleRef, sale);
-      });
+      // Insert sales
+      const { error: salesError } = await supabase.from('sales').upsert(cleanSales);
+      if (salesError) throw salesError;
 
       // Update stock items status - usa stock_ids_originais quando disponível
-      cleanSales.forEach((sale: any) => {
-        const idsToUpdate = sale.stock_ids_originais && Array.isArray(sale.stock_ids_originais)
-          ? sale.stock_ids_originais
+      for (const sale of cleanSales) {
+        const idsToUpdate = (sale as any).stock_ids_originais && Array.isArray((sale as any).stock_ids_originais)
+          ? (sale as any).stock_ids_originais
           : [sale.id_completo];
 
-        idsToUpdate.forEach((stockId: string) => {
-          const stockRef = doc(db, 'stock_items', stockId);
-          batch.update(stockRef, { status: 'VENDIDO' });
-        });
-      });
-
-      await batch.commit();
+        for (const stockId of idsToUpdate) {
+          await supabase.from('stock_items').update({ status: 'VENDIDO' }).eq('id_completo', stockId);
+        }
+      }
       if (session?.user) {
         logAction(session.user, 'CREATE', 'SALE', `Venda realizada: ${cleanSales.length} itens para ${cleanSales[0].nome_cliente || 'Cliente'}`);
       }
@@ -1115,21 +963,21 @@ const App: React.FC = () => {
 
   // ===== ESTORNO DE ITEM DE ESTOQUE =====
   const estornoStockItem = async (id_completo: string) => {
-    if (!db) return;
-    await updateDoc(doc(db, 'stock_items', id_completo), { status: 'ESTORNADO' });
+    if (!supabase) return;
+    await supabase.from('stock_items').update({ status: 'ESTORNADO' }).eq('id_completo', id_completo);
     if (session?.user) logAction(session.user, 'ESTORNO', 'STOCK', `Item estornado no estoque: ${id_completo}`);
     fetchData();
   };
 
   const updateSaleCost = async (id_venda: string, newCost: number) => {
-    if (!db) return;
-    await updateDoc(doc(db, 'sales', id_venda), { custo_extras_total: newCost });
+    if (!supabase) return;
+    await supabase.from('sales').update({ custo_extras_total: newCost }).eq('id_venda', id_venda);
     fetchData();
   };
 
   // ===== ESTORNO DE TRANSAÇÃO (P10/P11: bloquear se vinculada) =====
   const estornoTransaction = async (id: string) => {
-    if (!db) return;
+    if (!supabase) return;
     const tx = data.transactions.find(t => t.id === id);
     if (!tx) return;
 
@@ -1167,27 +1015,20 @@ const App: React.FC = () => {
 
   const addPartialPayment = async (saleId: string, valorPagamento: number, method: PaymentMethod, date: string) => {
     const sale = data.sales.find(s => s.id_venda === saleId);
-    if (!sale || !db) return;
+    if (!sale || !supabase) return;
 
     try {
-      const batchOp = writeBatch(db);
-
       const valorTotal = sale.peso_real_saida * sale.preco_venda_kg;
       const valorPagoAtual = (sale as any).valor_pago || 0;
       const novoValorPago = valorPagoAtual + valorPagamento;
       const status = novoValorPago >= valorTotal ? 'PAGO' : 'PENDENTE';
 
-      batchOp.update(doc(db, 'sales', saleId), {
+      await supabase.from('sales').update({
         valor_pago: novoValorPago,
         status_pagamento: status,
         forma_pagamento: method
-      });
+      }).eq('id_venda', saleId);
 
-      // Se for acionado de forma isolada, geramos a transação aqui (O receiveClientPayment tbm chama, 
-      // mas vamos centralizar se quisermos).
-      // Porém, como o botão "Pagar" único chama o receiveClientPayment, vamos manter simple.
-
-      await batchOp.commit();
       fetchData();
     } catch (error) {
       console.error('Error adding partial payment:', error);
@@ -1195,7 +1036,7 @@ const App: React.FC = () => {
   };
 
   const receiveClientPayment = async (clientId: string, amount: number, method: PaymentMethod, date: string) => {
-    if (!db) return;
+    if (!supabase) return;
 
     const pendingSales = data.sales
       .filter(s => s.id_cliente === clientId && s.status_pagamento === 'PENDENTE')
@@ -1206,8 +1047,6 @@ const App: React.FC = () => {
     const clientName = data.clients.find(c => c.id_ferro === clientId)?.nome_social || 'Cliente';
 
     try {
-      const batchOp = writeBatch(db); // TRANSAÇÃO ATÔMICA
-
       for (const sale of pendingSales) {
         if (remaining <= 0.01) break;
         const total = sale.peso_real_saida * sale.preco_venda_kg;
@@ -1216,18 +1055,17 @@ const App: React.FC = () => {
         const pagarNesta = Math.min(devendo, remaining);
 
         if (pagarNesta > 0) {
-          // Atualiza a venda
           const novoValorPago = pago + pagarNesta;
           const status = novoValorPago >= total ? 'PAGO' : 'PENDENTE';
-          batchOp.update(doc(db, 'sales', sale.id_venda), {
+
+          await supabase.from('sales').update({
             valor_pago: novoValorPago,
             status_pagamento: status,
             forma_pagamento: method
-          });
+          }).eq('id_venda', sale.id_venda);
 
-          // Cria a transação de caixa (ENTRADA)
           const txId = `TR-REC-CLIENT-${sale.id_venda}-${Date.now()}`;
-          batchOp.set(doc(db, 'transactions', txId), {
+          await supabase.from('transactions').upsert({
             id: txId,
             data: date,
             descricao: `Recebimento ${clientName} - ${sale.id_completo}`,
@@ -1244,41 +1082,40 @@ const App: React.FC = () => {
       }
 
       if (count > 0) {
-        await batchOp.commit(); // TUDO OU NADA!
         if (session?.user) logAction(session.user, 'CREATE', 'TRANSACTION', `Pagamento recebido de cliente ${clientName}: R$${amount} (${method})`);
         fetchData();
       }
     } catch (e: any) {
       console.error('❌ Erro no pagamento de cliente:', e);
-      alert('Erro crítico ao salvar o pagamento online: ' + e.message);
+      alert('Erro crítico ao salvar o pagamento: ' + e.message);
     }
   };
 
   const addScheduledOrder = async (order: any) => {
-    if (!db) return;
+    if (!supabase) return;
     const cleanOrder = sanitize(order);
-    await setDoc(doc(db, 'scheduled_orders', cleanOrder.id), cleanOrder);
+    await supabase.from('scheduled_orders').upsert(cleanOrder);
     if (session?.user) logAction(session.user, 'CREATE', 'ORDER', `Pedido agendado criado para ${cleanOrder.nome_cliente}`);
     fetchData();
   };
 
   const updateScheduledOrder = async (id: string, updates: any) => {
-    if (!db) return;
-    await updateDoc(doc(db, 'scheduled_orders', id), sanitize(updates));
+    if (!supabase) return;
+    await supabase.from('scheduled_orders').update(sanitize(updates)).eq('id', id);
     fetchData();
   };
 
   const deleteScheduledOrder = async (id: string) => {
-    if (!db) return;
-    await deleteDoc(doc(db, 'scheduled_orders', id));
+    if (!supabase) return;
+    await supabase.from('scheduled_orders').delete().eq('id', id);
     if (session?.user) logAction(session.user, 'DELETE', 'ORDER', `Pedido excluído: ${id}`);
     fetchData();
   };
 
   const handleLogout = async () => {
-    if (auth) {
-      await signOut(auth);
+    if (supabase) {
       if (session?.user) logAction(session.user, 'LOGOUT', 'SYSTEM', `Usuário saiu do sistema`);
+      await supabase.auth.signOut();
     }
     setSession(null);
     setCurrentView('menu');
@@ -1322,15 +1159,15 @@ const App: React.FC = () => {
           transactions={data.transactions}
           batches={closedBatches}
           addClient={async (c) => {
-            if (db) {
-              await setDoc(doc(db, 'clients', c.id_ferro), sanitize(c));
+            if (supabase) {
+              await supabase.from('clients').upsert(sanitize(c));
               if (session?.user) logAction(session.user, 'CREATE', 'CLIENT', `Novo cliente: ${c.nome_social}`);
               fetchData();
             }
           }}
           updateClient={async (c) => {
-            if (db) {
-              await setDoc(doc(db, 'clients', c.id_ferro), sanitize(c), { merge: true });
+            if (supabase) {
+              await supabase.from('clients').upsert(sanitize(c));
               if (session?.user) logAction(session.user, 'UPDATE', 'CLIENT', `Cliente atualizado: ${c.nome_social}`);
               fetchData();
             }
@@ -1345,8 +1182,8 @@ const App: React.FC = () => {
           addSupplier={handleAddSupplier}
           updateSupplier={handleUpdateSupplier}
           deleteSupplier={async (id) => {
-            if (db) {
-              await updateDoc(doc(db, 'suppliers', id), { status: 'INATIVO' });
+            if (supabase) {
+              await supabase.from('suppliers').update({ status: 'INATIVO' }).eq('id', id);
               if (session?.user) logAction(session.user, 'UPDATE', 'OTHER', `Fornecedor inativado: ${id}`);
               fetchData();
             }
@@ -1361,8 +1198,8 @@ const App: React.FC = () => {
           stock={data.stock}
           addBatch={addBatch}
           updateBatch={async (id, updates) => {
-            if (!db) return;
-            await updateDoc(doc(db, 'batches', id), sanitize(updates));
+            if (!supabase) return;
+            await supabase.from('batches').update(sanitize(updates)).eq('id_lote', id);
             if (session?.user) logAction(session.user, 'UPDATE', 'BATCH', `Lote atualizado: ${id}`);
             fetchData();
           }}
@@ -1388,8 +1225,8 @@ const App: React.FC = () => {
         sales={data.sales}
         clients={data.clients}
         updateBatch={async (id, updates) => {
-          if (!db) return;
-          await updateDoc(doc(db, 'batches', id), sanitize(updates));
+          if (!supabase) return;
+          await supabase.from('batches').update(sanitize(updates)).eq('id_lote', id);
           if (session?.user) logAction(session.user, 'UPDATE', 'BATCH', `Lote atualizado: ${id}`);
           fetchData();
         }}
@@ -1488,16 +1325,16 @@ const App: React.FC = () => {
           reports={data.reports}
           onBack={() => setCurrentView('menu')}
           onSubmit={async (reportData) => {
-            if (!db) return;
+            if (!supabase) return;
             const newReport: any = {
               id: `REPORT-${Date.now()}`,
               timestamp: new Date().toISOString(),
               date: new Date().toISOString().split('T')[0],
-              userId: session?.user?.uid || 'anonymous',
+              userId: session?.user?.id || 'anonymous',
               userName: session?.user?.email?.split('@')[0] || 'Colaborador',
               ...reportData
             };
-            await setDoc(doc(db, 'daily_reports', newReport.id), newReport);
+            await supabase.from('daily_reports').upsert(newReport);
             logAction(session?.user, 'CREATE', 'OTHER', `Relatório enviado: ${reportData.type}`);
             fetchData(); // Force refresh to see new report immediately
           }}

@@ -43,8 +43,6 @@ import {
     ShoppingCart
 } from 'lucide-react';
 import { Client, Sale, StockItem, Batch } from '../types';
-import { storage } from '../firebaseClient';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { sendWhatsAppMessage, sendWhatsAppMedia, checkWhatsAppAPIStatus, sendBulkMessages } from '../utils/whatsappAPI';
 
 interface SalesAgentProps {

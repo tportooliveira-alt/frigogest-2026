@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Bot, Send, User, X, MessageCircle, Sparkles, Phone, Video, MapPin, TrendingUp, CheckCircle2 } from 'lucide-react';
-import { addDoc, collection } from 'firebase/firestore';
-import { db } from '../firebaseClient';
+import { supabase } from '../supabaseClient';
 
 interface Message {
     id: string;
@@ -180,12 +179,14 @@ const VirtualAssistant: React.FC<VirtualAssistantProps> = ({ onClose }) => {
     const finishLead = async () => {
         simulateTyping('Estou enviando seus dados agora mesmo para o sistema central do Thiago 704... 🚀');
         try {
-            await addDoc(collection(db, 'leads'), {
-                ...leadData,
-                timestamp: new Date().toISOString(),
-                status: 'novo',
-                mensagem: 'Lead qualificado via Assistente Virtual IA.'
-            });
+            if (supabase) {
+                await supabase.from('leads').insert({
+                    ...leadData,
+                    timestamp: new Date().toISOString(),
+                    status: 'novo',
+                    mensagem: 'Lead qualificado via Assistente Virtual IA.'
+                });
+            }
             setTimeout(() => {
                 addMessage('assistant', 'PRONTO! ✅ Seus dados foram recebidos com sucesso. O Thiago 704 acabou de ser notificado e entrará em contato em breve via WhatsApp. Obrigado pela confiança!', 'success');
             }, 2000);

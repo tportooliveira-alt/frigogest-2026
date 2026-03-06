@@ -17,8 +17,7 @@ import {
     Loader2
 } from 'lucide-react';
 import { DailyReport } from '../types';
-import { storage } from '../firebaseClient';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { supabase } from '../supabaseClient';
 
 interface CollaboratorReportProps {
     onBack?: () => void;
@@ -149,14 +148,17 @@ const CollaboratorReport: React.FC<CollaboratorReportProps> = ({ onBack, onSubmi
     // };
 
     const uploadToFirebase = async (blob: Blob, type: string): Promise<string> => {
-        if (!storage) throw new Error('Firebase Storage não configurado');
-        const fileName = `reports/${Date.now()}_${type}.${blob.type.split('/')[1]}`;
-        const storageRef = ref(storage, fileName);
+        if (!supabase) throw new Error('Supabase não configurado');
+        const ext = blob.type.split('/')[1] || 'bin';
+        const filePath = `reports/${Date.now()}_${type}.${ext}`;
         setIsUploading(prev => ({ ...prev, [type]: true }));
         try {
-            const snapshot = await uploadBytes(storageRef, blob);
-            const downloadURL = await getDownloadURL(snapshot.ref);
-            return downloadURL;
+            const { error } = await supabase.storage
+                .from('reports')
+                .upload(filePath, blob, { contentType: blob.type, upsert: false });
+            if (error) throw error;
+            const { data } = supabase.storage.from('reports').getPublicUrl(filePath);
+            return data.publicUrl;
         } finally {
             setIsUploading(prev => ({ ...prev, [type]: false }));
         }

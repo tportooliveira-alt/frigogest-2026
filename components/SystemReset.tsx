@@ -16,8 +16,7 @@ import {
     Sword,
     Database
 } from 'lucide-react';
-import { db } from '../firebaseClient';
-import { collection, getDocs, writeBatch, doc, setDoc } from 'firebase/firestore';
+import { supabase } from '../supabaseClient';
 import { StockType } from '../types';
 
 interface SystemResetProps {
@@ -38,14 +37,12 @@ const SystemReset: React.FC<SystemResetProps> = ({ onBack, refreshData }) => {
 
         setLoading(true); setStatus('Inicializando sequência de limpeza...');
         try {
-            const collections = ['batches', 'sales', 'stock_items', 'transactions', 'scheduled_orders', 'daily_reports', 'payables'];
-            for (const colName of collections) {
-                setStatus(`Limpando base: ${colName.toUpperCase()}...`);
-                const snap = await getDocs(collection(db, colName));
-                if (snap.empty) continue;
-                const batch = writeBatch(db);
-                snap.docs.forEach(d => batch.delete(d.ref));
-                await batch.commit();
+            if (!supabase) throw new Error('Supabase não configurado');
+            const tables = ['batches', 'sales', 'stock_items', 'transactions', 'scheduled_orders', 'daily_reports', 'payables'];
+            for (const table of tables) {
+                setStatus(`Limpando base: ${table.toUpperCase()}...`);
+                const { error } = await supabase.from(table).delete().neq('id', '');
+                if (error) throw error;
             }
             alert('Sistema reiniciado com sucesso. Cadastros preservados.');
             refreshData();
@@ -60,14 +57,12 @@ const SystemReset: React.FC<SystemResetProps> = ({ onBack, refreshData }) => {
 
         setLoading(true); setStatus('Limpando dados de teste...');
         try {
-            const collections = ['batches', 'sales', 'stock_items', 'transactions', 'scheduled_orders', 'daily_reports', 'payables'];
-            for (const colName of collections) {
-                setStatus(`Limpando: ${colName.toUpperCase()}...`);
-                const snap = await getDocs(collection(db, colName));
-                if (snap.empty) continue;
-                const batch = writeBatch(db);
-                snap.docs.forEach(d => batch.delete(d.ref));
-                await batch.commit();
+            if (!supabase) throw new Error('Supabase não configurado');
+            const tables = ['batches', 'sales', 'stock_items', 'transactions', 'scheduled_orders', 'daily_reports', 'payables'];
+            for (const table of tables) {
+                setStatus(`Limpando: ${table.toUpperCase()}...`);
+                const { error } = await supabase.from(table).delete().neq('id', '');
+                if (error) throw error;
             }
             setStatus('✅ Sistema limpo! Clientes e fornecedores preservados.');
             alert('✅ Dados de teste removidos!\n\nSistema pronto para produção.\nClientes e fornecedores foram preservados.');
@@ -85,61 +80,36 @@ const SystemReset: React.FC<SystemResetProps> = ({ onBack, refreshData }) => {
         setLoading(true); setStatus('Injetando dados de guerra no FG-CORE...');
 
         try {
-            const batch = writeBatch(db);
+            if (!supabase) throw new Error('Supabase não configurado');
             const today = new Date();
             const past25 = new Date(today.getTime() - (25 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
             const past15 = new Date(today.getTime() - (15 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
             const past5 = new Date(today.getTime() - (5 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
             const tomorrow = new Date(today.getTime() + (24 * 60 * 60 * 1000)).toISOString().split('T')[0];
 
-            // 1. LOTES COM RENDIMENTOS DISTINTOS
-            const loteBom = {
-                id_lote: 'L-TOP-01', fornecedor: 'FAZENDA ELITE', data_recebimento: past15,
-                peso_total_romaneio: 500, valor_compra_total: 10000, frete: 200, gastos_extras: 0, custo_real_kg: 20.4, status: 'FECHADO'
-            };
-            const loteRuim = {
-                id_lote: 'L-LOSS-02', fornecedor: 'FORNECEDOR C', data_recebimento: past5,
-                peso_total_romaneio: 500, valor_compra_total: 10000, frete: 200, gastos_extras: 0, custo_real_kg: 20.4, status: 'FECHADO'
-            };
-            const loteAntigo = {
-                id_lote: 'L-OLD-99', fornecedor: 'ESTOQUE ESQUECIDO', data_recebimento: past25,
-                peso_total_romaneio: 1000, valor_compra_total: 20000, frete: 500, gastos_extras: 0, custo_real_kg: 20.5, status: 'FECHADO'
-            };
-            batch.set(doc(db, 'batches', loteBom.id_lote), loteBom);
-            batch.set(doc(db, 'batches', loteRuim.id_lote), loteRuim);
-            batch.set(doc(db, 'batches', loteAntigo.id_lote), loteAntigo);
+            const batches = [
+                { id_lote: 'L-TOP-01', fornecedor: 'FAZENDA ELITE', data_recebimento: past15, peso_total_romaneio: 500, valor_compra_total: 10000, frete: 200, gastos_extras: 0, custo_real_kg: 20.4, status: 'FECHADO' },
+                { id_lote: 'L-LOSS-02', fornecedor: 'FORNECEDOR C', data_recebimento: past5, peso_total_romaneio: 500, valor_compra_total: 10000, frete: 200, gastos_extras: 0, custo_real_kg: 20.4, status: 'FECHADO' },
+                { id_lote: 'L-OLD-99', fornecedor: 'ESTOQUE ESQUECIDO', data_recebimento: past25, peso_total_romaneio: 1000, valor_compra_total: 20000, frete: 500, gastos_extras: 0, custo_real_kg: 20.5, status: 'FECHADO' }
+            ];
+            const stockItems = [
+                { id_completo: 'L-TOP-01-01-INTEIRO', id_lote: 'L-TOP-01', sequencia: 1, tipo: StockType.INTEIRO, peso_entrada: 250, status: 'VENDIDO', data_entrada: past15 },
+                { id_completo: 'L-LOSS-02-01-INTEIRO', id_lote: 'L-LOSS-02', sequencia: 1, tipo: StockType.INTEIRO, peso_entrada: 250, status: 'VENDIDO', data_entrada: past5 },
+                { id_completo: 'L-OLD-99-01-INTEIRO', id_lote: 'L-OLD-99', sequencia: 1, tipo: StockType.INTEIRO, peso_entrada: 245, status: 'DISPONIVEL', data_entrada: past25 },
+                { id_completo: 'L-OLD-99-02-BANDA_A', id_lote: 'L-OLD-99', sequencia: 2, tipo: StockType.BANDA_A, peso_entrada: 122, status: 'DISPONIVEL', data_entrada: past25 }
+            ];
+            const sales = [
+                { id_venda: 'V-FUMO-01', id_cliente: '77', id_completo: 'L-LOSS-02-01-INTEIRO', peso_real_saida: 230, preco_venda_kg: 35, data_venda: past15, data_vencimento: past5, status_pagamento: 'PENDENTE', quebra_kg: 20, lucro_liquido_unitario: 10, forma_pagamento: 'OUTROS', valor_pago: 0 },
+                { id_venda: 'V-ELITE-01', id_cliente: '15', id_completo: 'L-TOP-01-01-INTEIRO', peso_real_saida: 248, preco_venda_kg: 38, data_venda: past5, data_vencimento: tomorrow, status_pagamento: 'PAGO', quebra_kg: 2, lucro_liquido_unitario: 15, forma_pagamento: 'PIX', valor_pago: 248 * 38 }
+            ];
+            const transactions = [
+                { id: 'TR-SIM-01', data: past15, descricao: 'Saldo Inicial Simulação', tipo: 'ENTRADA', categoria: 'OUTROS', valor: 50000 }
+            ];
 
-            // 2. ESTOQUE (Mistura de Vendidos e Disponíveis)
-            const item1 = { id_completo: 'L-TOP-01-01-INTEIRO', id_lote: 'L-TOP-01', sequencia: 1, tipo: StockType.INTEIRO, peso_entrada: 250, status: 'VENDIDO', data_entrada: past15 };
-            const item2 = { id_completo: 'L-LOSS-02-01-INTEIRO', id_lote: 'L-LOSS-02', sequencia: 1, tipo: StockType.INTEIRO, peso_entrada: 250, status: 'VENDIDO', data_entrada: past5 };
-            const item3 = { id_completo: 'L-OLD-99-01-INTEIRO', id_lote: 'L-OLD-99', sequencia: 1, tipo: StockType.INTEIRO, peso_entrada: 245, status: 'DISPONIVEL', data_entrada: past25 }; // OLD STOCK!
-            const item4 = { id_completo: 'L-OLD-99-02-BANDA_A', id_lote: 'L-OLD-99', sequencia: 2, tipo: StockType.BANDA_A, peso_entrada: 122, status: 'DISPONIVEL', data_entrada: past25 }; // OLD STOCK!
-
-            batch.set(doc(db, 'stock_items', item1.id_completo), item1);
-            batch.set(doc(db, 'stock_items', item2.id_completo), item2);
-            batch.set(doc(db, 'stock_items', item3.id_completo), item3);
-            batch.set(doc(db, 'stock_items', item4.id_completo), item4);
-
-            // 3. VENDAS (Uma atrasada para gerar FUMO, uma boa para Ranking)
-            const vendaFumo = {
-                id_venda: 'V-FUMO-01', id_cliente: '77', id_completo: item2.id_completo,
-                peso_real_saida: 230, preco_venda_kg: 35, data_venda: past15, data_vencimento: past5, // ATRASADA 10 DIAS -> YIELD 92%
-                status_pagamento: 'PENDENTE', quebra_kg: 20, lucro_liquido_unitario: 10, forma_pagamento: 'OUTROS', valor_pago: 0
-            };
-            const vendaElite = {
-                id_venda: 'V-ELITE-01', id_cliente: '15', id_completo: item1.id_completo,
-                peso_real_saida: 248, preco_venda_kg: 38, data_venda: past5, data_vencimento: tomorrow, // EM DIA
-                status_pagamento: 'PAGO', quebra_kg: 2, lucro_liquido_unitario: 15, forma_pagamento: 'PIX', valor_pago: 248 * 38
-            };
-            batch.set(doc(db, 'sales', vendaFumo.id_venda), vendaFumo);
-            batch.set(doc(db, 'sales', vendaElite.id_venda), vendaElite);
-
-            // 4. TRANSAÇÃO INICIAL CAIXA
-            batch.set(doc(db, 'transactions', 'TR-SIM-01'), {
-                id: 'TR-SIM-01', data: past15, descricao: 'Saldo Inicial Simulação', tipo: 'ENTRADA', categoria: 'OUTROS', valor: 50000
-            });
-
-            await batch.commit();
+            await supabase.from('batches').upsert(batches);
+            await supabase.from('stock_items').upsert(stockItems);
+            await supabase.from('sales').upsert(sales);
+            await supabase.from('transactions').upsert(transactions);
             refreshData();
             alert('Cenário de Guerra atualizado: IA detectará Risco de Crédito, Quebra Industrial e Estoque Antigo!');
             onBack();
