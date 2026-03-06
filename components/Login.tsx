@@ -17,6 +17,9 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
 
   // Verifica se há credenciais salvas e se biometria está disponível
   useEffect(() => {
+    // Remover senha antiga caso exista de versão anterior (segurança)
+    localStorage.removeItem('fg_saved_password');
+
     // Carregar email salvo (senha nunca é salva por segurança)
     const savedEmail = localStorage.getItem('fg_saved_email');
     if (savedEmail) {
@@ -65,11 +68,10 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     setError(null);
 
     try {
-      // Verificar se há credenciais salvas
+      // Verificar se há email salvo (senha NUNCA é armazenada)
       const savedEmail = localStorage.getItem('fg_saved_email');
-      const savedPassword = localStorage.getItem('fg_saved_password');
 
-      if (!savedEmail || !savedPassword) {
+      if (!savedEmail) {
         setError("Faça login normal primeiro para habilitar biometria");
         setLoading(false);
         return;
@@ -87,10 +89,16 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         publicKey: publicKeyCredentialOptions
       });
 
-      // Se passou pela biometria, fazer login com credenciais salvas
+      // Se passou pela biometria, verificar sessão ativa no Supabase
       if (!supabase) throw new Error("SUPABASE_OFFLINE");
-      const { error: bioError } = await supabase.auth.signInWithPassword({ email: savedEmail, password: savedPassword });
-      if (bioError) throw bioError;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        // Sessão ainda válida — aceitar direto
+        onLoginSuccess();
+        return;
+      }
+      // Sessão expirada — biometria não pode renovar sem senha
+      setError("Sessão expirada. Use login normal para renovar.");
       onLoginSuccess();
 
     } catch (err: any) {
@@ -176,7 +184,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                 className="w-5 h-5 rounded-lg accent-blue-600 cursor-pointer"
               />
               <label htmlFor="rememberMe" className="text-xs font-bold text-slate-600 cursor-pointer select-none">
-                Lembrar minhas credenciais neste dispositivo
+                Lembrar meu e-mail neste dispositivo
               </label>
             </div>
 
