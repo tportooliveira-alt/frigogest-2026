@@ -1,16 +1,13 @@
 // ═══════════════════════════════════════════════════════════════
 // 🔔 ALERT SERVICE — Sistema de Alertas Automáticos de Mercado
 // ═══════════════════════════════════════════════════════════════
-// Monitora dados ao vivo e gera alertas quando:
-// 1. CEPEA rompe marcos de preço (R$ 340, 350, 360, 370, 380)
-// 2. Dólar sobe/desce além de limites
-// 3. Margem de compra fica abaixo do aceitável
-// 4. Tendência V4 muda de direção
-// 5. Estoque parado há muitos dias
+// Persistência: Supabase (tabela market_alerts + system_config)
+// Funciona em todos os dispositivos simultaneamente
 // ═══════════════════════════════════════════════════════════════
 
 import { fetchAllMarketData } from './marketDataService';
 import { calcularPrecificacao } from './pricingEngineService';
+import { supabase } from '../supabaseClient';
 
 export type AlertSeverity = 'CRITICO' | 'ALTO' | 'MEDIO' | 'INFO';
 export type AlertCategory = 'PRECO' | 'MARGEM' | 'DOLAR' | 'TENDENCIA' | 'ESTOQUE' | 'SELIC' | 'OPORTUNIDADE';
@@ -23,104 +20,112 @@ export interface MarketAlert {
     titulo: string;
     mensagem: string;
     emoji: string;
-    acao: string;      // O que fazer
-    valor: number;     // Valor que disparou o alerta
-    limiar: number;    // Limiar configurado
+    acao: string;
+    valor: number;
+    limiar: number;
     lida: boolean;
 }
 
 export interface AlertConfig {
-    // Marcos de preço CEPEA (R$/@)
     cepeaMarcos: number[];
-    // Limites de dólar
     dolarMax: number;
     dolarMin: number;
-    // Margem mínima aceitável (%)
     margemMinima: number;
-    // Variação diária que merece alerta (%)
     variacaoDiariaAlerta: number;
-    // Estoque parado (dias)
     estoqueParadoDias: number;
-    // Ativar push notifications
     pushEnabled: boolean;
-    // Ativar alertas sonoros
     somEnabled: boolean;
 }
 
-// Configuração padrão
 const DEFAULT_CONFIG: AlertConfig = {
     cepeaMarcos: [330, 340, 350, 355, 360, 370, 380],
     dolarMax: 6.00,
     dolarMin: 5.30,
-    dolarAlertaDiario: 0.05,
     margemMinima: 18,
     variacaoDiariaAlerta: 1.5,
     estoqueParadoDias: 7,
     pushEnabled: true,
-    somEnabled: true
-} as any;
+    somEnabled: true,
+};
 
-// Storage keys
-const ALERTS_STORAGE_KEY = 'frigogest_market_alerts';
-const CONFIG_STORAGE_KEY = 'frigogest_alert_config';
-const LAST_CHECK_KEY = 'frigogest_last_alert_check';
+// ═══ PERSISTÊNCIA — Supabase ═══
 
-// ═══ PERSISTÊNCIA ═══
-function getStoredAlerts(): MarketAlert[] {
+async function getStoredAlerts(): Promise<MarketAlert[]> {
+    if (!supabase) return [];
     try {
-        const stored = localStorage.getItem(ALERTS_STORAGE_KEY);
-        if (stored) {
-            const alerts = JSON.parse(stored);
-            return alerts.map((a: any) => ({ ...a, timestamp: new Date(a.timestamp) }));
-        }
-    } catch { }
-    return [];
+        const { data, error } = await supabase
+            .from('market_alerts')
+            .select('*')
+            .order('timestamp', { ascending: false })
+            .limit(50);
+        if (error || !data) return [];
+        return data.map((a: any) => ({ ...a, timestamp: new Date(a.timestamp) }));
+    } catch { return []; }
 }
 
-function storeAlerts(alerts: MarketAlert[]): void {
+async function storeAlert(alert: MarketAlert): Promise<void> {
+    if (!supabase) return;
     try {
-        // Manter apenas os últimos 50 alertas
-        const trimmed = alerts.slice(-50);
-        localStorage.setItem(ALERTS_STORAGE_KEY, JSON.stringify(trimmed));
+        await supabase.from('market_alerts').upsert({
+            id: alert.id,
+            timestamp: alert.timestamp.toISOString(),
+            severity: alert.severity,
+            category: alert.category,
+            titulo: alert.titulo,
+            mensagem: alert.mensagem,
+            emoji: alert.emoji,
+            acao: alert.acao,
+            valor: alert.valor,
+            limiar: alert.limiar,
+            lida: alert.lida,
+        });
     } catch { }
 }
 
-export function getAlertConfig(): AlertConfig {
+export async function getAlertConfig(): Promise<AlertConfig> {
+    if (!supabase) return DEFAULT_CONFIG;
     try {
-        const stored = localStorage.getItem(CONFIG_STORAGE_KEY);
-        if (stored) return { ...DEFAULT_CONFIG, ...JSON.parse(stored) };
+        const { data } = await supabase
+            .from('system_config')
+            .select('value')
+            .eq('key', 'alert_config')
+            .single();
+        if (data?.value) return { ...DEFAULT_CONFIG, ...data.value };
     } catch { }
     return DEFAULT_CONFIG;
 }
 
-export function saveAlertConfig(config: Partial<AlertConfig>): void {
+export async function saveAlertConfig(config: Partial<AlertConfig>): Promise<void> {
+    if (!supabase) return;
     try {
-        const current = getAlertConfig();
-        localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify({ ...current, ...config }));
+        const current = await getAlertConfig();
+        await supabase.from('system_config').upsert({
+            key: 'alert_config',
+            value: { ...current, ...config },
+            updated_at: new Date().toISOString(),
+        });
     } catch { }
 }
 
 // ═══ GERAÇÃO DE ALERTAS ═══
+
 export async function checkMarketAlerts(): Promise<MarketAlert[]> {
-    const config = getAlertConfig();
-    const existingAlerts = getStoredAlerts();
+    const config = await getAlertConfig();
+    const existingAlerts = await getStoredAlerts();
     const newAlerts: MarketAlert[] = [];
 
     try {
-        // Buscar dados ao vivo
         const marketData = await fetchAllMarketData();
         const pricing = await calcularPrecificacao();
 
         const cepeaValor = marketData.cepeaBoi.valor;
         const cepeaVar = marketData.cepeaBoi.variacao;
         const dolarValor = marketData.dolar.valor;
-        const selicValor = marketData.selic.valor;
 
-        // ── 1. ALERTAS DE PREÇO CEPEA ──
+        // ── 1. MARCOS DE PREÇO CEPEA ──
         for (const marco of config.cepeaMarcos) {
             const alertId = `CEPEA_MARCO_${marco}`;
             const jaAlertou = existingAlerts.some(a => a.id === alertId && isToday(a.timestamp));
-
             if (!jaAlertou && cepeaValor >= marco && cepeaValor < marco + 5) {
                 newAlerts.push({
                     id: alertId,
@@ -128,23 +133,22 @@ export async function checkMarketAlerts(): Promise<MarketAlert[]> {
                     severity: marco >= 370 ? 'CRITICO' : marco >= 350 ? 'ALTO' : 'MEDIO',
                     category: 'PRECO',
                     titulo: `🐄 CEPEA rompeu R$ ${marco}/@!`,
-                    mensagem: `Indicador CEPEA/ESALQ atingiu R$ ${cepeaValor.toFixed(2)}/@ — marco de R$ ${marco} rompido!`,
+                    mensagem: `CEPEA/ESALQ atingiu R$ ${cepeaValor.toFixed(2)}/@ — marco de R$ ${marco} rompido!`,
                     emoji: '📈',
                     acao: marco >= 360
                         ? 'URGENTE: Trave preços de compra AGORA. Negocie lotes para os próximos 15 dias.'
                         : 'Revise suas margens. Considere repassar parcialmente ao cliente.',
                     valor: cepeaValor,
                     limiar: marco,
-                    lida: false
+                    lida: false,
                 });
             }
         }
 
-        // ── 2. ALERTA DE VARIAÇÃO DIÁRIA ──
+        // ── 2. VARIAÇÃO DIÁRIA ──
         if (Math.abs(cepeaVar) >= config.variacaoDiariaAlerta) {
             const alertId = `VAR_DIARIA_${new Date().toISOString().slice(0, 10)}`;
             const jaAlertou = existingAlerts.some(a => a.id === alertId);
-
             if (!jaAlertou) {
                 newAlerts.push({
                     id: alertId,
@@ -154,19 +158,19 @@ export async function checkMarketAlerts(): Promise<MarketAlert[]> {
                     titulo: cepeaVar > 0
                         ? `📈 Alta de ${cepeaVar.toFixed(2)}% no CEPEA hoje!`
                         : `📉 Queda de ${Math.abs(cepeaVar).toFixed(2)}% no CEPEA hoje!`,
-                    mensagem: `Variação de ${cepeaVar >= 0 ? '+' : ''}${cepeaVar.toFixed(2)}% em um único dia. CEPEA agora R$ ${cepeaValor.toFixed(2)}/@.`,
+                    mensagem: `Variação de ${cepeaVar >= 0 ? '+' : ''}${cepeaVar.toFixed(2)}% em um dia. CEPEA agora R$ ${cepeaValor.toFixed(2)}/@.`,
                     emoji: cepeaVar > 0 ? '🔥' : '❄️',
                     acao: cepeaVar > 0
                         ? 'Mercado aquecendo. Roberto deve travar preços com fornecedores.'
                         : 'Possível oportunidade de compra. Monitore nos próximos 2-3 dias.',
                     valor: cepeaVar,
                     limiar: config.variacaoDiariaAlerta,
-                    lida: false
+                    lida: false,
                 });
             }
         }
 
-        // ── 3. ALERTAS DE DÓLAR ──
+        // ── 3. DÓLAR ──
         if (dolarValor >= config.dolarMax) {
             const alertId = `DOLAR_MAX_${new Date().toISOString().slice(0, 10)}`;
             const jaAlertou = existingAlerts.some(a => a.id === alertId);
@@ -177,17 +181,17 @@ export async function checkMarketAlerts(): Promise<MarketAlert[]> {
                     severity: 'ALTO',
                     category: 'DOLAR',
                     titulo: `💵 Dólar acima de R$ ${config.dolarMax}!`,
-                    mensagem: `USD/BRL a R$ ${dolarValor.toFixed(2)} — impacto na Equação V4 (peso 20×). Preço projetado da arroba SOBE.`,
+                    mensagem: `USD/BRL a R$ ${dolarValor.toFixed(2)} — impacto no custo de insumos e arroba.`,
                     emoji: '💵',
-                    acao: 'Revisar preços de venda. Dólar alto eleva custo de insumos (milho, combustível) e pressiona arroba.',
+                    acao: 'Revisar preços de venda. Dólar alto pressiona custo do boi.',
                     valor: dolarValor,
                     limiar: config.dolarMax,
-                    lida: false
+                    lida: false,
                 });
             }
         }
 
-        // ── 4. ALERTA DE MARGEM ──
+        // ── 4. MARGEM BAIXA ──
         if (pricing.margemBruta < config.margemMinima) {
             const alertId = `MARGEM_BAIXA_${new Date().toISOString().slice(0, 10)}`;
             const jaAlertou = existingAlerts.some(a => a.id === alertId);
@@ -198,19 +202,19 @@ export async function checkMarketAlerts(): Promise<MarketAlert[]> {
                     severity: pricing.margemBruta < 10 ? 'CRITICO' : 'ALTO',
                     category: 'MARGEM',
                     titulo: `⚠️ Margem abaixo de ${config.margemMinima}%!`,
-                    mensagem: `Margem bruta atual: ${pricing.margemBruta.toFixed(1)}%. Preço máximo por @: R$ ${pricing.precoMaximoArroba.toFixed(2)}. Semáforo: ${pricing.sinal}.`,
+                    mensagem: `Margem bruta atual: ${pricing.margemBruta.toFixed(1)}%. Semáforo: ${pricing.sinal}.`,
                     emoji: '⚠️',
                     acao: pricing.margemBruta < 10
                         ? 'PARE de comprar a este preço. Espere correção ou aumente preço de venda.'
                         : 'Negocie melhor com fornecedores. Busque spread regional maior.',
                     valor: pricing.margemBruta,
                     limiar: config.margemMinima,
-                    lida: false
+                    lida: false,
                 });
             }
         }
 
-        // ── 5. ALERTA DE TENDÊNCIA ──
+        // ── 5. TENDÊNCIA V4 ──
         if (pricing.tendencia === 'ALTA' && cepeaValor > 350) {
             const alertId = `TEND_ALTA_${new Date().toISOString().slice(0, 10)}`;
             const jaAlertou = existingAlerts.some(a => a.id === alertId);
@@ -221,12 +225,12 @@ export async function checkMarketAlerts(): Promise<MarketAlert[]> {
                     severity: 'INFO',
                     category: 'TENDENCIA',
                     titulo: '📊 Tendência V4: ALTA confirmada',
-                    mensagem: `V4 projeta alta para o próximo mês: R$ ${pricing.precoV4ProximoMes.toFixed(2)}/@. Considere antecipar compras.`,
+                    mensagem: `V4 projeta alta: R$ ${pricing.precoV4ProximoMes.toFixed(2)}/@. Considere antecipar compras.`,
                     emoji: '📊',
                     acao: 'Travar lotes agora pode economizar R$ 5-15/@ no próximo mês.',
                     valor: pricing.precoV4ProximoMes,
                     limiar: pricing.precoV4Projetado,
-                    lida: false
+                    lida: false,
                 });
             }
         }
@@ -242,12 +246,12 @@ export async function checkMarketAlerts(): Promise<MarketAlert[]> {
                     severity: 'INFO',
                     category: 'OPORTUNIDADE',
                     titulo: '🟢 Janela de compra aberta!',
-                    mensagem: `Preço regional R$ ${pricing.precoArrobaRegional.toFixed(0)}/@ está R$ ${pricing.economiaVsMax.toFixed(0)} abaixo do máximo. Margem de ${pricing.margemBruta.toFixed(1)}%.`,
+                    mensagem: `R$ ${pricing.precoArrobaRegional.toFixed(0)}/@ está R$ ${pricing.economiaVsMax.toFixed(0)} abaixo do máximo. Margem de ${pricing.margemBruta.toFixed(1)}%.`,
                     emoji: '💰',
-                    acao: `COMPRAR. Lucro estimado de R$ ${pricing.lucroEstimadoPorCabeca.toFixed(0)}/cabeça. Negocie volume!`,
+                    acao: `COMPRAR. Lucro estimado R$ ${pricing.lucroEstimadoPorCabeca.toFixed(0)}/cabeça.`,
                     valor: pricing.economiaVsMax,
                     limiar: 10,
-                    lida: false
+                    lida: false,
                 });
             }
         }
@@ -256,36 +260,25 @@ export async function checkMarketAlerts(): Promise<MarketAlert[]> {
         console.error('Erro ao verificar alertas:', err);
     }
 
-    // Salvar novos alertas
-    if (newAlerts.length > 0) {
-        const allAlerts = [...existingAlerts, ...newAlerts];
-        storeAlerts(allAlerts);
+    // Salvar novos alertas no Supabase
+    for (const alert of newAlerts) {
+        await storeAlert(alert);
+    }
 
-        // Push notification (se habilitado e disponível)
-        const config2 = getAlertConfig();
-        if (config2.pushEnabled && 'Notification' in window && Notification.permission === 'granted') {
-            for (const alert of newAlerts) {
-                if (alert.severity === 'CRITICO' || alert.severity === 'ALTO') {
-                    try {
-                        new Notification(`FrigoGest: ${alert.titulo}`, {
-                            body: alert.mensagem,
-                            icon: '/icons/icon-192x192.png',
-                            tag: alert.id,
-                            requireInteraction: alert.severity === 'CRITICO'
-                        });
-                    } catch { }
-                }
+    // Push notification
+    const cfg = await getAlertConfig();
+    if (cfg.pushEnabled && newAlerts.length > 0 && 'Notification' in window && Notification.permission === 'granted') {
+        for (const alert of newAlerts) {
+            if (alert.severity === 'CRITICO' || alert.severity === 'ALTO') {
+                try {
+                    new Notification(`FrigoGest: ${alert.titulo}`, {
+                        body: alert.mensagem,
+                        icon: '/icons/icon-192x192.png',
+                        tag: alert.id,
+                        requireInteraction: alert.severity === 'CRITICO',
+                    });
+                } catch { }
             }
-        }
-
-        // Som de alerta
-        if (config2.somEnabled && newAlerts.some(a => a.severity === 'CRITICO')) {
-            try {
-                const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEA' +
-                    'ABxXAABQnwAAAgAQAGRhdGFeBgAA');
-                audio.volume = 0.3;
-                audio.play().catch(() => { });
-            } catch { }
         }
     }
 
@@ -293,6 +286,7 @@ export async function checkMarketAlerts(): Promise<MarketAlert[]> {
 }
 
 // ═══ UTILIDADES ═══
+
 function isToday(date: Date): boolean {
     const today = new Date();
     return date.getDate() === today.getDate() &&
@@ -300,22 +294,33 @@ function isToday(date: Date): boolean {
         date.getFullYear() === today.getFullYear();
 }
 
-export function getAllAlerts(): MarketAlert[] {
-    return getStoredAlerts().sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+export async function getAllAlerts(): Promise<MarketAlert[]> {
+    return getStoredAlerts();
 }
 
-export function markAlertAsRead(alertId: string): void {
-    const alerts = getStoredAlerts();
-    const updated = alerts.map(a => a.id === alertId ? { ...a, lida: true } : a);
-    storeAlerts(updated);
+export async function markAlertAsRead(alertId: string): Promise<void> {
+    if (!supabase) return;
+    try {
+        await supabase.from('market_alerts').update({ lida: true }).eq('id', alertId);
+    } catch { }
 }
 
-export function clearAllAlerts(): void {
-    localStorage.removeItem(ALERTS_STORAGE_KEY);
+export async function clearAllAlerts(): Promise<void> {
+    if (!supabase) return;
+    try {
+        await supabase.from('market_alerts').delete().neq('id', '');
+    } catch { }
 }
 
-export function getUnreadCount(): number {
-    return getStoredAlerts().filter(a => !a.lida).length;
+export async function getUnreadCount(): Promise<number> {
+    if (!supabase) return 0;
+    try {
+        const { count } = await supabase
+            .from('market_alerts')
+            .select('*', { count: 'exact', head: true })
+            .eq('lida', false);
+        return count || 0;
+    } catch { return 0; }
 }
 
 export async function requestPushPermission(): Promise<boolean> {
