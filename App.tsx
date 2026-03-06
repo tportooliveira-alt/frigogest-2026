@@ -607,86 +607,90 @@ const App: React.FC = () => {
       }
       console.log(`✅ ${stockCount} itens de estoque atualizados`);
 
-      // 3. Estornar payables do lote
-      const { data: allPayables } = await supabase.from('payables').select('*');
+      // 3. Estornar payables do lote — filtrado no banco (por id_lote OU id contendo loteId)
+      const { data: lotePayables } = await supabase.from('payables').select('*').eq('id_lote', id);
+      const { data: idPayables } = await supabase.from('payables').select('*').like('id', `%${id}%`);
+      const { data: descPayables } = await supabase.from('payables').select('*').like('descricao', `%${id}%`);
+      const seenPayIds = new Set<string>();
+      const allPayables = [...(lotePayables || []), ...(idPayables || []), ...(descPayables || [])]
+        .filter(p => { if (seenPayIds.has(p.id)) return false; seenPayIds.add(p.id); return true; });
       let payablesCount = 0;
 
-      for (const payable of allPayables || []) {
-        const matchByIdLote = payable.id_lote === id;
-        const matchById = payable.id && payable.id.includes(id);
-        const matchByDescricao = payable.descricao && payable.descricao.includes(id);
+      for (const payable of allPayables) {
+        const isPago = payable.status === 'PAGO';
+        const isParcial = payable.status === 'PARCIAL';
+        const valorPago = payable.valor_pago || 0;
 
-        if (matchByIdLote || matchById || matchByDescricao) {
-          const isPago = payable.status === 'PAGO';
-          const isParcial = payable.status === 'PARCIAL';
-          const valorPago = payable.valor_pago || 0;
+        await supabase.from('payables').update({ status: 'CANCELADO' }).eq('id', payable.id);
 
-          await supabase.from('payables').update({ status: 'CANCELADO' }).eq('id', payable.id);
-
-          if ((isPago || isParcial) && valorPago > 0) {
-            const txId = `TR-ESTORNO-PAY-${payable.id}-${Date.now()}`;
-            await supabase.from('transactions').upsert(sanitize({
-              id: txId,
-              data: new Date().toISOString().split('T')[0],
-              descricao: `ESTORNO LOTE: ${payable.descricao}`,
-              tipo: 'ENTRADA',
-              categoria: 'ESTORNO',
-              valor: isPago ? payable.valor : valorPago,
-              metodo_pagamento: 'OUTROS',
-              referencia_id: id
-            }));
-          }
-          payablesCount++;
-        }
-      }
-      console.log(`✅ ${payablesCount} contas a pagar atualizadas`);
-
-      // 4. Estornar vendas do lote
-      const { data: allSales } = await supabase.from('sales').select('*');
-      let salesCount = 0;
-      for (const sale of allSales || []) {
-        if (sale.id_completo && sale.id_completo.includes(id) && sale.status_pagamento !== 'ESTORNADO') {
-          const valorPago = sale.valor_pago || 0;
-
-          await supabase.from('sales').update({ status_pagamento: 'ESTORNADO' }).eq('id_venda', sale.id_venda);
-
-          if (valorPago > 0) {
-            const txVendaId = `TR-ESTORNO-VENDA-${sale.id_venda}-${Date.now()}`;
-            await supabase.from('transactions').upsert(sanitize({
-              id: txVendaId,
-              data: new Date().toISOString().split('T')[0],
-              descricao: `ESTORNO LOTE: Venda ${sale.nome_cliente || 'Cliente'} - ${sale.id_completo}`,
-              tipo: 'SAIDA',
-              categoria: 'ESTORNO',
-              valor: valorPago,
-              metodo_pagamento: 'OUTROS',
-              referencia_id: id
-            }));
-          }
-          salesCount++;
-        }
-      }
-      console.log(`✅ ${salesCount} vendas atualizadas`);
-
-      // 5. Criar transação de estorno para transações de compra já lançadas
-      const { data: allTransactions } = await supabase.from('transactions').select('*');
-      let txCount = 0;
-      for (const tx of allTransactions || []) {
-        if ((tx.referencia_id === id || (tx.descricao && tx.descricao.includes(id)))
-          && tx.categoria === 'COMPRA_GADO' && !tx.descricao?.includes('ESTORNO')) {
-          const estornoTxId = `TR-ESTORNO-${tx.id}-${Date.now()}`;
+        if ((isPago || isParcial) && valorPago > 0) {
+          const txId = `TR-ESTORNO-PAY-${payable.id}-${Date.now()}`;
           await supabase.from('transactions').upsert(sanitize({
-            id: estornoTxId,
+            id: txId,
             data: new Date().toISOString().split('T')[0],
-            descricao: `ESTORNO LOTE: Devolução de ${tx.descricao}`,
+            descricao: `ESTORNO LOTE: ${payable.descricao}`,
             tipo: 'ENTRADA',
             categoria: 'ESTORNO',
-            valor: tx.valor,
+            valor: isPago ? payable.valor : valorPago,
             metodo_pagamento: 'OUTROS',
             referencia_id: id
           }));
-          txCount++;
         }
+        payablesCount++;
+      }
+      console.log(`✅ ${payablesCount} contas a pagar atualizadas`);
+
+      // 4. Estornar vendas do lote — filtrado no banco por id_completo contendo loteId
+      const { data: loteSales } = await supabase.from('sales').select('*')
+        .like('id_completo', `%${id}%`).neq('status_pagamento', 'ESTORNADO');
+      let salesCount = 0;
+      for (const sale of loteSales || []) {
+        const valorPago = sale.valor_pago || 0;
+
+        await supabase.from('sales').update({ status_pagamento: 'ESTORNADO' }).eq('id_venda', sale.id_venda);
+
+        if (valorPago > 0) {
+          const txVendaId = `TR-ESTORNO-VENDA-${sale.id_venda}-${Date.now()}`;
+          await supabase.from('transactions').upsert(sanitize({
+            id: txVendaId,
+            data: new Date().toISOString().split('T')[0],
+            descricao: `ESTORNO LOTE: Venda ${sale.nome_cliente || 'Cliente'} - ${sale.id_completo}`,
+            tipo: 'SAIDA',
+            categoria: 'ESTORNO',
+            valor: valorPago,
+            metodo_pagamento: 'OUTROS',
+            referencia_id: id
+          }));
+        }
+        salesCount++;
+      }
+      console.log(`✅ ${salesCount} vendas atualizadas`);
+
+      // 5. Estornar transações de compra do lote — filtrado no banco
+      const { data: loteTx } = await supabase.from('transactions').select('*')
+        .eq('referencia_id', id).eq('categoria', 'COMPRA_GADO');
+      const { data: descTx } = await supabase.from('transactions').select('*')
+        .like('descricao', `%${id}%`).eq('categoria', 'COMPRA_GADO');
+      const seenTxIds = new Set<string>();
+      const allComprasTx = [...(loteTx || []), ...(descTx || [])]
+        .filter(t => {
+          if (seenTxIds.has(t.id) || t.descricao?.includes('ESTORNO')) return false;
+          seenTxIds.add(t.id); return true;
+        });
+      let txCount = 0;
+      for (const tx of allComprasTx) {
+        const estornoTxId = `TR-ESTORNO-${tx.id}-${Date.now()}`;
+        await supabase.from('transactions').upsert(sanitize({
+          id: estornoTxId,
+          data: new Date().toISOString().split('T')[0],
+          descricao: `ESTORNO LOTE: Devolução de ${tx.descricao}`,
+          tipo: 'ENTRADA',
+          categoria: 'ESTORNO',
+          valor: tx.valor,
+          metodo_pagamento: 'OUTROS',
+          referencia_id: id
+        }));
+        txCount++;
       }
       console.log(`✅ ${txCount} transações de compra estornadas`);
 
@@ -1044,61 +1048,6 @@ const App: React.FC = () => {
     }
   };
 
-  const receiveClientPayment = async (clientId: string, amount: number, method: PaymentMethod, date: string) => {
-    if (!supabase) return;
-
-    const pendingSales = data.sales
-      .filter(s => s.id_cliente === clientId && s.status_pagamento === 'PENDENTE')
-      .sort((a, b) => new Date(a.data_venda).getTime() - new Date(b.data_venda).getTime());
-
-    let remaining = amount;
-    let count = 0;
-    const clientName = data.clients.find(c => c.id_ferro === clientId)?.nome_social || 'Cliente';
-
-    try {
-      for (const sale of pendingSales) {
-        if (remaining <= 0.01) break;
-        const total = sale.peso_real_saida * sale.preco_venda_kg;
-        const pago = (sale as any).valor_pago || 0;
-        const devendo = total - pago;
-        const pagarNesta = Math.min(devendo, remaining);
-
-        if (pagarNesta > 0) {
-          const novoValorPago = pago + pagarNesta;
-          const status = novoValorPago >= total ? 'PAGO' : 'PENDENTE';
-
-          await supabase.from('sales').update({
-            valor_pago: novoValorPago,
-            status_pagamento: status,
-            forma_pagamento: method
-          }).eq('id_venda', sale.id_venda);
-
-          const txId = `TR-REC-CLIENT-${sale.id_venda}-${Date.now()}`;
-          await supabase.from('transactions').upsert({
-            id: txId,
-            data: date,
-            descricao: `Recebimento ${clientName} - ${sale.id_completo}`,
-            tipo: 'ENTRADA',
-            categoria: 'VENDA',
-            valor: pagarNesta,
-            metodo_pagamento: method,
-            referencia_id: sale.id_venda
-          });
-
-          remaining -= pagarNesta;
-          count++;
-        }
-      }
-
-      if (count > 0) {
-        if (session?.user) logAction(session.user, 'CREATE', 'TRANSACTION', `Pagamento recebido de cliente ${clientName}: R$${amount} (${method})`);
-        fetchData();
-      }
-    } catch (e: any) {
-      console.error('❌ Erro no pagamento de cliente:', e);
-      alert('Erro crítico ao salvar o pagamento: ' + e.message);
-    }
-  };
 
   const addScheduledOrder = async (order: any) => {
     if (!supabase) return;
