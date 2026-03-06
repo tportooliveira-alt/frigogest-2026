@@ -17,6 +17,8 @@ import { AgentMemory } from '../types';
 import { parseActionsFromResponse, DetectedAction, generateWhatsAppLink } from '../services/actionParserService';
 import { calculatePredictions, formatPredictionsForPrompt, PredictiveSnapshot } from '../utils/predictions';
 import { WHATSAPP_TEMPLATES, generateCatalogFromStock, suggestTemplateForClient, generateWhatsAppLinkFromTemplate, TemplateType } from '../services/whatsappCommerceService';
+import { generateContent, detectContentRequest, GeneratedContent, ContentStudioRequest } from '../services/contentStudioService';
+import ContentStudioModal from './ContentStudioModal';
 import { generateDRE, formatDREText, calculateESGScore, COMPLIANCE_CHECKLIST, DREReport } from '../services/complianceService';
 import { calcularPrecificacao, formatPrecificacaoForPrompt, PrecificacaoItem } from '../services/pricingEngine';
 import { calculateClientScores, formatRFMForPrompt, getClientTierSummary, ClientScore } from '../services/clientScoringService';
@@ -194,6 +196,10 @@ const AIAgents: React.FC<AIAgentsProps> = ({
     const [agentResponse, setAgentResponse] = useState<string | null>(null);
     const [detectedActions, setDetectedActions] = useState<DetectedAction[]>([]);
     const [actionConfirm, setActionConfirm] = useState<DetectedAction | null>(null);
+    // ─── Content Studio (Isabela) ───
+    const [studioContent, setStudioContent] = useState<GeneratedContent | null>(null);
+    const [studioLoading, setStudioLoading] = useState(false);
+    const [studioRequest, setStudioRequest] = useState<ContentStudioRequest | null>(null);
     const [actionLog, setActionLog] = useState<{ action: string; time: Date }[]>([]);
     const [agentLoading, setAgentLoading] = useState(false);
     const [agentError, setAgentError] = useState<string | null>(null);
@@ -1584,6 +1590,20 @@ Organize em: 🤝 SAÚDE DO CLIENTE(NPS), 🥩 QUALIDADE PERCEBIDA, 🚚 FEEDBAC
                 setDetectedActions(detected);
             } catch (e) { setDetectedActions([]); }
 
+            // 🎨 CONTENT STUDIO — Detectar se Isabela quer gerar conteúdo visual
+            if (agentType === 'MARKETING') {
+                try {
+                    const contentReq = detectContentRequest(text);
+                    if (contentReq) {
+                        setStudioRequest(contentReq);
+                    } else {
+                        setStudioRequest(null);
+                    }
+                } catch (e) { setStudioRequest(null); }
+            } else {
+                setStudioRequest(null);
+            }
+
             setTimeout(() => agentResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
 
             // 🧠 SALVAR MEMÓRIA — Extrair insights e persistir
@@ -2137,6 +2157,7 @@ Regras:
     };
 
     return (
+        <>
         <div className="p-4 md:p-10 min-h-screen bg-[#f8fafc] animate-reveal pb-20 font-sans">
             {/* HEADER */}
             <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
@@ -3009,6 +3030,49 @@ Regras:
                                         </div>
                                     )}
 
+                                    {/* 🎨 CONTENT STUDIO — botão aparece quando Isabela detecta oportunidade de conteúdo */}
+                                    {studioRequest && consultingAgent === 'MARKETING' && (
+                                        <div className="mt-4 p-5 bg-gradient-to-br from-fuchsia-900/20 to-purple-900/20 rounded-2xl border border-fuchsia-500/20">
+                                            <div className="flex items-center gap-2 mb-3">
+                                                <span className="text-fuchsia-400">✨</span>
+                                                <span className="text-[10px] font-black text-fuchsia-400 uppercase tracking-widest">
+                                                    Isabela identificou oportunidade de conteúdo visual
+                                                </span>
+                                            </div>
+                                            <p className="text-[11px] text-slate-400 mb-4">
+                                                Gerar imagem + copy + hashtags prontos com os dados reais do seu estoque/clientes.
+                                                <span className="text-amber-400"> Nada é enviado sem sua aprovação.</span>
+                                            </p>
+                                            <button
+                                                onClick={async () => {
+                                                    setStudioLoading(true);
+                                                    try {
+                                                        const content = await generateContent(studioRequest);
+                                                        setStudioContent(content);
+                                                    } catch (e) {
+                                                        console.error('[ContentStudio] Erro:', e);
+                                                    } finally {
+                                                        setStudioLoading(false);
+                                                    }
+                                                }}
+                                                disabled={studioLoading}
+                                                className="w-full px-5 py-4 rounded-xl bg-gradient-to-r from-fuchsia-500 to-purple-600 text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:from-fuchsia-600 hover:to-purple-700 transition-all shadow-lg shadow-purple-900/30 disabled:opacity-60"
+                                            >
+                                                {studioLoading ? (
+                                                    <>
+                                                        <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                                                        </svg>
+                                                        Gerando imagem + copy...
+                                                    </>
+                                                ) : (
+                                                    <>✨ Criar Conteúdo Visual (Imagem + Copy + Hashtags)</>
+                                                )}
+                                            </button>
+                                        </div>
+                                    )}
+
                                     <div className="mt-8 flex flex-col sm:flex-row gap-3">
                                         <button
                                             onClick={() => handleWhatsAppAction(agentResponse)}
@@ -3095,6 +3159,28 @@ Regras:
                 )}
             </div>
         </div>
+
+        {/* 🎨 CONTENT STUDIO MODAL — aprovação obrigatória antes de qualquer envio */}
+        {studioContent && (
+            <ContentStudioModal
+                content={studioContent}
+                onClose={() => setStudioContent(null)}
+                onRegenerate={async () => {
+                    if (!studioRequest) return;
+                    setStudioLoading(true);
+                    try {
+                        const fresh = await generateContent(studioRequest);
+                        setStudioContent(fresh);
+                    } catch (e) {
+                        console.error('[ContentStudio] Regenerar erro:', e);
+                    } finally {
+                        setStudioLoading(false);
+                    }
+                }}
+                isRegenerating={studioLoading}
+            />
+        )}
+        </>
     );
 };
 
