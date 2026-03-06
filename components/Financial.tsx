@@ -131,27 +131,30 @@ const Financial: React.FC<FinancialProps> = ({
   const [payableAmountStr, setPayableAmountStr] = useState('');
 
   const getSaleBalance = (sale: Sale) => {
-    const valorTotal = (sale.peso_real_saida || 0) * (sale.preco_venda_kg || 0);
-    const valorPago = (sale as any).valor_pago || 0;
+    const valorTotal = (Number(sale.peso_real_saida) || 0) * (Number(sale.preco_venda_kg) || 0);
+    const valorPago = Number((sale as any).valor_pago) || 0;
     return { valorTotal, valorPago, saldoDevedor: Math.max(0, valorTotal - valorPago) };
   };
 
   const getBatchBalance = (batch: Batch) => {
-    const totalCost = (batch.valor_compra_total || 0) + (batch.frete || 0) + (batch.gastos_extras || 0);
-    const debt = totalCost - ((batch as any).valor_pago || 0);
-    return { totalCost, paid: (batch as any).valor_pago || 0, debt: Math.max(0, debt) };
+    const totalCost = (Number(batch.valor_compra_total) || 0) + (Number(batch.frete) || 0) + (Number(batch.gastos_extras) || 0);
+    const paid = Number((batch as any).valor_pago) || 0;
+    const debt = totalCost - paid;
+    return { totalCost, paid, debt: Math.max(0, debt) };
   };
 
   const getSaleDetails = (sale: Sale) => {
     const item = stock.find(s => s.id_completo === sale.id_completo);
     // CORREÇÃO AUDITORIA #3: Para carcaças inteiras (id_completo = "LOTE-SEQ-INTEIRO"),
     // não existe stock item com esse ID. Extrair id_lote do id_completo como fallback.
-    const loteId = item?.id_lote || sale.id_completo.split('-').slice(0, 3).join('-');
+    const loteId = item?.id_lote || (sale.id_completo ? sale.id_completo.split('-').slice(0, 3).join('-') : '');
     const batch = item ? batches.find(b => b.id_lote === item.id_lote) : batches.find(b => b.id_lote === loteId);
-    const revenue = (sale.peso_real_saida || 0) * (sale.preco_venda_kg || 0);
+
+    const revenue = (Number(sale.peso_real_saida) || 0) * (Number(sale.preco_venda_kg) || 0);
     const costKg = batch ? (Number(batch.custo_real_kg) || 0) : 0;
-    const totalCost = (sale.peso_real_saida || 0) * costKg;
-    const operationalCost = (sale.custo_extras_total || 0);
+    const totalCost = (Number(sale.peso_real_saida) || 0) * costKg;
+    const operationalCost = Number(sale.custo_extras_total) || 0;
+
     return { revenue, cgs: totalCost, operationalCost, netProfit: revenue - totalCost - operationalCost };
   };
 

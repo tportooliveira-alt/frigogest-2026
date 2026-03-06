@@ -89,10 +89,7 @@ const App: React.FC = () => {
     setDbStatus('checking');
 
     try {
-      const [
-        clientsRes, batchesRes, stockRes, salesRes,
-        transactionsRes, ordersRes, reportsRes, suppliersRes, payablesRes
-      ] = await Promise.all([
+      const results = await Promise.allSettled([
         supabase.from('clients').select('*'),
         supabase.from('batches').select('*'),
         supabase.from('stock_items').select('*'),
@@ -104,15 +101,20 @@ const App: React.FC = () => {
         supabase.from('payables').select('*'),
       ]);
 
-      const clients = (clientsRes.data || []) as Client[];
-      const batches = (batchesRes.data || []) as Batch[];
-      const stock = (stockRes.data || []) as StockItem[];
-      const sales = (salesRes.data || []) as Sale[];
-      const transactions = (transactionsRes.data || []) as Transaction[];
-      const scheduledOrders = (ordersRes.data || []) as any[];
-      const reports = (reportsRes.data || []) as DailyReport[];
-      const suppliers = (suppliersRes.data || []) as Supplier[];
-      const payables = (payablesRes.data || []).map((d: any) => ({
+      const getResData = (res: PromiseSettledResult<any>) =>
+        res.status === 'fulfilled' ? (res.value.data || []) : [];
+
+      const clients = getResData(results[0]) as Client[];
+      const batches = getResData(results[1]) as Batch[];
+      const stock = getResData(results[2]) as StockItem[];
+      const sales = getResData(results[3]) as Sale[];
+      const transactions = getResData(results[4]) as Transaction[];
+      const scheduledOrders = getResData(results[5]) as any[];
+      const reports = getResData(results[6]) as DailyReport[];
+      const suppliers = getResData(results[7]) as Supplier[];
+
+      const payablesData = getResData(results[8]);
+      const payables = payablesData.map((d: any) => ({
         ...d,
         valor: d.valor !== undefined ? Number(d.valor) : Number(d.valor_total || 0)
       })) as Payable[];
@@ -262,7 +264,7 @@ const App: React.FC = () => {
       setData(prev => ({ ...prev, suppliers: [...prev.suppliers, newSupplier] }));
       logAction(session.user, 'CREATE', 'OTHER', `Novo fornecedor: ${newSupplier.nome_fantasia}`, newSupplier);
       alert('Fornecedor cadastrado com sucesso!');
-    } catch (e) { console.error(e); alert('Erro ao salvar fornecedor.'); }
+    } catch (e) { console.error(e); alert('Erro ao salvar fornecedor.'); throw e; }
   };
 
   const handleUpdateSupplier = async (updatedSupplier: Supplier) => {
@@ -280,6 +282,7 @@ const App: React.FC = () => {
     } catch (e) {
       console.error(e);
       alert('Erro ao atualizar fornecedor.');
+      throw e;
     }
   };
 
@@ -318,6 +321,7 @@ const App: React.FC = () => {
     } catch (e) {
       console.error(e);
       alert('Erro ao salvar conta a pagar.');
+      throw e;
     }
   };
 
@@ -346,7 +350,7 @@ const App: React.FC = () => {
 
       const isPago = payable.status === 'PAGO';
       const isParcial = payable.status === 'PARCIAL';
-      const valorPago = payable.valor_pago || 0;
+      const valorPago = Number(payable.valor_pago) || 0;
 
       if (OFFLINE_MODE) {
         setData(prev => ({
@@ -827,7 +831,8 @@ const App: React.FC = () => {
 
   const addTransaction = async (transaction: any) => {
     if (!supabase) return;
-    await supabase.from('transactions').upsert(sanitize(transaction));
+    const { error } = await supabase.from('transactions').upsert(sanitize(transaction));
+    if (error) throw error;
     if (session?.user) logAction(session.user, 'CREATE', 'TRANSACTION', `Transação adicionada: ${transaction.tipo} ${transaction.valor} (${transaction.descricao})`);
     fetchData();
   };
@@ -1118,14 +1123,16 @@ const App: React.FC = () => {
           batches={closedBatches}
           addClient={async (c) => {
             if (supabase) {
-              await supabase.from('clients').upsert(sanitize(c));
+              const { error } = await supabase.from('clients').upsert(sanitize(c));
+              if (error) throw error;
               if (session?.user) logAction(session.user, 'CREATE', 'CLIENT', `Novo cliente: ${c.nome_social}`);
               fetchData();
             }
           }}
           updateClient={async (c) => {
             if (supabase) {
-              await supabase.from('clients').upsert(sanitize(c));
+              const { error } = await supabase.from('clients').upsert(sanitize(c));
+              if (error) throw error;
               if (session?.user) logAction(session.user, 'UPDATE', 'CLIENT', `Cliente atualizado: ${c.nome_social}`);
               fetchData();
             }
@@ -1253,7 +1260,11 @@ const App: React.FC = () => {
             } as any);
           });
 
-          await addSales(newSales);
+          const res = await addSales(newSales);
+          if (!res.success) {
+            alert(`Erro Crítico na Venda: ${res.error}`);
+            throw new Error(res.error);
+          }
 
           // 💰 PAGO NO ATO: criar ENTRADA no fluxo de caixa automaticamente
           if (pagoNoAto && newSales.length > 0) {

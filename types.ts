@@ -180,6 +180,8 @@ export interface Payable {
 
   valor: number;
   valor_pago?: number;
+  valor_total?: number; // Para compras onde valor total difere do saldo devedor
+  beneficiario?: string; // Destino do pagamento extra
   data_vencimento: string; // ISO YYYY-MM-DD
   data_pagamento?: string;
   status: 'PENDENTE' | 'PAGO' | 'PARCIAL' | 'ATRASADO' | 'ESTORNADO' | 'CANCELADO';

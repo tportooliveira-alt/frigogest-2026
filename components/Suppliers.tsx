@@ -49,32 +49,45 @@ const Suppliers: React.FC<SuppliersProps> = ({ suppliers, addSupplier, updateSup
             s.cpf_cnpj.includes(searchTerm))
     ).sort((a, b) => a.nome_fantasia.localeCompare(b.nome_fantasia));
 
-    const handleSubmitNewSupplier = (e: React.FormEvent) => {
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [errorMsg, setErrorMsg] = useState('');
+
+    const handleSubmitNewSupplier = async (e: React.FormEvent) => {
         e.preventDefault();
         if (newSupplier.nome_fantasia) {
-            addSupplier({ ...newSupplier, id: Date.now().toString() } as Supplier);
-            setShowAddForm(false);
-            setNewSupplier({
-                id: '',
-                nome_fantasia: '',
-                cpf_cnpj: '',
-                inscricao_estadual: '',
-                telefone: '',
-                endereco: '',
-                cidade: '',
-                estado: '',
-                dados_bancarios: '',
-                observacoes: ''
-            });
+            setIsSubmitting(true);
+            setErrorMsg('');
+            try {
+                await addSupplier({ ...newSupplier, id: Date.now().toString() } as Supplier);
+                setShowAddForm(false);
+                setNewSupplier({
+                    id: '', nome_fantasia: '', cpf_cnpj: '', inscricao_estadual: '', telefone: '',
+                    endereco: '', cidade: '', estado: '', dados_bancarios: '', observacoes: ''
+                });
+            } catch (err) {
+                console.error(err);
+                setErrorMsg('Erro de conexão com servidor. Tente novamente.');
+            } finally {
+                setIsSubmitting(false);
+            }
         }
     };
 
-    const handleUpdateSupplier = (e: React.FormEvent) => {
+    const handleUpdateSupplier = async (e: React.FormEvent) => {
         e.preventDefault();
         if (editingSupplier && updateSupplier) {
-            updateSupplier(editingSupplier);
-            setSelectedSupplier(editingSupplier);
-            setIsEditing(false);
+            setIsSubmitting(true);
+            setErrorMsg('');
+            try {
+                await updateSupplier(editingSupplier);
+                setSelectedSupplier(editingSupplier);
+                setIsEditing(false);
+            } catch (err) {
+                console.error(err);
+                setErrorMsg('Erro de conexão com servidor. Tente novamente.');
+            } finally {
+                setIsSubmitting(false);
+            }
         }
     };
 

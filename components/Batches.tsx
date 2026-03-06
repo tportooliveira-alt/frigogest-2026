@@ -379,8 +379,14 @@ const Batches: React.FC<BatchesProps> = ({
     const seq = parseInt(newItemEntry.sequencia);
     const type = parseInt(newItemEntry.tipo) as StockType;
     const typeLabel = type === StockType.BANDA_A ? 'BANDA_A' : type === StockType.BANDA_B ? 'BANDA_B' : 'INTEIRO';
-    // CORREÇÃO: se modo GRAMAS, divide por 1000
+    // CORREÇÃO: se modo GRAMAS, divide por 1000. Proteção contra NaN se texto inválido for inserido.
     const rawValue = parseFloat(newItemEntry.peso.replace(',', '.'));
+
+    if (isNaN(rawValue) || rawValue <= 0) {
+      alert('⚠️ O Peso deve ser um número válido maior que zero.');
+      return;
+    }
+
     const weight = pesoUnit === 'G' ? rawValue / 1000 : rawValue;
     const id_completo = `${selectedBatchId}-${String(seq).padStart(3, '0')}-${typeLabel}`;
 

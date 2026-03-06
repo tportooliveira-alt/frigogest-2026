@@ -79,21 +79,42 @@ const Clients: React.FC<ClientsProps> = ({ clients, addClient, updateClient, onB
       c.nome_social.toLowerCase().includes(searchTerm.toLowerCase()))
   ).sort((a, b) => a.nome_social.localeCompare(b.nome_social));
 
-  const handleSubmitNewClient = (e: React.FormEvent) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const handleSubmitNewClient = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newClient.id_ferro && newClient.nome_social) {
-      addClient(newClient as Client);
-      setShowAddForm(false);
-      setNewClient({ id_ferro: '', nome_social: '', whatsapp: '', cpf_cnpj: '', telefone_residencial: '', endereco: '', bairro: '', cidade: '', cep: '', observacoes: '', limite_credito: 0, saldo_devedor: 0, perfil_compra: 'MISTO', padrao_gordura: 'MEDIO', objecoes_frequentes: '', preferencias: '' });
+      setIsSubmitting(true);
+      setErrorMsg('');
+      try {
+        await addClient(newClient as Client);
+        setShowAddForm(false);
+        setNewClient({ id_ferro: '', nome_social: '', whatsapp: '', cpf_cnpj: '', telefone_residencial: '', endereco: '', bairro: '', cidade: '', cep: '', observacoes: '', limite_credito: 0, saldo_devedor: 0, perfil_compra: 'MISTO', padrao_gordura: 'MEDIO', objecoes_frequentes: '', preferencias: '' });
+      } catch (err) {
+        console.error('Erro ao salvar cliente:', err);
+        setErrorMsg('Erro de conexão com servidor. Tente novamente.');
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
 
-  const handleUpdateClient = (e: React.FormEvent) => {
+  const handleUpdateClient = async (e: React.FormEvent) => {
     e.preventDefault();
     if (editingClient && updateClient) {
-      updateClient(editingClient);
-      setSelectedClientForDetails(editingClient);
-      setIsEditing(false);
+      setIsSubmitting(true);
+      setErrorMsg('');
+      try {
+        await updateClient(editingClient);
+        setSelectedClientForDetails(editingClient);
+        setIsEditing(false);
+      } catch (err) {
+        console.error('Erro ao editar cliente:', err);
+        setErrorMsg('Erro de conexão com servidor. Tente novamente.');
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
 

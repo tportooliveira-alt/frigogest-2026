@@ -355,7 +355,9 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
     doc.save(`RECIBO_THIAGO704_${selectedClient.id_ferro}.pdf`);
   };
 
-  const handleConfirm = () => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleConfirm = async () => {
     if (!selectedClient || selectedItems.length === 0 || pricePerKg <= 0) {
       alert("⚠️ Preencha todos os dados da venda!");
       return;
@@ -369,16 +371,23 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
       peso_saida: itemWeights[item.id_completo] !== undefined ? itemWeights[item.id_completo] : item.peso_entrada
     }));
 
-    onConfirmSale({
-      client: selectedClient,
-      items: itemsWithWeights,
-      pricePerKg,
-      extrasCost,
-      pagoNoAto: true, // Por padrão na expedição assume-se pago ou define-se via UI
-      metodoPagamento: 'DINHEIRO'
-    });
-    setSelectedClient(null); setSelectedItems([]); setPricePerKg(0); setExtrasCost(0);
-    setShowHistory(true); // Automatically go to history after sale
+    setIsSubmitting(true);
+    try {
+      await onConfirmSale({
+        client: selectedClient,
+        items: itemsWithWeights,
+        pricePerKg,
+        extrasCost,
+        pagoNoAto: true, // Por padrão na expedição assume-se pago ou define-se via UI
+        metodoPagamento: 'DINHEIRO'
+      });
+      setSelectedClient(null); setSelectedItems([]); setPricePerKg(0); setExtrasCost(0);
+      setShowHistory(true); // Automatically go to history after sale
+    } catch (err) {
+      console.error('Erro na Venda:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (showHistory) {
@@ -867,11 +876,12 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
 
                   <button
                     onClick={handleConfirm}
-                    disabled={selectedItems.length === 0 || !selectedClient || pricePerKg <= 0}
+                    disabled={selectedItems.length === 0 || !selectedClient || pricePerKg <= 0 || isSubmitting}
                     title="Confirmar Entrega"
                     className="w-full py-4 bg-blue-600 rounded-xl text-white font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-white hover:text-slate-900 transition-all disabled:opacity-20 active:scale-95 shadow-xl shadow-blue-500/20"
                   >
-                    <ShieldCheck size={20} /> Confirmar Entrega [THIAGO 704]
+                    {isSubmitting ? <span className="animate-spin text-lg material-icons">O</span> : <ShieldCheck size={20} />}
+                    {isSubmitting ? 'PROCESSANDO...' : 'Confirmar Entrega [THIAGO 704]'}
                   </button>
 
                   <button

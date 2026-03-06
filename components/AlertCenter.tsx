@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Bell, BellOff, CheckCircle, AlertTriangle, XCircle, Info, Trash2, RefreshCw, Loader2, Settings, Volume2, VolumeX } from 'lucide-react';
-import { checkMarketAlerts, getAllAlerts, markAlertAsRead, clearAllAlerts, getUnreadCount, requestPushPermission, getAlertConfig, saveAlertConfig, MarketAlert, AlertSeverity } from '../services/alertService';
+import { checkMarketAlerts, getAllAlerts, markAlertAsRead, clearAllAlerts, getUnreadCount, requestPushPermission, getAlertConfig, saveAlertConfig, MarketAlert, AlertSeverity, AlertConfig } from '../services/alertService';
 
 interface AlertCenterProps {
     onBack: () => void;
@@ -18,12 +18,27 @@ const AlertCenter: React.FC<AlertCenterProps> = ({ onBack }) => {
     const [isChecking, setIsChecking] = useState(false);
     const [pushEnabled, setPushEnabled] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
-    const [config, setConfig] = useState(getAlertConfig());
+    const [config, setConfig] = useState<AlertConfig>({
+        cepeaMarcos: [330, 340, 350, 355, 360, 370, 380],
+        dolarMax: 6.00,
+        dolarMin: 5.30,
+        margemMinima: 18,
+        variacaoDiariaAlerta: 1.5,
+        estoqueParadoDias: 7,
+        pushEnabled: true,
+        somEnabled: true,
+    });
 
     useEffect(() => {
-        // Carregar alertas existentes
-        setAlerts(getAllAlerts());
-        setPushEnabled(getAlertConfig().pushEnabled);
+        const loadInitialData = async () => {
+            const initialAlerts = await getAllAlerts();
+            setAlerts(initialAlerts);
+
+            const initialConfig = await getAlertConfig();
+            setConfig(initialConfig);
+            setPushEnabled(initialConfig.pushEnabled);
+        };
+        loadInitialData();
         // Verificar novos alertas ao abrir
         verificarNovos();
     }, []);
@@ -32,7 +47,8 @@ const AlertCenter: React.FC<AlertCenterProps> = ({ onBack }) => {
         setIsChecking(true);
         try {
             const novos = await checkMarketAlerts();
-            setAlerts(getAllAlerts()); // Recarregar todos
+            const loadedAlerts = await getAllAlerts();
+            setAlerts(loadedAlerts); // Recarregar todos
             if (novos.length > 0) {
                 // Feedback visual
             }
@@ -42,9 +58,10 @@ const AlertCenter: React.FC<AlertCenterProps> = ({ onBack }) => {
         setIsChecking(false);
     };
 
-    const handleMarkRead = (id: string) => {
-        markAlertAsRead(id);
-        setAlerts(getAllAlerts());
+    const handleMarkRead = async (id: string) => {
+        await markAlertAsRead(id);
+        const newAlerts = await getAllAlerts();
+        setAlerts(newAlerts);
     };
 
     const handleClearAll = () => {
