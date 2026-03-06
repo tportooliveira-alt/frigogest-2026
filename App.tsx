@@ -717,11 +717,20 @@ const App: React.FC = () => {
     try {
       console.log('🧹 LIMPEZA COMPLETA DO SISTEMA INICIADA');
 
-      const tables = ['batches', 'sales', 'stock_items', 'transactions', 'scheduled_orders', 'daily_reports', 'payables'];
+      // Mapeamento: tabela → coluna PK real (para o .neq que força o delete)
+      const tables: Array<[string, string]> = [
+        ['batches', 'id_lote'],
+        ['sales', 'id_venda'],
+        ['stock_items', 'id_completo'],
+        ['transactions', 'id'],
+        ['scheduled_orders', 'id'],
+        ['daily_reports', 'id'],
+        ['payables', 'id'],
+      ];
 
-      for (const tableName of tables) {
+      for (const [tableName, pkCol] of tables) {
         console.log(`🗑️ Limpando: ${tableName}...`);
-        const { error } = await supabase.from(tableName).delete().neq('id', '');
+        const { error } = await supabase.from(tableName).delete().neq(pkCol, '');
         if (error) {
           console.error(`  ❌ Erro ao limpar ${tableName}:`, error);
         } else {
