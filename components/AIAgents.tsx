@@ -75,6 +75,11 @@ const buildAllProviders = (): CascadeProvider[] => {
     const siliconflowKey = (import.meta as any).env.VITE_SILICONFLOW_API_KEY as string || '';
     const mistralKey = (import.meta as any).env.VITE_MISTRAL_API_KEY as string || '';
 
+    // Tokens máximos por tier — evita respostas longas e repetitivas
+    const TIER_MAX_TOKENS: Record<AITier, number> = {
+        PEAO: 300, ESTAGIARIO: 512, FUNCIONARIO: 768, GERENTE: 1024, MESTRA: 2048
+    };
+
     // Helper OpenAI-compatible
     const oai = (name: string, tier: AITier, url: string, key: string, model: string): CascadeProvider => ({
         name, tier,
@@ -82,7 +87,7 @@ const buildAllProviders = (): CascadeProvider[] => {
             const res = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-                body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], max_tokens: 2048 }),
+                body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], max_tokens: TIER_MAX_TOKENS[tier], temperature: 0.2 }),
             });
             if (!res.ok) throw new Error(`${name} ${res.status}`);
             const data = await res.json();
@@ -100,14 +105,14 @@ const buildAllProviders = (): CascadeProvider[] => {
                     const res = await ai.models.generateContent({
                         model: 'gemini-2.5-pro',
                         contents: { parts: [{ text: prompt }] },
-                        config: { tools: [{ googleSearch: {} }] }
+                        config: { tools: [{ googleSearch: {} }], maxOutputTokens: 2048, temperature: 0.2 }
                     });
                     const text = res.candidates?.[0]?.content?.parts?.[0]?.text;
                     if (!text) throw new Error('Gemini Pro sem resposta');
                     return text;
                 } catch (e: any) {
                     if (e.message?.includes('googleSearch') || e.message?.includes('tool')) {
-                        const fb = await ai.models.generateContent({ model: 'gemini-2.5-pro', contents: { parts: [{ text: prompt }] } });
+                        const fb = await ai.models.generateContent({ model: 'gemini-2.5-pro', contents: { parts: [{ text: prompt }] }, config: { maxOutputTokens: 2048, temperature: 0.2 } });
                         return fb.candidates?.[0]?.content?.parts?.[0]?.text || '';
                     }
                     throw e;
@@ -126,14 +131,14 @@ const buildAllProviders = (): CascadeProvider[] => {
                     const res = await ai.models.generateContent({
                         model: 'gemini-2.5-flash',
                         contents: { parts: [{ text: prompt }] },
-                        config: { tools: [{ googleSearch: {} }] }
+                        config: { tools: [{ googleSearch: {} }], maxOutputTokens: 1024, temperature: 0.2 }
                     });
                     const text = res.candidates?.[0]?.content?.parts?.[0]?.text;
                     if (!text) throw new Error('Gemini Flash sem resposta');
                     return text;
                 } catch (e: any) {
                     if (e.message?.includes('googleSearch') || e.message?.includes('tool')) {
-                        const fb = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: { parts: [{ text: prompt }] } });
+                        const fb = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: { parts: [{ text: prompt }] }, config: { maxOutputTokens: 1024, temperature: 0.2 } });
                         return fb.candidates?.[0]?.content?.parts?.[0]?.text || '';
                     }
                     throw e;
@@ -199,13 +204,22 @@ const TIER_FALLBACK: Record<AITier, AITier[]> = {
     'MESTRA': ['MESTRA', 'GERENTE', 'FUNCIONARIO', 'ESTAGIARIO', 'PEAO'],
 };
 
+// Regras absolutas injetadas em TODOS os prompts de agentes
+const MANDATORY_AGENT_RULES = `REGRAS ABSOLUTAS DO SISTEMA (PRIORIDADE MÁXIMA — NUNCA VIOLE):
+1. NUNCA faça perguntas ao usuário ou peça mais dados. Analise com o que foi fornecido e conclua.
+2. NUNCA repita ou parafraseie o conteúdo do prompt recebido. Vá direto à análise.
+3. NUNCA finalize sua resposta com uma pergunta. Se quiser sugerir algo, afirme como recomendação.
+4. Seja CONCISO e DIRETO. Respostas longas e repetitivas são proibidas.
+5. Responda SOMENTE em português brasileiro.
+---`;
+
 // ═══ MAIN: runCascade com hierarquia ═══
 export const runCascade = async (prompt: string, agentId?: string): Promise<{ text: string; provider: string }> => {
     const allProviders = buildAllProviders();
     if (allProviders.length === 0) throw new Error('Nenhuma API Key configurada. Adicione pelo menos uma no .env');
 
-    // ── Injeta contexto de modo de operação em TODOS os prompts ──
-    const enrichedPrompt = `${OPERATION_CONTEXT}\n\n${prompt}`;
+    // ── Injeta regras obrigatórias + contexto de modo de operação em TODOS os prompts ──
+    const enrichedPrompt = `${MANDATORY_AGENT_RULES}\n${OPERATION_CONTEXT}\n\n${prompt}`;
 
     // Determina o tier do agente (default: GERENTE para compatibilidade)
     const preferredTier: AITier = agentId ? (AGENT_TIER_MAP[agentId] || 'GERENTE') : 'GERENTE';

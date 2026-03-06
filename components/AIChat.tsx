@@ -74,11 +74,15 @@ const buildAllProviders = (): CascadeProvider[] => {
     const siliconflowKey = (import.meta as any).env.VITE_SILICONFLOW_API_KEY as string || '';
     const mistralKey = (import.meta as any).env.VITE_MISTRAL_API_KEY as string || '';
 
+    const TIER_MAX_TOKENS: Record<AITier, number> = {
+        PEAO: 300, ESTAGIARIO: 512, FUNCIONARIO: 768, GERENTE: 1024, MESTRA: 2048
+    };
+
     const oai = (name: string, tier: AITier, url: string, key: string, model: string): CascadeProvider => ({
         name, tier, call: async (prompt: string) => {
             const res = await fetch(url, {
                 method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-                body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], max_tokens: 2048 })
+                body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], max_tokens: TIER_MAX_TOKENS[tier], temperature: 0.2 })
             });
             if (!res.ok) throw new Error(`${name} ${res.status}`);
             const data = await res.json(); return data.choices?.[0]?.message?.content || '';
@@ -93,14 +97,14 @@ const buildAllProviders = (): CascadeProvider[] => {
                 const r = await ai.models.generateContent({
                     model: 'gemini-2.5-pro',
                     contents: { parts: [{ text: p }] },
-                    config: { tools: [{ googleSearch: {} }] }
+                    config: { tools: [{ googleSearch: {} }], maxOutputTokens: 2048, temperature: 0.2 }
                 });
                 const t = r.candidates?.[0]?.content?.parts?.[0]?.text;
                 if (!t) throw new Error('Gemini Pro vazio');
                 return t;
             } catch (e: any) {
                 if (e.message?.includes('googleSearch') || e.message?.includes('tool')) {
-                    const fb = await ai.models.generateContent({ model: 'gemini-2.5-pro', contents: { parts: [{ text: p }] } });
+                    const fb = await ai.models.generateContent({ model: 'gemini-2.5-pro', contents: { parts: [{ text: p }] }, config: { maxOutputTokens: 2048, temperature: 0.2 } });
                     return fb.candidates?.[0]?.content?.parts?.[0]?.text || '';
                 }
                 throw e;
@@ -115,14 +119,14 @@ const buildAllProviders = (): CascadeProvider[] => {
                 const r = await ai.models.generateContent({
                     model: 'gemini-2.5-flash',
                     contents: { parts: [{ text: p }] },
-                    config: { tools: [{ googleSearch: {} }] }
+                    config: { tools: [{ googleSearch: {} }], maxOutputTokens: 1024, temperature: 0.2 }
                 });
                 const t = r.candidates?.[0]?.content?.parts?.[0]?.text;
                 if (!t) throw new Error('Gemini Flash vazio');
                 return t;
             } catch (e: any) {
                 if (e.message?.includes('googleSearch') || e.message?.includes('tool')) {
-                    const fb = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: { parts: [{ text: p }] } });
+                    const fb = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: { parts: [{ text: p }] }, config: { maxOutputTokens: 1024, temperature: 0.2 } });
                     return fb.candidates?.[0]?.content?.parts?.[0]?.text || '';
                 }
                 throw e;
@@ -633,17 +637,17 @@ ${payablesVencidos.length > 0 ? `🔴 VENCIDAS: ${payablesVencidos.length} conta
         const specialistPrompt = AGENT_PROMPT_MAP[agentId] || '';
 
         const chatWrapper = `Você é ${agent.name}, ${agent.role} do FrigoGest.
-Você está numa CONVERSA DIRETA com o dono do frigorífico. Ele pode te fazer perguntas, pedir conselhos, ou discutir estratégia.
+Você está numa CONVERSA DIRETA com o dono do frigorífico.
 
-REGRAS DE CHAT:
+REGRAS ABSOLUTAS DE CHAT (NUNCA VIOLE):
 - Responda SEMPRE em português brasileiro
 - Seja DIRETO e PRÁTICO — fale como gerente, não como robô
 - Use emojis quando apropriado: 🔴 crítico, 🟡 atenção, 🟢 ok
 - Se tiver dados do snapshot, cite números específicos
-- Se não souber, diga claramente
 - Máximo 300 palavras (é um chat, não um relatório)
-- Seja NATURAL — como se estivesse no WhatsApp com o chefe
-- IMPORTANTE: Responda à PERGUNTA ESPECÍFICA do usuário. NÃO repita informações genéricas.`;
+- IMPORTANTE: Responda à PERGUNTA ESPECÍFICA do usuário. NÃO repita informações genéricas.
+- CRÍTICO: NUNCA termine sua resposta com uma pergunta. Dê sua análise completa e conclua. Se quiser sugerir continuação, faça como afirmação ("Posso detalhar X se precisar"), nunca como pergunta.
+- CRÍTICO: NÃO repita o que o usuário acabou de dizer. Vá direto à resposta.`;
 
         const searchNote = (agentId === 'COMERCIAL' || agentId === 'MERCADO')
             ? `\n\nOBRIGAÇÃO DE PESQUISA: Use googleSearch para buscar preço atualizado da arroba em VCA/Sul BA. Cite a fonte e preço exato.`

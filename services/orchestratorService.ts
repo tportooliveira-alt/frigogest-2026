@@ -24,6 +24,12 @@ export interface OrchestrationResult {
     finishedAt: Date;
 }
 
+// Trunca texto de parecer para evitar explosão do contextAccumulator
+const truncateParecer = (text: string, maxChars = 300): string => {
+    if (text.length <= maxChars) return text;
+    return text.slice(0, maxChars).trimEnd() + '... [truncado]';
+};
+
 // Prompt builder inline (evita dependência circular com AIChat)
 const buildAgentPrompt = (agent: AgentType, dataSnapshot: string): string => {
     const AGENT_NAMES: Record<string, string> = {
@@ -34,7 +40,7 @@ const buildAgentPrompt = (agent: AgentType, dataSnapshot: string): string => {
     };
     const name = AGENT_NAMES[agent] || agent;
     return `Você é ${name} do FrigoGest. Analise os dados reais abaixo e dê seu parecer técnico.
-REGRAS: Português brasileiro, direto, máximo 100 palavras. Use 🔴🟡🟢 para severidade.
+REGRAS ABSOLUTAS: Máximo 80 palavras. Use 🔴🟡🟢. NUNCA faça perguntas. NUNCA repita dados do contexto. Conclua diretamente.
 DADOS DO SISTEMA:\n${dataSnapshot}`;
 };
 
@@ -91,7 +97,8 @@ Se você detectar um risco GIGANTE na sua área (ex: cliente não paga, não tem
             stepRecord.output = aiResponse.text;
             stepRecord.status = aiResponse.text.includes('[VETO]') ? 'VETOED' : 'COMPLETED';
 
-            contextAccumulator += `\n\n--- PARECER DE ${step.agent} ---\n${aiResponse.text}`;
+            // Trunca para evitar que o contexto cresça indefinidamente entre agentes
+            contextAccumulator += `\n\n--- PARECER DE ${step.agent} ---\n${truncateParecer(aiResponse.text)}`;
 
         } catch (error: any) {
             stepRecord.status = 'FAILED';
@@ -114,19 +121,17 @@ Se você detectar um risco GIGANTE na sua área (ex: cliente não paga, não tem
     try {
         const masterPrompt = `${buildAgentPrompt('ADMINISTRATIVO', dataSnapshot)}
 
-VOCÊ É A ORQUESTRADORA (Master Agent). Siga as regras de sistemas multi-agente (CrewAI):
-Abaixo estão os pareceres dos seus sub-agentes sobre o tema: "${topic}"
+VOCÊ É A ORQUESTRADORA FINAL. Tema: "${topic}"
 
+PARECERES DOS SUB-AGENTES:
 ${contextAccumulator}
 
-SUA TAREFA:
-1. Analise se houve algum [VETO] (ex: O Caixa vetou porque o cliente deve). Se houve, a decisão MAIOR é proteger a empresa.
-2. Resolva conflitos: Se Vendas quer abaixar o preço mas Estoque diz que a carne está fresca, barre o desconto comercial.
-3. Escreva a DECISÃO FINAL DIRECIONADA AO DONO.
-4. Formato obrigatório:
-   RESUMO: [1 frase do que a equipe achou]
-   CONFLITOS: [Se houve divergência entre Vendas/Caixa/Estoque]
-   DECISÃO RECOMENDADA: [Sua sugestão final, clara e direta para o Humano aprovar]`;
+SUA TAREFA (responda SOMENTE neste formato, sem introduções):
+RESUMO: [1 frase objetiva do que a equipe concluiu]
+CONFLITOS: [Divergências entre áreas, ou "Nenhum"]
+DECISÃO RECOMENDADA: [Ação clara e direta para o dono aprovar]
+
+Se houve [VETO], a proteção da empresa prevalece. Resolva conflitos e decida. NUNCA faça perguntas.`;
 
         const masterResponse = await runCascade(masterPrompt, 'ADMINISTRATIVO');
         orquestradorRecord.output = masterResponse.text;
