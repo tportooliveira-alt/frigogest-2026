@@ -409,11 +409,14 @@ const App: React.FC = () => {
         setData(prev => ({ ...prev, payables: [...prev.payables, newPayable] }));
         return;
       }
-      const docRef = await addDoc(collection(db, 'payables'), newPayable);
-      const payableWithId = { ...newPayable, id: docRef.id };
-      await setDoc(docRef, payableWithId);
+      // Usar ID determinístico (newPayable.id) ou gerar um novo — NUNCA addDoc
+      // addDoc ignora o campo 'id' e gera um ID aleatório do Firestore, quebrando
+      // o updateDoc posterior que usa o campo 'id' como chave do documento.
+      const docId = newPayable.id || doc(collection(db!, 'payables')).id;
+      const payableWithId = { ...newPayable, id: docId };
+      await setDoc(doc(db!, 'payables', docId), payableWithId);
       setData(prev => ({ ...prev, payables: [...prev.payables, payableWithId] }));
-      logAction(session.user, 'CREATE', 'OTHER', `Nova conta a pagar: ${newPayable.descricao}`, newPayable);
+      logAction(session.user, 'CREATE', 'OTHER', `Nova conta a pagar: ${payableWithId.descricao}`, payableWithId);
     } catch (e) {
       console.error(e);
       alert('Erro ao salvar conta a pagar.');
@@ -527,26 +530,10 @@ const App: React.FC = () => {
       // Salvar o lote
       await setDoc(doc(db, 'batches', cleanBatch.id_lote), cleanBatch);
 
-      // 2. REGISTRAR NO FINANCEIRO AUTOMATICAMENTE (Se À VISTA)
-      // Usamos ID determinístico TR-LOTE-{id} para evitar duplicatas
-      if (totalCost > 0 && rawFormaPagamento === 'VISTA') {
-        const transactionData = {
-          id: `TR-LOTE-${cleanBatch.id_lote}`,
-          data: rawDataRecebimento,
-          descricao: `Compra Lote ${cleanBatch.id_lote} - ${cleanBatch.fornecedor}`,
-          tipo: 'SAIDA',
-          categoria: 'COMPRA_GADO',
-          valor: totalCost,
-          metodo_pagamento: rawFormaPagamento,
-          referencia_id: cleanBatch.id_lote
-        };
-
-        console.log(`💰 Registrando saída automática (À VISTA): R$ ${totalCost}`);
-        await addTransaction(transactionData as any);
-      }
-
-      // NOTA: Compras a PRAZO são tratadas pela registerBatchFinancial() 
-      // que é chamada ao fechar o lote no Batches.tsx.
+      // FINANCEIRO: Toda lógica de transação é responsabilidade exclusiva de
+      // registerBatchFinancial() chamada pelo Batches.tsx ao fechar o lote.
+      // Não registrar transação aqui para evitar race condition com o state
+      // do React e duplicação de transações (TR-LOTE-{id}).
 
       await fetchData();
       return { success: true };
@@ -603,28 +590,21 @@ const App: React.FC = () => {
       const restoredIds = new Set<string>();
 
       for (const stockId of refinedIds) {
-        // Para resolver o problema web/local: Primeiro checamos se o documento existe com o ID direto
-        const directDocSnap = await getDocs(query(collection(db, 'stock_items'), where('__name__', '==', stockId)));
-
-        if (!directDocSnap.empty) {
-          batchCommit.update(doc(db, 'stock_items', stockId), { status: 'DISPONIVEL' });
-          restoredIds.add(stockId);
-          console.log(`✅ Item (Found ID) ${stockId} -> DISPONIVEL`);
-        } else {
-          // Tentativa 2: buscar pelo campo id_completo (caso document ID seja diferente)
-          try {
-            const q = query(collection(db, 'stock_items'), where('id_completo', '==', stockId), limit(1));
-            const snap = await getDocs(q);
-            if (!snap.empty) {
-              batchCommit.update(snap.docs[0].ref, { status: 'DISPONIVEL' });
-              restoredIds.add(stockId);
-              console.log(`✅ Item (fallback campo) ${stockId} -> DISPONIVEL`);
-            } else {
-              console.error(`❌ Item ${stockId} não encontrado no Firestore. Verifique o estoque manualmente.`);
-            }
-          } catch (fallbackErr) {
-            console.error(`❌ Falha total ao devolver ${stockId}:`, fallbackErr);
+        // Busca sempre pelo campo id_completo (campo da aplicação, não o __name__ do Firestore).
+        // where('__name__') falha quando o Document ID do Firestore difere do id_completo
+        // (ex: carcaças inteiras salvas como BANDA_A/BANDA_B mas referenciadas como INTEIRO).
+        try {
+          const q = query(collection(db, 'stock_items'), where('id_completo', '==', stockId), limit(1));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            batchCommit.update(snap.docs[0].ref, { status: 'DISPONIVEL' });
+            restoredIds.add(stockId);
+            console.log(`✅ Item ${stockId} -> DISPONIVEL`);
+          } else {
+            console.error(`❌ Item ${stockId} não encontrado no Firestore. Verifique o estoque manualmente.`);
           }
+        } catch (findErr) {
+          console.error(`❌ Erro ao buscar item ${stockId}:`, findErr);
         }
       }
 
@@ -863,7 +843,7 @@ const App: React.FC = () => {
     try {
       console.log('🧹 LIMPEZA COMPLETA DO SISTEMA INICIADA');
 
-      const collections = ['batches', 'sales', 'stock', 'transactions', 'scheduled_orders', 'daily_reports', 'payables'];
+      const collections = ['batches', 'sales', 'stock_items', 'transactions', 'scheduled_orders', 'daily_reports', 'payables'];
 
       for (const colName of collections) {
         console.log(`🗑️ Limpando: ${colName}...`);
@@ -995,11 +975,13 @@ const App: React.FC = () => {
 
     if (formaPagamento === 'VISTA') {
       // PAGAMENTO TOTAL À VISTA
-      // Verificamos se addBatch já não criou essa transação
+      // Guard consultando DIRETAMENTE o Firestore (não o state React, que pode estar desatualizado)
       const txId = `TR-LOTE-${batch.id_lote}`;
-      const existingTx = data.transactions.find(t => t.id === txId);
+      const existingTxSnap = await getDocs(
+        query(collection(db!, 'transactions'), where('id', '==', txId), limit(1))
+      );
 
-      if (!existingTx) {
+      if (existingTxSnap.empty) {
         await addTransaction({
           id: txId,
           data: dataRecebimento,
@@ -1010,18 +992,21 @@ const App: React.FC = () => {
           metodo_pagamento: formaPagamento,
           referencia_id: batch.id_lote
         } as any);
+        console.log(`💰 Saída À VISTA registrada: R$ ${totalCost}`);
       } else {
-        console.log(`⚠️ Transação ${txId} já existe, ignorando.`);
+        console.log(`⚠️ Transação ${txId} já existe no Firestore, ignorando.`);
       }
     } else if (formaPagamento === 'PRAZO') {
       // COMPRA A PRAZO (Pode ter entrada)
 
-      // 1. SE TIVER ENTRADA, LANÇA A SAÍDA AGORA
+      // 1. SE TIVER ENTRADA, LANÇA A SAÍDA AGORA (guard via Firestore direto)
       if (valorEntrada > 0) {
         const txEntradaId = `TR-LOTE-ENTRADA-${batch.id_lote}`;
-        const existingEntrada = data.transactions.find(t => t.id === txEntradaId);
+        const existingEntradaSnap = await getDocs(
+          query(collection(db!, 'transactions'), where('id', '==', txEntradaId), limit(1))
+        );
 
-        if (!existingEntrada) {
+        if (existingEntradaSnap.empty) {
           await addTransaction({
             id: txEntradaId,
             data: dataRecebimento,
@@ -1039,9 +1024,12 @@ const App: React.FC = () => {
       const valorRestante = totalCost - valorEntrada;
       if (valorRestante > 0) {
         const payableId = `PAY-LOTE-${batch.id_lote}`;
-        const existingPayables = data.payables.filter(p => p.id_lote === batch.id_lote || p.id === payableId);
+        // Guard via Firestore direto (não state React, que pode estar desatualizado)
+        const existingPaySnap = await getDocs(
+          query(collection(db!, 'payables'), where('id', '==', payableId), limit(1))
+        );
 
-        if (existingPayables.length === 0) {
+        if (existingPaySnap.empty) {
           await handleAddPayable({
             id: payableId,
             id_lote: batch.id_lote,
@@ -1057,6 +1045,8 @@ const App: React.FC = () => {
             status: 'PENDENTE',
             categoria: 'COMPRA_GADO'
           } as any);
+        } else {
+          console.log(`⚠️ Payable ${payableId} já existe no Firestore, ignorando.`);
         }
       }
     }

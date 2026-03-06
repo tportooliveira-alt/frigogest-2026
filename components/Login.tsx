@@ -18,13 +18,11 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
 
   // Verifica se há credenciais salvas e se biometria está disponível
   useEffect(() => {
-    // Carregar credenciais salvas
+    // Carregar email salvo (senha nunca é salva por segurança)
     const savedEmail = localStorage.getItem('fg_saved_email');
-    const savedPassword = localStorage.getItem('fg_saved_password');
     if (savedEmail) {
       setEmail(savedEmail);
       setRememberMe(true);
-      if (savedPassword) setPassword(savedPassword);
     }
 
     // Verificar suporte à biometria
@@ -45,14 +43,14 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
       if (!auth) throw new Error("FIREBASE_CORE_OFFLINE");
       await signInWithEmailAndPassword(auth, email.trim(), password);
 
-      // Salvar credenciais se "Lembrar-me" estiver ativo
+      // Salvar apenas email se "Lembrar-me" estiver ativo (senha nunca é salva)
       if (rememberMe) {
         localStorage.setItem('fg_saved_email', email);
-        localStorage.setItem('fg_saved_password', password);
       } else {
         localStorage.removeItem('fg_saved_email');
-        localStorage.removeItem('fg_saved_password');
       }
+      // Garantir que senha antiga nunca fique no storage
+      localStorage.removeItem('fg_saved_password');
 
       onLoginSuccess();
     } catch (err: any) {
