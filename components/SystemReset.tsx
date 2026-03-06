@@ -14,10 +14,13 @@ import {
     ShieldOff,
     Target,
     Sword,
-    Database
+    Database,
+    CloudDownload
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { StockType } from '../types';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, getDocs } from 'firebase/firestore';
 
 interface SystemResetProps {
     onBack: () => void;
@@ -117,6 +120,100 @@ const SystemReset: React.FC<SystemResetProps> = ({ onBack, refreshData }) => {
             console.error(e);
             setStatus('Falha na injeção de dados');
         } finally { setLoading(false); }
+    };
+
+    const handleMigrateFromFirebase = async () => {
+        if (!window.confirm("🔄 IMPORTAR DO SISTEMA ANTIGO?\n\nIsso vai tentar puxar todos os Fornecedores e Clientes do Firebase antigo e importar para o Supabase atual.\n\nDemora uns segundos. Posso começar?")) return;
+
+        setLoading(true);
+        setStatus('Conectando ao Firebase antigo...');
+        try {
+            const firebaseConfig = {
+                apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+                authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+                projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+                storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+                messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+                appId: import.meta.env.VITE_FIREBASE_APP_ID
+            };
+
+            // Re-inicia ou pega o app atual
+            let app;
+            try {
+                app = initializeApp(firebaseConfig);
+            } catch (e) {
+                // se já existir ignora
+                app = initializeApp(firebaseConfig, 'migration-app');
+            }
+
+            const db = getFirestore(app);
+
+            // IMPORTAR FORNECEDORES
+            setStatus('Lendo fornecedores antigos...');
+            const suppliersSnapshot = await getDocs(collection(db, 'suppliers'));
+            const suppliers = suppliersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            setStatus(`Importando ${suppliers.length} fornecedores...`);
+            for (const sup of suppliers as any[]) {
+                await supabase.from('suppliers').upsert({
+                    id: sup.id,
+                    nome_fantasia: sup.nome_fantasia || '',
+                    cpf_cnpj: sup.cpf_cnpj || '',
+                    inscricao_estadual: sup.inscricao_estadual || '',
+                    telefone: sup.telefone || '',
+                    endereco: sup.endereco || '',
+                    cidade: sup.cidade || '',
+                    estado: sup.estado || '',
+                    dados_bancarios: sup.dados_bancarios || '',
+                    observacoes: sup.observacoes || '',
+                    status: sup.status || 'ATIVO',
+                    raca_predominante: sup.raca_predominante || '',
+                    regiao: sup.regiao || ''
+                });
+            }
+
+            // IMPORTAR CLIENTES
+            setStatus('Lendo clientes antigos...');
+            const clientsSnapshot = await getDocs(collection(db, 'clients'));
+            const clients = clientsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            setStatus(`Importando ${clients.length} clientes...`);
+            for (const cli of clients as any[]) {
+                const id_ferro = cli.id_ferro || cli.id;
+                if (!id_ferro) continue;
+                await supabase.from('clients').upsert({
+                    id_ferro: id_ferro,
+                    nome_social: cli.nome_social || '',
+                    whatsapp: cli.whatsapp || '',
+                    limite_credito: cli.limite_credito || 0,
+                    saldo_devedor: cli.saldo_devedor || 0,
+                    cpf_cnpj: cli.cpf_cnpj || '',
+                    cep: cli.cep || '',
+                    telefone_residencial: cli.telefone_residencial || '',
+                    endereco: cli.endereco || '',
+                    bairro: cli.bairro || '',
+                    cidade: cli.cidade || '',
+                    observacoes: cli.observacoes || '',
+                    status: cli.status || 'ATIVO',
+                    perfil_compra: cli.perfil_compra || 'MISTO',
+                    padrao_gordura: cli.padrao_gordura || 'MEDIO',
+                    objecoes_frequentes: cli.objecoes_frequentes || '',
+                    preferencias: cli.preferencias || '',
+                    frequencia_ideal_dias: cli.frequencia_ideal_dias || 7,
+                    mimo_recebido_data: cli.mimo_recebido_data || null
+                });
+            }
+
+            alert(`✅ SUCESSO!\n\nImportados:\n• ${suppliers.length} Fornecedores\n• ${clients.length} Clientes\n\nAtualize a página se não aparecer de imediato.`);
+            refreshData();
+            onBack();
+        } catch (e: any) {
+            console.error(e);
+            alert('❌ ERRO NA MIGRAÇÃO: ' + e.message);
+            setStatus('Falha na migração');
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -264,7 +361,11 @@ const SystemReset: React.FC<SystemResetProps> = ({ onBack, refreshData }) => {
                                     <div className="relative flex justify-center text-[8px] font-black uppercase text-slate-300 bg-white px-4 tracking-[0.4em]">Ou</div>
                                 </div>
 
-                                <button onClick={handleSimulation} className="w-full btn-modern bg-slate-900 text-white py-5 rounded-2xl hover:bg-blue-600 gap-4 shadow-xl transition-all font-black text-xs uppercase tracking-[0.2em]">
+                                <button onClick={handleMigrateFromFirebase} className="w-full btn-modern bg-indigo-600 text-white py-4 rounded-2xl hover:bg-indigo-700 gap-4 shadow-sm transition-all font-black text-[10px] uppercase tracking-[0.2em] flex items-center justify-center">
+                                    <CloudDownload size={16} className="text-indigo-200" /> Importar Clientes de Versão Antiga
+                                </button>
+
+                                <button onClick={handleSimulation} className="w-full btn-modern bg-slate-900 text-white py-5 mt-4 rounded-2xl hover:bg-blue-600 gap-4 shadow-xl transition-all font-black text-xs uppercase tracking-[0.2em]">
                                     <Sword size={20} className="text-blue-400" /> Simular Cenário de Guerra
                                 </button>
 
