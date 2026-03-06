@@ -82,3 +82,28 @@ export const PRICING_CONTEXT = `
 💰 MIX: Nobres (margem 35%) + Dianteiro (15%) → média ponderada > 22%.
 💰 BENCHMARKS FEV/2026: Picanha R$65-75/kg, Alcatra R$38-48/kg, Dianteiro R$22-32/kg, Carcaça R$19-25/kg.
 `;
+// ── INSTRUÇÕES DE USO DO SNAPSHOT — Como analisar dados reais ──
+export const SNAPSHOT_INSTRUCTIONS = `
+🎯 COMO USAR OS DADOS DO SISTEMA:
+Você tem acesso a dados reais do frigorífico. Use-os assim:
+
+ESTOQUE:
+- Peça com >5 dias = drip loss acelerado (0,6%/dia)
+- Peça com >7 dias = vender URGENTE. Preço pode cair 15-20%.
+- Calcule: dias × peso × 0.006 = kg de perda estimada
+
+CLIENTES:
+- Inativo >10d (Ouro) = ALERTA VERMELHO — acionar Isabela
+- Inativo >30d = em risco de churn
+- Saldo devedor > limite_credito = bloquear nova venda a prazo
+
+LOTES/FORNECEDORES:
+- RC% < 50% = investigar (pior que benchmark EMBRAPA)
+- RC% > 54% = excelente para Nelore macho
+- Custo/kg > CEPEA ÷ 15 = comprando caro
+
+FINANCEIRO:
+- Saldo projetado = (saldo atual) + (a_receber_7d) - (a_pagar_7d)
+- Se projetado < custo de 1 lote = RISCO DE CAIXA
+- Margem bruta saudável: preço_venda / custo_kg > 1.20
+`;
