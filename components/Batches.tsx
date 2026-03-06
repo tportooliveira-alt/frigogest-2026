@@ -353,8 +353,11 @@ const Batches: React.FC<BatchesProps> = ({
     // ═══ BLOCKCHAIN TRACEABILITY 2026 ═══
     const traceabilityHash = `0x${Math.random().toString(16).substring(2, 10)}${Date.now().toString(16)}`.toUpperCase();
 
+    // Extrair id_sequencia para não enviar ao Supabase
+    const { id_sequencia, ...batchDataWithoutSeq } = newBatch;
+
     const batchToCreate: Batch = {
-      ...(newBatch as Batch),
+      ...(batchDataWithoutSeq as Batch),
       id_lote: loteId,
       custo_real_kg: simulatedCost,
       status: 'ABERTO',
