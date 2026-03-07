@@ -36,13 +36,14 @@ export function parseActionsFromResponse(text: string, clients: { nome_social: s
         if (/whatsapp|enviar.*mensagem|disparar.*script|mandar.*msg|script.*reativa/i.test(line)) {
             const clientMatch = clients.find(c => line.includes(c.nome_social));
             addAction({
-                id: `wa-${clientMatch?.id_ferro || 'geral'}`,
+                id: `wa-${clientMatch?.id_ferro || 'geral'}-${actions.length}`,
                 type: 'WHATSAPP',
                 label: clientMatch ? `📱 WhatsApp → ${clientMatch.nome_social}` : '📱 Enviar WhatsApp',
                 icon: '📱',
                 description: line.replace(/^[\d.)\-→•*\s]+/, '').trim().substring(0, 100),
                 clientName: clientMatch?.nome_social,
                 clientPhone: clientMatch?.whatsapp,
+                message: line.split(':').length > 1 ? line.split(':')[1].trim() : undefined,
                 urgency: /urgente|agora|hoje|imediato|crítico/i.test(line) ? 'ALTA' : 'MEDIA',
                 color: 'from-green-500 to-emerald-500',
             });

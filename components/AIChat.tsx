@@ -13,203 +13,18 @@ import {
     Transaction, Supplier, Payable, ScheduledOrder
 } from '../types';
 import { OrchestrationResult } from '../services/orchestratorService';
+import { fetchAllMarketData } from '../services/marketDataService';
 import { OrchestratorView } from './OrchestratorView';
 import {
-    PROMPT_ADMINISTRATIVO, PROMPT_PRODUCAO, PROMPT_COMERCIAL, PROMPT_AUDITOR,
-    PROMPT_ESTOQUE, PROMPT_COMPRAS, PROMPT_MERCADO, PROMPT_MARKETING,
     PROMPT_SATISFACAO, PROMPT_COBRANCA, PROMPT_WHATSAPP_BOT, PROMPT_JURIDICO,
-    PROMPT_FLUXO_CAIXA, PROMPT_RH_GESTOR, PROMPT_FISCAL_CONTABIL, PROMPT_QUALIDADE
+    PROMPT_FLUXO_CAIXA, PROMPT_RH_GESTOR, PROMPT_FISCAL_CONTABIL, PROMPT_QUALIDADE,
+    PROMPT_PROFESSOR, PROMPT_ADMINISTRATIVO, PROMPT_PRODUCAO, PROMPT_COMERCIAL,
+    PROMPT_AUDITOR, PROMPT_ESTOQUE, PROMPT_COMPRAS, PROMPT_MERCADO, PROMPT_MARKETING
 } from '../agentPrompts';
 
-// ═══ AI HIERARCHY — 4 Tiers (same as AIAgents) ═══
-type AITier = 'PEAO' | 'ESTAGIARIO' | 'FUNCIONARIO' | 'GERENTE' | 'MESTRA';
-interface CascadeProvider { name: string; tier: AITier; call: (prompt: string) => Promise<string>; }
-
-const AGENT_TIER_MAP: Record<string, AITier> = {
-    // Core (12 agentes)
-    'ADMINISTRATIVO': 'MESTRA', 'PRODUCAO': 'FUNCIONARIO', 'COMERCIAL': 'GERENTE',
-    'AUDITOR': 'GERENTE', 'ESTOQUE': 'FUNCIONARIO', 'COMPRAS': 'FUNCIONARIO',
-    'MERCADO': 'GERENTE', 'MARKETING': 'GERENTE', 'SATISFACAO': 'PEAO',
-    'WHATSAPP_BOT': 'PEAO', 'COBRANCA': 'PEAO', 'JURIDICO': 'FUNCIONARIO',
-    // Orquestração
-    'FLUXO_CAIXA': 'FUNCIONARIO',
-    // Opcionais
-    'RH_GESTOR': 'ESTAGIARIO', 'FISCAL_CONTABIL': 'ESTAGIARIO', 'QUALIDADE': 'ESTAGIARIO',
-};
-
-
-const TIER_FALLBACK: Record<AITier, AITier[]> = {
-    'PEAO': ['PEAO', 'ESTAGIARIO', 'FUNCIONARIO', 'GERENTE', 'MESTRA'],
-    'ESTAGIARIO': ['ESTAGIARIO', 'PEAO', 'FUNCIONARIO', 'GERENTE', 'MESTRA'],
-    'FUNCIONARIO': ['FUNCIONARIO', 'ESTAGIARIO', 'PEAO', 'GERENTE', 'MESTRA'],
-    'GERENTE': ['GERENTE', 'FUNCIONARIO', 'MESTRA', 'ESTAGIARIO', 'PEAO'],
-    'MESTRA': ['MESTRA', 'GERENTE', 'FUNCIONARIO', 'ESTAGIARIO', 'PEAO'],
-};
-
-const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
-
-// ═══ CACHE (5 min) — evita gastar créditos repetindo a mesma chamada ═══
-const _chatCache = new Map<string, { text: string; provider: string; ts: number }>();
-const CHAT_CACHE_TTL = 5 * 60 * 1000;
-function _chatCacheKey(prompt: string, agentId?: string) {
-    // Use LAST 200 chars (user question) — NOT first 180 (system prompt, always identical)
-    return (agentId || 'G') + '::' + prompt.slice(-200).replace(/\s+/g, ' ');
-}
-function withChatTimeout<T,>(p: Promise<T>, ms = 12000): Promise<T> {
-    return Promise.race([p, new Promise<T>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))]);
-}
-const CHAT_FREE_TIERS: AITier[] = ['PEAO', 'ESTAGIARIO'];
-const CHAT_PREMIUM_AGENTS = ['ADMINISTRATIVO', 'AUDITOR'];
-const CHAT_PAID_PROVIDERS = ['Gemini Pro', 'Gemini Flash', 'Mistral Large'];
-
-
-const buildAllProviders = (): CascadeProvider[] => {
-    const providers: CascadeProvider[] = [];
-    const geminiKey = (import.meta as any).env.VITE_AI_API_KEY as string || '';
-    const groqKey = (import.meta as any).env.VITE_GROQ_API_KEY as string || '';
-    const cerebrasKey = (import.meta as any).env.VITE_CEREBRAS_API_KEY as string || '';
-    const openrouterKey = (import.meta as any).env.VITE_OPENROUTER_API_KEY as string || '';
-    const togetherKey = (import.meta as any).env.VITE_TOGETHER_API_KEY as string || '';
-    const deepseekKey = (import.meta as any).env.VITE_DEEPSEEK_API_KEY as string || '';
-    const siliconflowKey = (import.meta as any).env.VITE_SILICONFLOW_API_KEY as string || '';
-    const mistralKey = (import.meta as any).env.VITE_MISTRAL_API_KEY as string || '';
-
-    const TIER_MAX_TOKENS: Record<AITier, number> = {
-        PEAO: 300, ESTAGIARIO: 512, FUNCIONARIO: 768, GERENTE: 1024, MESTRA: 2048
-    };
-
-    const oai = (name: string, tier: AITier, url: string, key: string, model: string): CascadeProvider => ({
-        name, tier, call: async (prompt: string) => {
-            const res = await fetch(url, {
-                method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-                body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], max_tokens: TIER_MAX_TOKENS[tier], temperature: 0.2 })
-            });
-            if (!res.ok) throw new Error(`${name} ${res.status}`);
-            const data = await res.json(); return data.choices?.[0]?.message?.content || '';
-        },
-    });
-
-    // MESTRA
-    if (geminiKey) providers.push({
-        name: 'Gemini Pro', tier: 'MESTRA', call: async (p) => {
-            const ai = new GoogleGenAI({ apiKey: geminiKey });
-            try {
-                const r = await ai.models.generateContent({
-                    model: 'gemini-2.5-pro',
-                    contents: { parts: [{ text: p }] },
-                    config: { tools: [{ googleSearch: {} }], maxOutputTokens: 2048, temperature: 0.2 }
-                });
-                const t = r.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (!t) throw new Error('Gemini Pro vazio');
-                return t;
-            } catch (e: any) {
-                if (e.message?.includes('googleSearch') || e.message?.includes('tool')) {
-                    const fb = await ai.models.generateContent({ model: 'gemini-2.5-pro', contents: { parts: [{ text: p }] }, config: { maxOutputTokens: 2048, temperature: 0.2 } });
-                    return fb.candidates?.[0]?.content?.parts?.[0]?.text || '';
-                }
-                throw e;
-            }
-        }
-    });
-    // GERENTE
-    if (geminiKey) providers.push({
-        name: 'Gemini Flash', tier: 'GERENTE', call: async (p) => {
-            const ai = new GoogleGenAI({ apiKey: geminiKey });
-            try {
-                const r = await ai.models.generateContent({
-                    model: 'gemini-2.5-flash',
-                    contents: { parts: [{ text: p }] },
-                    config: { tools: [{ googleSearch: {} }], maxOutputTokens: 1024, temperature: 0.2 }
-                });
-                const t = r.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (!t) throw new Error('Gemini Flash vazio');
-                return t;
-            } catch (e: any) {
-                if (e.message?.includes('googleSearch') || e.message?.includes('tool')) {
-                    const fb = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: { parts: [{ text: p }] }, config: { maxOutputTokens: 1024, temperature: 0.2 } });
-                    return fb.candidates?.[0]?.content?.parts?.[0]?.text || '';
-                }
-                throw e;
-            }
-        }
-    });
-    if (mistralKey) providers.push(oai('Mistral Large', 'GERENTE', 'https://api.mistral.ai/v1/chat/completions', mistralKey, 'mistral-large-latest'));
-    // FUNCIONÁRIO
-    if (deepseekKey) providers.push(oai('DeepSeek V3', 'FUNCIONARIO', 'https://api.deepseek.com/chat/completions', deepseekKey, 'deepseek-chat'));
-    if (groqKey) providers.push(oai('Groq 70B', 'FUNCIONARIO', 'https://api.groq.com/openai/v1/chat/completions', groqKey, 'llama-3.3-70b-versatile'));
-    if (siliconflowKey) providers.push(oai('SiliconFlow', 'FUNCIONARIO', 'https://api.siliconflow.cn/v1/chat/completions', siliconflowKey, 'deepseek-ai/DeepSeek-V3'));
-    if (togetherKey) providers.push(oai('Together 70B', 'FUNCIONARIO', 'https://api.together.xyz/v1/chat/completions', togetherKey, 'meta-llama/Llama-3.3-70B-Instruct-Turbo'));
-    if (openrouterKey) providers.push(oai('OpenRouter', 'FUNCIONARIO', 'https://openrouter.ai/api/v1/chat/completions', openrouterKey, 'deepseek/deepseek-chat-v3-0324:free'));
-    // ESTAGIÁRIO
-    if (cerebrasKey) providers.push(oai('Cerebras 8B', 'ESTAGIARIO', 'https://api.cerebras.ai/v1/chat/completions', cerebrasKey, 'llama3.1-8b'));
-    if (groqKey) providers.push(oai('Groq 8B', 'ESTAGIARIO', 'https://api.groq.com/openai/v1/chat/completions', groqKey, 'llama-3.1-8b-instant'));
-    if (deepseekKey) providers.push(oai('DeepSeek R1', 'GERENTE', 'https://api.deepseek.com/chat/completions', deepseekKey, 'deepseek-reasoner'));
-    if (mistralKey) providers.push(oai('Ministral 3B', 'ESTAGIARIO', 'https://api.mistral.ai/v1/chat/completions', mistralKey, 'ministral-3b-latest'));
-    // PEÃO
-    if (cerebrasKey) providers.push(oai('Cerebras Peao', 'PEAO', 'https://api.cerebras.ai/v1/chat/completions', cerebrasKey, 'llama3.1-8b'));
-    if (groqKey) providers.push(oai('Groq Peao', 'PEAO', 'https://api.groq.com/openai/v1/chat/completions', groqKey, 'gemma2-9b-it'));
-
-    return providers;
-};
-
-export const runCascade = async (prompt: string, agentId?: string): Promise<{ text: string; provider: string }> => {
-    // Cache
-    const cKey = _chatCacheKey(prompt, agentId);
-    const hit = _chatCache.get(cKey);
-    if (hit && Date.now() - hit.ts < CHAT_CACHE_TTL) return { text: hit.text, provider: `${hit.provider} (cache)` };
-
-    const allProviders = buildAllProviders();
-    if (!allProviders.length) throw new Error('Nenhuma chave de IA configurada.');
-
-    const preferredTier: AITier = agentId ? (AGENT_TIER_MAP[agentId] || 'GERENTE') : 'GERENTE';
-    const isPremium = CHAT_PREMIUM_AGENTS.includes(agentId || '');
-    const freeOnly = CHAT_FREE_TIERS.includes(preferredTier) && !isPremium;
-
-    const sorted: CascadeProvider[] = [];
-    for (const tier of TIER_FALLBACK[preferredTier]) {
-        for (const p of allProviders.filter(p => p.tier === tier)) {
-            if (freeOnly && CHAT_PAID_PROVIDERS.includes(p.name)) continue;
-            sorted.push(p);
-        }
-    }
-    if (!sorted.length) throw new Error('Nenhum provider gratuito disponível. Configure VITE_GROQ_API_KEY.');
-
-    const errors: string[] = [];
-    for (const p of sorted) {
-        let lastErr = '';
-        // Backoff exponencial: até 3 tentativas para erros de rate limit (429) ou server error (500)
-        for (let attempt = 0; attempt < 3; attempt++) {
-            try {
-                const text = await withChatTimeout(p.call(prompt), 18000);
-                if (text) {
-                    const label = p.tier === preferredTier ? '' : ` ↑${p.tier}`;
-                    const result = { text, provider: `${p.name}${label}` };
-                    _chatCache.set(cKey, { ...result, ts: Date.now() });
-                    return result;
-                }
-                break; // texto vazio mas sem erro — vai para próximo provider
-            } catch (e: any) {
-                const msg = e.message || '';
-                const is429 = msg.includes('429') || msg.toLowerCase().includes('rate');
-                const is500 = msg.includes('500') || msg.includes('503');
-                lastErr = msg.includes('timeout') ? 'timeout 18s' : msg.slice(0, 80);
-                if ((is429 || is500) && attempt < 2) {
-                    const waitMs = 1000 * Math.pow(2, attempt); // 1s, 2s, 4s
-                    console.warn(`[CHAT CASCADE] ${p.name} ${is429 ? '429 rate-limit' : '500 erro'} — aguardando ${waitMs}ms (tentativa ${attempt + 1}/3)`);
-                    await delay(waitMs);
-                    continue; // tenta de novo
-                }
-                break; // erro não recuperável — próximo provider
-            }
-        }
-        if (lastErr) {
-            errors.push(`${p.name}: ${lastErr}`);
-            console.warn(`[CHAT CASCADE] ${p.name} falhou após tentativas, próximo provider...`);
-        }
-    }
-};
-
-
+import { runCascade } from '../services/llmCascade';
+import { getAgentMemories, formatMemoriesForPrompt } from '../services/agentMemoryService';
+import { executeInterceptedMCPs } from '../services/mcpToolService';
 
 // ═══ AGENT DEFS ═══
 interface AgentDef {
@@ -241,16 +56,22 @@ const AGENTS: AgentDef[] = [
     { id: 'RH_GESTOR', name: 'João Paulo', role: 'Gestor de RH', icon: Users, color: 'text-blue-600', bgColor: 'bg-blue-50', borderColor: 'border-blue-200' },
     { id: 'FISCAL_CONTABIL', name: 'Mariana', role: 'Contadora Tributária', icon: DollarSign, color: 'text-green-600', bgColor: 'bg-green-50', borderColor: 'border-green-200' },
     { id: 'QUALIDADE', name: 'Dr. Ricardo', role: 'Méd. Veterinário & Qualidade', icon: Shield, color: 'text-teal-600', bgColor: 'bg-teal-50', borderColor: 'border-teal-200' },
+    { id: 'PROFESSOR', name: 'Menthor', role: 'Professor & Estrategista IA', icon: Brain, color: 'text-indigo-600', bgColor: 'bg-indigo-50', borderColor: 'border-indigo-200' },
 ];
 
 // ═══ TYPES ═══
 interface ChatMessage {
     id: string;
     role: 'user' | 'agent';
-    agent?: AgentType;
+    agent?: string;
     text: string;
     timestamp: Date;
     provider?: string;
+}
+
+interface AIAgentsProps {
+    dataSnapshot: string | ((agentId: string) => string); // Aceita Lazy Mode
+    onAction?: (action: string, payload: any) => void;
 }
 
 interface LogEntry {
@@ -441,69 +262,58 @@ const AIChat: React.FC<Props> = ({
         // ── FORNECEDORES ──
         const fornecedoresAtivos = suppliers.filter(s => s.status !== 'INATIVO');
 
-        return `══════════════════════════════════════
-📅 HOJE: ${hojeStr}
-══════════════════════════════════════
-
+        // Snapshot Condensado para Redução de Tokens
+        const metricasProducao = `
 🐄 LOTES
 - Total: ${batches.length} lotes | Abertos: ${lotesAbertos.length} | Fechados: ${lotesFechados.length}
 - Rendimento médio: ${rendimentoMedio > 0 ? rendimentoMedio.toFixed(1) + '%' : 'sem dados'} | Custo médio/kg: ${custoKgMedio > 0 ? 'R$' + custoKgMedio.toFixed(2) : 'sem dados'}
-- IA Vision Aprovado: ${lotesComVision} | Blockchain Traceability: ${lotesComBlockchain} | ESG Score Médio: ${esgMedio.toFixed(1)}%
-- Mortos/Descarte (Global): ${batches.reduce((s, b) => s + ((b as any).qtd_mortos || 0), 0)} cabeças
-${lotesAntigos.length > 0 ? `🔴 ATENÇÃO: ${lotesAntigos.length} lote(s) aberto(s) há mais de 7 dias!` : '🟢 Lotes em dia'}
+- IA Vision Aprovado: ${lotesComVision} | Blockchain Traceability: ${lotesComBlockchain} 
+${lotesAntigos.length > 0 ? `🔴 ATENÇÃO: ${lotesAntigos.length} lote(s) aberto(s) há mais de 7 dias!` : '🟢 Lotes em dia'}`;
 
+        const metricasEstoque = `
 📦 ESTOQUE (CÂMARA FRIA)
 - Total disponível: ${activeStock.length} peças | ${totalKg.toFixed(1)} kg
-- Tipos de Corte: ${activeStock.filter(s => s.tipo === 1).length} Inteiras | ${activeStock.filter(s => s.tipo === 2).length} Dianteiros (A) | ${activeStock.filter(s => s.tipo === 3).length} Traseiros (B)
 - 🔵 Resfriando (0-1d): ${pecasResfriando.length} peças
 - 🟢 Ápice (2-4d): ${pecasPrimas.length} peças
-- 🟡 Alerta venda (5-7d): ${pecasAlerta.length} peças (${kgAlerta.toFixed(1)} kg) ${pecasAlerta.length > 0 ? '← VENDER URGENTE' : ''}
-- 🔴 Crítico (8d+): ${pecasCriticas.length} peças (${kgCritico.toFixed(1)} kg) ${pecasCriticas.length > 0 ? '← RISCO DE PERDA' : ''}
+- 🟡 Alerta venda (5-7d): ${pecasAlerta.length} peças (${kgAlerta.toFixed(1)} kg)
+- 🔴 Crítico (8d+): ${pecasCriticas.length} peças (${kgCritico.toFixed(1)} kg)`;
 
-💰 VENDAS
+        const metricasComercialCRM = `
+💰 VENDAS E CRM
 - Hoje: ${vendasHoje.length} vendas | R$${receitaHoje.toFixed(2)}
 - Semana: ${vendasSemana.length} vendas | R$${receitaSemana.toFixed(2)}
-- Mês: ${vendasMes.length} vendas | R$${receitaMes.toFixed(2)}
-- Margem média/kg: R$${margemMedia.toFixed(2)}
-- Pendente recebimento: ${vendasPendentes.length} vendas | R$${receitaPendente.toFixed(2)}
-${vendasVencidas.length > 0 ? `🔴 VENCIDAS: ${vendasVencidas.length} vendas | R$${valorVencido.toFixed(2)}` : '🟢 Sem vendas vencidas'}
+- Margem média/kg: R$${margemMedia.toFixed(2)} | A receber: R$${receitaPendente.toFixed(2)}
+${vendasVencidas.length > 0 ? `🔴 VENCIDAS: ${vendasVencidas.length} compras atrasadas | R$${valorVencido.toFixed(2)}` : '🟢 Sem vendas vencidas'}
+👥 CLIENTES ATIVOS: ${clientesAtivos.length}
+${clientesBloqueados.length > 0 ? `🔴 BLOQUEADOS (limite excedido): ${clientesBloqueados.length}` : '🟢 Sem clientes bloqueados'}`;
 
-👥 CLIENTES
-- Ativos: ${clientesAtivos.length} | Total: ${clients.length}
-${clientesBloqueados.length > 0 ? `🔴 BLOQUEADOS (limite excedido): ${clientesBloqueados.map(c => c.nome_social).join(', ')}` : '🟢 Sem clientes bloqueados'}
-${clientesAlertaCredito.length > 0 ? `🟡 Crédito alto (>80%): ${clientesAlertaCredito.length} cliente(s)` : ''}
-- Perfil Top 3 Clientes:
-${clients.sort((a, b) => { const va = sales.filter(s => s.id_cliente === a.id_ferro).reduce((s, v) => s + v.peso_real_saida, 0); const vb = sales.filter(s => s.id_cliente === b.id_ferro).reduce((s, v) => s + v.peso_real_saida, 0); return vb - va; }).slice(0, 3).map(c => { const cv = sales.filter(s => s.id_cliente === c.id_ferro); const kg = cv.reduce((s, v) => s + v.peso_real_saida, 0); const pag = cv.length > 0 ? cv[cv.length - 1].forma_pagamento : 'N/I'; return `- ${c.nome_social}: ${cv.length} compras, ${kg.toFixed(1)}kg | Pagamento ref: ${pag}`; }).join('\n')}
-- Pedidos para HOJE: ${pedidosHoje.length} | Para AMANHÃ: ${pedidosAmanha.length}
-
-🚛 FORNECEDORES
-- Ativos: ${fornecedoresAtivos.length} | Total: ${suppliers.length}
-${suppliers.slice(0, 5).map(s => {
-            const lotes = batches.filter(b => b.fornecedor === s.nome_fantasia);
-            const mortos = lotes.reduce((sum, b) => sum + ((b as any).qtd_mortos || 0), 0);
-            const rends = lotes.filter(b => {
-                const cab = (b as any).qtd_cabecas || 0;
-                const vivo = (b as any).peso_vivo_medio || 0;
-                return cab > 0 && vivo > 0;
-            });
-            const avgRend = rends.length > 0 ? (rends.reduce((sum, b) => {
-                const pesoVivoTotal = ((b as any).qtd_cabecas || 0) * ((b as any).peso_vivo_medio || 0);
-                const pesoCarcaca = (b as any).peso_gancho > 0 ? (b as any).peso_gancho : b.peso_total_romaneio;
-                return sum + (pesoVivoTotal > 0 ? (pesoCarcaca / pesoVivoTotal) * 100 : 0);
-            }, 0) / rends.length).toFixed(1) + '%' : 'N/A (sem peso vivo cadastrado)';
-            const avgRendNum = rends.length > 0 ? parseFloat(avgRend) : 0;
-            const score = avgRendNum > 0 ? (avgRendNum > 52 && mortos === 0 ? 'A (Excelente)' : (avgRendNum > 49 ? 'B (Bom)' : 'C (Atenção)')) : 'N/A (sem peso vivo)';
-            return `- ${s.nome_fantasia} | Score: ${score} | Mortos: ${mortos} | Rend: ${avgRend}`;
-        }).join('\n')}
-
-🏦 FINANCEIRO
-- Entradas totais: R$${entradas.toFixed(2)}
-- Saídas totais: R$${saidas.toFixed(2)}
-- Saldo: R$${saldo.toFixed(2)} ${saldo < 0 ? '🔴 NEGATIVO!' : saldo < 5000 ? '🟡 baixo' : '🟢'}
+        const metricasFinanceiro = `
+🏦 FINANCEIRO MACRO
+- Entradas totais: R$${entradas.toFixed(2)} | Saídas totais: R$${saidas.toFixed(2)}
+- Saldo em Caixa: R$${saldo.toFixed(2)} ${saldo < 0 ? '🔴 NEGATIVO!' : saldo < 5000 ? '🟡 baixo' : '🟢'}
 - Projeção 7 dias: A Receber R$${aReceber7d.toFixed(2)} | A Pagar R$${aPagar7d.toFixed(2)}
 - Contas a pagar pendentes: R$${totalPayablesPendentes.toFixed(2)}
-${payablesVencidos.length > 0 ? `🔴 VENCIDAS: ${payablesVencidos.length} conta(s) | R$${totalPayablesVencidos.toFixed(2)}` : '🟢 Sem contas vencidas'}
+${payablesVencidos.length > 0 ? `🔴 FATURAS VENCIDAS: ${payablesVencidos.length} conta(s) | R$${totalPayablesVencidos.toFixed(2)}` : '🟢 Sem contas vencidas'}`;
+
+        // O Closure retorna uma Função que pede o ID do Agente em vez de uma string universal
+        return (targetAgentId: string) => {
+            let baseSnapshot = `══════════════════════════════════════
+📅 HOJE: ${hojeStr}
 ══════════════════════════════════════`;
+
+            // LAZY LOADING DE CONTEXTO DEPENDENDO DE QUEM LÊ! Média de corte = -70% DOS TOKENS
+            if (targetAgentId === 'ADMINISTRATIVO' || targetAgentId === 'FLUXO_CAIXA' || targetAgentId === 'AUDITOR') {
+                baseSnapshot += metricasProducao + metricasEstoque + metricasComercialCRM + metricasFinanceiro;
+            } else if (targetAgentId === 'COMERCIAL' || targetAgentId === 'MARKETING' || targetAgentId === 'COBRANCA' || targetAgentId === 'SATISFACAO' || targetAgentId === 'WHATSAPP_BOT') {
+                baseSnapshot += metricasEstoque + metricasComercialCRM;
+            } else if (targetAgentId === 'PRODUCAO' || targetAgentId === 'ESTOQUE' || targetAgentId === 'COMPRAS') {
+                baseSnapshot += metricasProducao + metricasEstoque;
+            } else {
+                baseSnapshot += metricasComercialCRM; // Padrão
+            }
+
+            return baseSnapshot;
+        };
     }, [batches, stock, sales, clients, transactions, suppliers, payables, scheduledOrders]);
 
 
@@ -546,7 +356,9 @@ ${payablesVencidos.length > 0 ? `🔴 VENCIDAS: ${payablesVencidos.length} conta
                 result.steps.push(stepRecord);
 
                 try {
-                    const agentPrompt = `Você é o especialista. Dados reais do sistema:\n${dataSnapshot}\n\nINSTRUÇÃO DE ORQUESTRAÇÃO:\n${step.purpose}\n\nCONTEXTO ACUMULADO ATÉ AGORA:\n${contextAccumulator}\n\nSUA TAREFA:\nResponda em 100 palavras. Se houver risco CRÍTICO (bloqueante), comece com [VETO] seguido do motivo.`;
+                    const typedSnapshotFn = dataSnapshot as unknown as (id: string) => string;
+                    const agentData = typeof dataSnapshot === 'function' ? typedSnapshotFn(step.agent) : dataSnapshot;
+                    const agentPrompt = `Você é o especialista ${step.agent}. Dados reais limitados ao seu escopo:\n${agentData}\n\nINSTRUÇÃO DA REUNIÃO:\n${step.purpose}\n\nCONTEXTO ACUMULADO ATÉ AGORA:\n${contextAccumulator}\n\nSUA TAREFA:\nResponda em 100 palavras. Direto ao ponto. Sem firulas automáticas. Se o risco for CRÍTICO financeiramente, inicie com [VETO] justificando.`;
                     // Simulando chamada para evitar dependências circulares com AIAgents no runCascade
                     stepRecord.output = `Parecer de ${step.agent}: Analisando viabilidade. [AGENTE SIMULADO]`;
                     stepRecord.status = 'COMPLETED';
@@ -631,30 +443,50 @@ ${payablesVencidos.length > 0 ? `🔴 VENCIDAS: ${payablesVencidos.length} conta
         'RH_GESTOR': PROMPT_RH_GESTOR,
         'FISCAL_CONTABIL': PROMPT_FISCAL_CONTABIL,
         'QUALIDADE': PROMPT_QUALIDADE,
+        'PROFESSOR': PROMPT_PROFESSOR,
+    };
+
+    const getMentorTip = async (targetAgent: AgentType, topic: string) => {
+        try {
+            const mentorPrompt = `${PROMPT_PROFESSOR}
+---
+DADOS ATUAIS DO SISTEMA:
+${(dataSnapshot as any)(targetAgent)}
+
+TEMA: "${topic}"
+AGENTE QUE VAI RESPONDER: ${targetAgent}
+
+Sua tarefa: Forneça uma INSIGHT CURTA (máx 30 palavras) para elevar o nível da resposta desse agente. 
+Seja técnico, inovador e direto. Não use saudações. Comece direto no conhecimento.`;
+            const { text } = await runCascade(mentorPrompt, 'PROFESSOR');
+            return `\n\n[DICA DO PROFESSOR MENTHOR PARA ELEVAR ESTA RESPOSTA]:\n${text}\n`;
+        } catch (e) {
+            return '';
+        }
     };
 
     const getAgentSystemPrompt = (agentId: AgentType, _dataSnapshot: string = '') => {
         const agent = AGENTS.find(a => a.id === agentId)!;
         const specialistPrompt = AGENT_PROMPT_MAP[agentId] || '';
 
-        const chatWrapper = `Você é ${agent.name}, ${agent.role} do FrigoGest.
-Você está numa CONVERSA DIRETA com o dono do frigorífico.
+        // Chamada Lazily Evaluated: Ele varre as estatísticas DE ACORDO com quem perguntou, jogando 80% do HTML fora
+        const scopedDataSnapshot = dataSnapshot(agentId);
 
-REGRAS ABSOLUTAS DE CHAT (NUNCA VIOLE):
-- Responda SEMPRE em português brasileiro
-- Seja DIRETO e PRÁTICO — fale como gerente, não como robô
-- Use emojis quando apropriado: 🔴 crítico, 🟡 atenção, 🟢 ok
-- Se tiver dados do snapshot, cite números específicos
-- Máximo 300 palavras (é um chat, não um relatório)
-- IMPORTANTE: Responda à PERGUNTA ESPECÍFICA do usuário. NÃO repita informações genéricas.
-- CRÍTICO: NUNCA termine sua resposta com uma pergunta. Dê sua análise completa e conclua. Se quiser sugerir continuação, faça como afirmação ("Posso detalhar X se precisar"), nunca como pergunta.
-- CRÍTICO: NÃO repita o que o usuário acabou de dizer. Vá direto à resposta.`;
+        const chatWrapper = `Você é ${agent.name}, ${agent.role} do FrigoGest.
+Você está conversando DE IGUAL PARA IGUAL com o dono através do painel da empresa.
+
+REGRAS ABSOLUTAS:
+- Seja extremamente DIRETO e CASUAL — fale como um humano, não como um robô pedante.
+- Sinta-se livre para discordar do dono caso veja risco na operação!
+- Use as métricas numéricas do seu contexto sempre que sustentar um argumento.
+- NUNCA responda algo engessado como "O que mais posso ajudar?". Encerre a resposta pontualmente com a conclusão da demanda e ponto final.
+- Não gere marcações pesadas em Markdown ou tópicos infinitos (Bulleted Lists) ao menos que explicitamente ordenado a criar relatório. Formate-se como um chat do WhatsApp enxuto.`;
 
         const searchNote = (agentId === 'COMERCIAL' || agentId === 'MERCADO')
-            ? `\n\nOBRIGAÇÃO DE PESQUISA: Use googleSearch para buscar preço atualizado da arroba em VCA/Sul BA. Cite a fonte e preço exato.`
+            ? `\n\nATENÇÃO: Você tem autonomia e PERMISSÃO para buscar no Google os dados reais e datas atuais de hoje (Ex: CEPEA atual) se desconfiar que as minhas taxas base estão velhas antes de me fornecer conselhos.`
             : '';
 
-        return `${chatWrapper}\n\nSEU CONHECIMENTO ESPECIALIZADO:\n${specialistPrompt}${searchNote}\n\nDADOS REAIS DO SISTEMA:\n${dataSnapshot}`;
+        return `${chatWrapper}\n\nSUAS DIRETRIZES DE ESPECIALISTA:\n${specialistPrompt}${searchNote}\n\nDADOS DO SISTEMA HOJE (Seu Setor):\n${scopedDataSnapshot}`;
     };
 
     // ═══ SEND MESSAGE ═══
@@ -677,27 +509,59 @@ REGRAS ABSOLUTAS DE CHAT (NUNCA VIOLE):
 
 
         try {
-            // Build conversation context (last 6 messages for memory)
+            // Build conversation context (reduzido severamente para as ULTIMAS 3 MENSAGENS MAX - Otimizando o gasto de contexto e limitando a loop window)
             const history = [...(chatHistories[selectedAgent] || []), userMsg];
-            const recentHistory = history.slice(-6);
+            const recentHistory = history.slice(-3);
             const contextPrompt = recentHistory.map(m =>
-                m.role === 'user' ? `DONO: ${m.text}` : `${currentAgent.name}: ${m.text}`
+                m.role === 'user' ? `DONO (Eu): ${m.text}` : `${currentAgent.name} (Você): ${m.text}`
             ).join('\n\n');
 
-            const fullPrompt = `${getAgentSystemPrompt(selectedAgent)}
+            // Fetch de Dados de Mercado Real-Time (Internet para a Inteligência)
+            let internetContext = '';
+            if (['COMERCIAL', 'MERCADO', 'COMPRAS', 'ADMINISTRATIVO'].includes(selectedAgent)) {
+                try {
+                    const marketData = await fetchAllMarketData();
+                    internetContext = `\n\n[MUNDO AFORA: DADOS REAIS DA INTERNET ATUALIZADOS NESTE MILISSEGUNDO]\n- Boi Gordo (CEPEA/B3): R$ ${marketData.cepeaBoi.valor} (Variou: ${marketData.cepeaBoi.variacao}% | ${marketData.cepeaBoi.fonte})\n- Dólar (PTAX): R$ ${marketData.dolar.valor} (${marketData.dolar.fonte})\n- Milho (CEPEA): R$ ${marketData.milho.valor} (${marketData.milho.fonte})`;
+                } catch (e) {
+                    console.error("Falha ao buscar internet", e);
+                }
+            }
 
-CONVERSA ANTERIOR:
+            // INJEÇÃO DE INTELIGÊNCIA DO PROFESSOR (O MENTHOR ENSINANDO O ESPECIALISTA)
+            let mentorContext = '';
+            if (selectedAgent !== 'PROFESSOR' && !isOrchestrating) {
+                mentorContext = await getMentorTip(selectedAgent, capturedText);
+            }
+
+            // BUSCAR MEMÓRIAS PERSISTENTES DO AGENTE
+            let persistentMemoryContext = '';
+            try {
+                const memories = await getAgentMemories(selectedAgent);
+                persistentMemoryContext = formatMemoriesForPrompt(memories);
+            } catch (memErr) {
+                console.warn('[AIChat] Falha ao buscar memórias:', memErr);
+            }
+
+            const fullPrompt = `${getAgentSystemPrompt(selectedAgent, (dataSnapshot as any)(selectedAgent))}${internetContext}${mentorContext}${persistentMemoryContext}
+
+MENSAGENS RECENTES (MEMÓRIA CURTA):
 ${contextPrompt}
 
-Responda a última mensagem do DONO de forma natural e útil.`;
+Responda SOMENTE a última mensagem minha com o que solicitei de maneira enxuta, clara e humanizada. Reserve-se em até 70 palavras se não for listagem detalhada.`;
 
             const { text, provider } = await runCascade(fullPrompt, selectedAgent);
+
+            // EXECUÇÃO DO MCP AUTÔNOMO
+            const mcpResult = await executeInterceptedMCPs(text);
+
+            // Oculta a linha de pensamento do usuário para design mais limpo (Modo WhatsApp)
+            const cleanText = mcpResult.cleanText.replace(/<reasoning>[\s\S]*?(?:<\/reasoning>|$)/gi, '').trim() || mcpResult.cleanText;
 
             const agentMsg: ChatMessage = {
                 id: `msg-${Date.now()}-resp`,
                 role: 'agent',
                 agent: selectedAgent,
-                text,
+                text: cleanText,
                 timestamp: new Date(),
                 provider,
             };
@@ -707,8 +571,17 @@ Responda a última mensagem do DONO de forma natural e útil.`;
                 [selectedAgent]: [...(prev[selectedAgent] || []), agentMsg],
             }));
 
+            // Adiciona as ações do MCP ao log se existirem
+            const mcpLogs: LogEntry[] = mcpResult.executions.map(exec => ({
+                id: `log-mcp-${Date.now()}-${Math.random()}`,
+                agent: selectedAgent,
+                action: `[MCP Exec: ${exec.actionType}] ${exec.output}`,
+                timestamp: new Date(),
+                provider: 'MCP-System',
+            }));
+
             // Log activity — usa capturedText que foi salvo antes do setInputText('')
-            setActivityLog(prev => [...prev, {
+            setActivityLog(prev => [...prev, ...mcpLogs, {
                 id: `log-${Date.now()}`,
                 agent: selectedAgent,
                 action: `Respondeu: "${capturedText.substring(0, 50)}${capturedText.length > 50 ? '...' : ''}"`,
@@ -794,12 +667,13 @@ Seja direto, prático, e fale como se estivesse numa mesa de reunião.
 Comece com seu ponto principal.`;
 
                 const { text, provider } = await runCascade(meetingPrompt, agent.id);
+                const cleanText = text.replace(/<reasoning>[\s\S]*?(?:<\/reasoning>|$)/gi, '').trim() || text;
 
                 const agentMsg: ChatMessage = {
                     id: `meet-${Date.now()}-${agent.id}`,
                     role: 'agent',
                     agent: agent.id,
-                    text,
+                    text: cleanText,
                     timestamp: new Date(),
                     provider,
                 };
@@ -822,6 +696,36 @@ Comece com seu ponto principal.`;
                 }]);
             }
         }
+
+        // --- VEREDITO DO PROFESSOR (FECHAMENTO DA REUNIÃO) ---
+        try {
+            const historyText = meetingMessages.map(m => `${m.agent || 'Dono'}: ${m.text}`).join('\n\n');
+            const mentorPrompt = `${PROMPT_PROFESSOR}
+---
+Sua missão agora é encerrar esta reunião técnica.
+PAUTA: "${topic}"
+HISTÓRICO DA DISCUSSÃO:
+${historyText}
+
+Tome uma decisão ou dê um conselho final magistral baseado em todos os pareceres acima.
+Seja o MESTRE que sintetiza tudo e eleva a inteligência do negócio.
+Limite-se a 150 palavras.`;
+
+            const { text, provider } = await runCascade(mentorPrompt, 'PROFESSOR');
+            const cleanText = text.replace(/<reasoning>[\s\S]*?(?:<\/reasoning>|$)/gi, '').trim() || text;
+
+            setMeetingMessages(prev => [...prev, {
+                id: `meet-final-${Date.now()}`,
+                role: 'agent',
+                agent: 'PROFESSOR',
+                text: `🎓 VEREDITO DO MENTHOR:\n\n${cleanText}`,
+                timestamp: new Date(),
+                provider,
+            }]);
+        } catch (e) {
+            console.error("Falha no veredito do professor", e);
+        }
+
         setMeetingLoading(false);
     };
 
