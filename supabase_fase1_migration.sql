@@ -67,7 +67,8 @@ ORDER BY table_name, column_name;
 CREATE TABLE IF NOT EXISTS market_prices (
   id           BIGSERIAL PRIMARY KEY,
   arroba_sp    NUMERIC NOT NULL,         -- R$/@ SP
-  arroba_ba    NUMERIC NOT NULL,         -- R$/@ BA Sul
+  arroba_ba    NUMERIC NOT NULL,         -- R$/@ Feira de Santana BA
+  arroba_vdc   NUMERIC,                    -- R$/@ VDC / Sudoeste BA (principal!)
   arroba_kg_carcaca NUMERIC,            -- arroba_ba / 15
   arroba_data  TEXT,                    -- data de referência (dd/mm/aaaa)
   arroba_fonte TEXT DEFAULT 'SUPABASE_MANUAL',

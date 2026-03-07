@@ -19,6 +19,7 @@ const MarketDashboard: React.FC<MarketDashboardProps> = ({ onBack }) => {
     const [editando, setEditando] = useState(false);
     const [inputSP, setInputSP] = useState('');
     const [inputBA, setInputBA] = useState('');
+    const [inputVDC, setInputVDC] = useState('');
     const [salvando, setSalvando] = useState(false);
     const [msgSalvo, setMsgSalvo] = useState('');
 
@@ -36,6 +37,7 @@ const MarketDashboard: React.FC<MarketDashboardProps> = ({ onBack }) => {
     const handleAbrirEdicao = () => {
         setInputSP(prices?.arroba_sp?.toFixed(2) ?? '');
         setInputBA(prices?.arroba_ba?.toFixed(2) ?? '');
+        setInputVDC(prices?.arroba_vdc?.toFixed(2) ?? '');
         setEditando(true);
         setMsgSalvo('');
     };
@@ -43,10 +45,12 @@ const MarketDashboard: React.FC<MarketDashboardProps> = ({ onBack }) => {
     const handleSalvar = async () => {
         const sp = parseFloat(inputSP.replace(',', '.'));
         const ba = parseFloat(inputBA.replace(',', '.'));
+        const vdc = parseFloat(inputVDC.replace(',', '.'));
         if (isNaN(sp) || sp < 200 || sp > 700) { alert('Preço SP inválido (R$200–700)'); return; }
         if (isNaN(ba) || ba < 180 || ba > 680) { alert('Preço BA inválido (R$180–680)'); return; }
+        if (!isNaN(vdc) && (vdc < 180 || vdc > 680)) { alert('Preço VDC inválido (R$180–680)'); return; }
         setSalvando(true);
-        const ok = await saveMarketPrices(sp, ba, 'SUPABASE_MANUAL', 'DONO');
+        const ok = await saveMarketPrices(sp, ba, 'SUPABASE_MANUAL', 'DONO', 0, isNaN(vdc) ? undefined : vdc);
         if (ok) {
             setMsgSalvo(`Salvo! Agentes usam R$${ba.toFixed(2)}/@`);
             setEditando(false);
@@ -58,6 +62,7 @@ const MarketDashboard: React.FC<MarketDashboardProps> = ({ onBack }) => {
     };
 
     const arrobaSP = prices?.arroba_sp ?? 362;
+    const arrobaVDC = prices?.arroba_vdc ?? (prices?.arroba_ba ? prices.arroba_ba - 4 : 336);
     const arrobaBA = prices?.arroba_ba ?? 335;
     const arrobaKg = prices?.arroba_kg_carcaca ?? (335 / 15);
     const dolar = prices?.dolar ?? 5.82;
@@ -160,11 +165,19 @@ const MarketDashboard: React.FC<MarketDashboardProps> = ({ onBack }) => {
                                 className="w-36 bg-gray-900 border border-blue-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-400" />
                         </div>
                         <div>
-                            <label className="text-xs text-gray-400 mb-1 block">Arroba BA Sul (R$/@)</label>
-                            <input type="number" step="0.01" value={inputBA} onChange={e => setInputBA(e.target.value)} placeholder="ex: 335.00"
+                            <label className="text-xs text-gray-400 mb-1 block">Arroba Feira de Santana BA (R$/@)</label>
+                            <input type="number" step="0.01" value={inputBA} onChange={e => setInputBA(e.target.value)} placeholder="ex: 340.00"
                                 className="w-36 bg-gray-900 border border-blue-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-400" />
-                            {inputBA && !isNaN(parseFloat(inputBA)) && (
-                                <p className="text-[10px] text-gray-500 mt-1">→ R${(parseFloat(inputBA)/15).toFixed(2)}/kg carcaça</p>
+                        </div>
+                        <div>
+                            <label className="text-xs text-blue-300 mb-1 block font-bold">⭐ Arroba VDC/Sudoeste BA (R$/@)</label>
+                            <input type="number" step="0.01" value={inputVDC} onChange={e => setInputVDC(e.target.value)} placeholder="ex: 336.00"
+                                className="w-36 bg-gray-900 border border-blue-400 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-300" />
+                            {inputVDC && !isNaN(parseFloat(inputVDC)) && (
+                                <p className="text-[10px] text-blue-400 mt-1 font-bold">→ R${(parseFloat(inputVDC)/15).toFixed(2)}/kg carcaça</p>
+                            )}
+                            {!inputVDC && inputBA && !isNaN(parseFloat(inputBA)) && (
+                                <p className="text-[10px] text-gray-500 mt-1">vazio = BA - R$4 automaticamente</p>
                             )}
                         </div>
                         <div className="flex gap-2">
@@ -177,7 +190,7 @@ const MarketDashboard: React.FC<MarketDashboardProps> = ({ onBack }) => {
                         </div>
                     </div>
                     <p className="text-[10px] text-blue-400/70 mt-3">
-                        💡 O indicador CEPEA sai às 18h30 em dias úteis em cepea.esalq.usp.br — ou grupos do WhatsApp do setor.
+                        💡 VDC: peça ao seu comprador de gado ou veja no grupo do Acrioeste/sindicato rural. Feira de Santana: Cooperfeira publica toda semana. CEPEA SP: cepea.esalq.usp.br às 18h30.
                     </p>
                 </div>
             )}
@@ -192,13 +205,17 @@ const MarketDashboard: React.FC<MarketDashboardProps> = ({ onBack }) => {
                             {variacao >= 0 ? <TrendingUp className="text-emerald-400" size={20} /> : <TrendingDown className="text-red-400" size={20} />}
                         </div>
                         <div className="flex items-end gap-3">
-                            <div className="text-4xl font-black text-white">{isLoading ? <Loader2 size={32} className="animate-spin text-gray-500" /> : `R$ ${arrobaSP.toFixed(2)}`}</div>
+                            <div>
+                                <div className="text-[10px] text-emerald-300/60 mb-0.5">VDC / Sudoeste BA ⭐</div>
+                                <div className="text-4xl font-black text-white">{isLoading ? <Loader2 size={32} className="animate-spin text-gray-500" /> : `R$ ${arrobaVDC.toFixed(2)}`}</div>
+                            </div>
                             {variacao !== 0 && <span className={`text-sm font-bold mb-1 ${variacao >= 0 ? 'text-green-400' : 'text-red-400'}`}>{variacao >= 0 ? '+' : ''}{variacao.toFixed(2)}%</span>}
                         </div>
                         <div className="mt-2 pt-2 border-t border-emerald-700/30">
-                            <div className="flex justify-between text-xs">
-                                <span className="text-emerald-300/70">BA Sul: <strong className="text-white">R$ {arrobaBA.toFixed(2)}/@</strong></span>
-                                <span className="text-emerald-300/70">→ <strong className="text-white">R$ {arrobaKg.toFixed(2)}/kg</strong></span>
+                            <div className="grid grid-cols-3 gap-1 text-xs">
+                                <span className="text-emerald-300/60">SP: <strong className="text-white">R${arrobaSP.toFixed(0)}</strong></span>
+                                <span className="text-emerald-300/60">BA/FSA: <strong className="text-white">R${arrobaBA.toFixed(0)}</strong></span>
+                                <span className="text-emerald-300/60">→ <strong className="text-white">R${arrobaKg.toFixed(2)}/kg</strong></span>
                             </div>
                         </div>
                     </div>

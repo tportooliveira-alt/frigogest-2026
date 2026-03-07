@@ -15,9 +15,10 @@ import { supabase } from '../supabaseClient';
 
 export interface MarketPrices {
     // Arroba
-    arroba_sp: number;          // R$/@ boi gordo SP
-    arroba_ba: number;          // R$/@ boi gordo BA (estimativa regional)
-    arroba_kg_carcaca: number;  // R$/kg carcaça (arroba_ba ÷ 15)
+    arroba_sp: number;          // R$/@ boi gordo SP (CEPEA referência nacional)
+    arroba_ba: number;          // R$/@ boi gordo Feira de Santana BA
+    arroba_vdc: number;         // R$/@ boi gordo VDC / Sudoeste BA (principal!)
+    arroba_kg_carcaca: number;  // R$/kg carcaça (arroba_vdc ÷ 15)
     arroba_data: string;        // Data de referência
     arroba_fonte: 'CEPEA_AO_VIVO' | 'SUPABASE_MANUAL' | 'FALLBACK';
     arroba_variacao: number;    // % vs valor anterior
@@ -41,8 +42,9 @@ export interface MarketPrices {
 // Valores de emergência — última atualização manual Mar/2026
 const FALLBACK: MarketPrices = {
     arroba_sp: 362.00,
-    arroba_ba: 335.00,
-    arroba_kg_carcaca: 335 / 15,
+    arroba_ba: 340.00,    // Feira de Santana (Cooperfeira, Fev/2026)
+    arroba_vdc: 336.00,   // VDC estimado (BA - R$4 desconto logístico)
+    arroba_kg_carcaca: 336 / 15,
     arroba_data: '06/03/2026',
     arroba_fonte: 'FALLBACK',
     arroba_variacao: 0,
@@ -150,13 +152,16 @@ export async function saveMarketPrices(
     arroba_ba: number,
     fonte: 'CEPEA_AO_VIVO' | 'SUPABASE_MANUAL',
     atualizado_por: string,
-    variacao = 0
+    variacao = 0,
+    arroba_vdc?: number
 ): Promise<boolean> {
     if (!supabase) return false;
+    const vdc = arroba_vdc ?? (arroba_ba - 4); // VDC ≈ BA menos R$4 de logística
     const record: Partial<MarketPrices> = {
         arroba_sp,
         arroba_ba,
-        arroba_kg_carcaca: arroba_ba / 15,
+        arroba_vdc: vdc,
+        arroba_kg_carcaca: vdc / 15,
         arroba_data: new Date().toLocaleDateString('pt-BR'),
         arroba_fonte: fonte,
         arroba_variacao: variacao,
@@ -209,8 +214,9 @@ export async function fetchMarketPrices(): Promise<MarketPrices> {
     try {
         const c = await fetchCepeaAoVivo();
         result.arroba_sp = c.sp;
-        result.arroba_ba = Math.round(c.sp * 0.926); // BA ≈ 92,6% do SP historicamente
-        result.arroba_kg_carcaca = result.arroba_ba / 15;
+        result.arroba_ba = Math.round(c.sp * 0.966); // BA (Feira) ≈ 96,6% do SP (Fev/2026: 340/352)
+        result.arroba_vdc = Math.round(c.sp * 0.955); // VDC ≈ BA - R$4 (~95,5% do SP)
+        result.arroba_kg_carcaca = result.arroba_vdc / 15;
         result.arroba_data = new Date().toLocaleDateString('pt-BR');
         result.arroba_fonte = 'CEPEA_AO_VIVO';
         result.arroba_variacao = c.variacao;
@@ -218,7 +224,7 @@ export async function fetchMarketPrices(): Promise<MarketPrices> {
         cepeaOk = true;
 
         // Salvar automaticamente no Supabase para manter histórico
-        saveMarketPrices(result.arroba_sp, result.arroba_ba, 'CEPEA_AO_VIVO', 'CEPEA', c.variacao);
+        saveMarketPrices(result.arroba_sp, result.arroba_ba, 'CEPEA_AO_VIVO', 'CEPEA', c.variacao, result.arroba_vdc);
     } catch (e: any) {
         erros.push(`CEPEA ao vivo: ${e.message}`);
     }
@@ -229,7 +235,8 @@ export async function fetchMarketPrices(): Promise<MarketPrices> {
         if (saved) {
             result.arroba_sp = saved.arroba_sp;
             result.arroba_ba = saved.arroba_ba;
-            result.arroba_kg_carcaca = saved.arroba_ba / 15;
+            result.arroba_vdc = saved.arroba_vdc ?? (saved.arroba_ba - 4);
+            result.arroba_kg_carcaca = result.arroba_vdc / 15;
             result.arroba_data = saved.arroba_data;
             result.arroba_fonte = 'SUPABASE_MANUAL';
             result.arroba_variacao = saved.arroba_variacao;
