@@ -17,9 +17,9 @@ import {
 
 interface SuppliersProps {
     suppliers: Supplier[];
-    addSupplier: (s: Supplier) => void;
-    updateSupplier?: (s: Supplier) => void;
-    deleteSupplier: (id: string) => void;
+    addSupplier: (s: Supplier) => Promise<void>;
+    updateSupplier?: (s: Supplier) => Promise<void>;
+    deleteSupplier: (id: string) => Promise<void>;
     onBack: () => void;
 }
 

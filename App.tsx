@@ -93,7 +93,7 @@ const App: React.FC = () => {
         supabase.from('clients').select('*'),
         supabase.from('batches').select('*'),
         supabase.from('stock_items').select('*'),
-        supabase.from('sales').select('*'),
+        supabase.from('sales').select('*').order('data_venda', { ascending: false }),
         supabase.from('transactions').select('*'),
         supabase.from('scheduled_orders').select('*'),
         supabase.from('daily_reports').select('*').order('date', { ascending: false }).limit(50),
@@ -101,8 +101,22 @@ const App: React.FC = () => {
         supabase.from('payables').select('*'),
       ]);
 
+      const TABLE_NAMES = ['clients','batches','stock_items','sales','transactions','scheduled_orders','daily_reports','suppliers','payables'];
       const getResData = (res: PromiseSettledResult<any>) =>
         res.status === 'fulfilled' ? (res.value.data || []) : [];
+
+      // Detectar tabelas que falharam e logar — dados parciais são silenciosos sem isso
+      const failedTables = results
+        .map((r, i) => r.status === 'rejected' ? TABLE_NAMES[i] : null)
+        .filter(Boolean);
+      if (failedTables.length > 0) {
+        console.error('[fetchData] Tabelas com erro:', failedTables);
+        setDbStatus('error');
+        // Não interrompe — carrega o que conseguiu, mas avisa o dono
+        if (failedTables.some(t => ['sales','clients','stock_items'].includes(t!))) {
+          console.warn('[fetchData] Tabela crítica falhou — dados dos agentes podem estar incompletos');
+        }
+      }
 
       const clients = getResData(results[0]) as Client[];
       const batches = getResData(results[1]) as Batch[];
@@ -474,36 +488,83 @@ const App: React.FC = () => {
       await supabase.from('sales').update({ status_pagamento: 'ESTORNADO', valor_pago: 0 }).eq('id_venda', saleId);
 
       // 2. Devolver item(ns) ao estoque → DISPONÍVEL
-      const rawIds: string[] = (sale as any).stock_ids_originais && Array.isArray((sale as any).stock_ids_originais)
+      // ESTRATÉGIA: 3 tentativas em cascata para garantir que as carcaças voltem ao gancho
+      const restoredIds = new Set<string>();
+
+      // Passo 2a: pegar IDs originais do campo stock_ids_originais (vindo do banco)
+      const rawIds: string[] = (sale as any).stock_ids_originais && Array.isArray((sale as any).stock_ids_originais) && (sale as any).stock_ids_originais.length > 0
         ? (sale as any).stock_ids_originais
         : [sale.id_completo];
 
-      const refinedIds: string[] = [];
+      // Passo 2b: expandir IDs virtuais -INTEIRO para as bandas reais
+      const expandedIds: string[] = [];
       rawIds.forEach((id: string) => {
         if (id.endsWith('-INTEIRO')) {
-          const base = id.replace('-INTEIRO', '');
-          refinedIds.push(`${base}-BANDA_A`, `${base}-BANDA_B`);
+          const base = id.replace(/-INTEIRO$/, '');
+          expandedIds.push(`${base}-BANDA_A`, `${base}-BANDA_B`);
         } else {
-          refinedIds.push(id);
+          expandedIds.push(id);
         }
       });
 
-      console.log(`📦 Devolvendo itens ao estoque:`, refinedIds);
-      const restoredIds = new Set<string>();
+      console.log(`📦 Tentativa 1 — devolvendo por IDs expandidos:`, expandedIds);
 
-      for (const stockId of refinedIds) {
-        try {
-          const { data: found, error } = await supabase.from('stock_items')
-            .select('id_completo').eq('id_completo', stockId).limit(1);
-          if (!error && found && found.length > 0) {
-            await supabase.from('stock_items').update({ status: 'DISPONIVEL' }).eq('id_completo', stockId);
-            restoredIds.add(stockId);
-            console.log(`✅ Item ${stockId} -> DISPONIVEL`);
+      for (const stockId of expandedIds) {
+        const { data: found, error } = await supabase!.from('stock_items')
+          .select('id_completo').eq('id_completo', stockId).limit(1);
+        if (!error && found && found.length > 0) {
+          await supabase!.from('stock_items').update({ status: 'DISPONIVEL' }).eq('id_completo', stockId);
+          restoredIds.add(stockId);
+          console.log(`✅ Item ${stockId} -> DISPONIVEL`);
+        }
+      }
+
+      // Passo 2c: FALLBACK ROBUSTO — só ativa se a tentativa 1 não restaurou nada
+      // REGRA CRÍTICA: banda avulsa  → restaura SÓ a banda vendida (id_completo exato)
+      //                carcaça inteira → restaura BANDA_A + BANDA_B pelo id_lote + sequência
+      if (restoredIds.size === 0) {
+        const tipoVenda = (sale as any).tipo_venda; // 'CARCACA_INTEIRA' | 'BANDA_AVULSA' | undefined
+        const isBandaAvulsa = tipoVenda === 'BANDA_AVULSA' || (!tipoVenda && !sale.id_completo.endsWith('-INTEIRO'));
+
+        if (isBandaAvulsa) {
+          // Banda avulsa: restaurar apenas o id_completo exato da venda
+          console.warn(`⚠️ Fallback BANDA_AVULSA: tentando id_completo direto "${sale.id_completo}"`);
+          const { data: found } = await supabase!.from('stock_items')
+            .select('id_completo, status').eq('id_completo', sale.id_completo).limit(1);
+          if (found && found.length > 0 && found[0].status === 'VENDIDO') {
+            await supabase!.from('stock_items').update({ status: 'DISPONIVEL' }).eq('id_completo', sale.id_completo);
+            restoredIds.add(sale.id_completo);
+            console.log(`✅ Fallback banda: ${sale.id_completo} -> DISPONIVEL`);
           } else {
-            console.error(`❌ Item ${stockId} não encontrado. Verifique o estoque manualmente.`);
+            console.error(`❌ Fallback banda falhou: "${sale.id_completo}" não encontrado ou não está VENDIDO`);
           }
-        } catch (findErr) {
-          console.error(`❌ Erro ao buscar item ${stockId}:`, findErr);
+        } else {
+          // Carcaça inteira: restaurar as duas bandas pelo id_lote + sequência
+          console.warn(`⚠️ Fallback CARCACA_INTEIRA: buscando por id_lote + sequência...`);
+          const parts = sale.id_completo.split('-');
+          if (parts.length >= 3) {
+            const seqStr = parts[parts.length - 2];
+            const idLote = parts.slice(0, parts.length - 2).join('-');
+            const seqNum = parseInt(seqStr, 10);
+
+            console.log(`🔍 Fallback carcaça: id_lote="${idLote}" sequencia=${seqNum}`);
+
+            let query = supabase!.from('stock_items').select('id_completo, status').eq('id_lote', idLote);
+            if (!isNaN(seqNum)) query = query.eq('sequencia', seqNum);
+
+            const { data: stockByLote, error: loteErr } = await query;
+            if (!loteErr && stockByLote && stockByLote.length > 0) {
+              for (const item of stockByLote) {
+                if (item.status === 'VENDIDO') {
+                  await supabase!.from('stock_items').update({ status: 'DISPONIVEL' }).eq('id_completo', item.id_completo);
+                  restoredIds.add(item.id_completo);
+                  console.log(`✅ Fallback carcaça: ${item.id_completo} -> DISPONIVEL`);
+                }
+              }
+            } else {
+              console.error(`❌ Fallback carcaça falhou para lote="${idLote}" seq="${seqStr}". Erro:`, loteErr);
+            }
+          }
         }
       }
 
@@ -570,8 +631,14 @@ const App: React.FC = () => {
         )
       }));
 
+      const fallbackUsed = restoredIds.size > 0 && expandedIds.every(id => !restoredIds.has(id));
       logAction(session?.user, 'ESTORNO', 'SALE', `Venda estornada: ${saleId} (${sale.nome_cliente}) - Pago: R$${valorPago.toFixed(2)}`, { saleId, valorPago, restoredIds: [...restoredIds] });
-      alert(`✅ Estorno concluído!\n• ${restoredIds.size} item(s) devolvido(s) ao estoque\n• Financeiro revertido: R$ ${valorPago.toFixed(2)}`);
+
+      if (restoredIds.size === 0) {
+        alert(`⚠️ Estorno financeiro concluído, mas nenhum item foi encontrado no estoque para restaurar.\n\nIsso pode ocorrer se os itens já foram manualmente removidos.\nVerifique o estoque manualmente para o id: ${sale.id_completo}`);
+      } else {
+        alert(`✅ Estorno concluído!\n• ${restoredIds.size} item(s) devolvido(s) ao estoque${fallbackUsed ? ' (via busca automática)' : ''}\n• Financeiro revertido: R$ ${valorPago.toFixed(2)}`);
+      }
       fetchData();
     } catch (error) {
       console.error('❌ Erro ao estornar venda:', error);
@@ -834,7 +901,7 @@ const App: React.FC = () => {
     const { error } = await supabase.from('transactions').upsert(sanitize(transaction));
     if (error) throw error;
     if (session?.user) logAction(session.user, 'CREATE', 'TRANSACTION', `Transação adicionada: ${transaction.tipo} ${transaction.valor} (${transaction.descricao})`);
-    fetchData();
+    // Não chamar fetchData() aqui — quem chama addTransaction já faz fetchData() no momento certo
   };
 
   const registerBatchFinancial = async (batch: Batch) => {
@@ -1280,6 +1347,7 @@ const App: React.FC = () => {
               metodo_pagamento: metodo,
               referencia_id: newSales[0].id_venda
             } as any);
+            fetchData(); // Atualiza estado após gravar transação de venda à vista
           }
 
           // Não navega para outra tela — Expedition mostra tela de sucesso internamente

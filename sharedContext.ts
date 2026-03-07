@@ -8,16 +8,18 @@
 
 // ── DADOS CEPEA/B3 — Mercado de Boi Gordo ──
 export const CEPEA_CONTEXT = `
-📊 BOI GORDO SP: R$351,00/@ (alta 7,1% no mês). Em dólares: US$68,5/@.
-📊 BEZERRO NELORE MS: Alta 4,56% na parcial de fevereiro.
-📊 PREVISÃO ANALISTAS: R$360-400/@ até fim 2026. Oferta restrita + demanda aquecida.
-📊 EXPORTAÇÃO: China = principal destino. Recordes Jan/2026. RISCO: possível embargo chinês.
-📊 SAZONALIDADE: Março pós-Carnaval/Quaresma = demanda cai. Maio-Julho inverno = demanda sobe.
+📊 BOI GORDO SP: R$360-370/@ (Mar/2026, pós-Carnaval). Tendência: leve pressão de baixa por Quaresma.
+📊 BEZERRO NELORE MS: R$2.100-2.400/cab. Índice reposição: ~0,98 (limiar desfavorável).
+📊 PREVISÃO ANALISTAS: R$365-400/@ até Jun/2026. Oferta apertada + demanda China firme.
+📊 EXPORTAÇÃO: China = principal destino. Embargo sanitário = risco principal monitorar.
+📊 SAZONALIDADE ATUAL (Mar/Abr): Quaresma = demanda bovina cai 8-12%. Boa hora para estocar.
 📊 CORRELAÇÃO PROTEÍNAS: Frango sobe → boi ganha share. Suíno sobe → boi ganha share.
-📊 B3: Contratos futuros BGIK26 (mai), BGIM26 (jun), BGIN26 (jul).
+📊 B3: Contratos futuros BGIM26 (jun), BGIN26 (jul), BGIQ26 (ago).
 📊 ÍNDICE REPOSIÇÃO: Bezerro/Boi > 1,0 = compra desfavorável. Ideal < 0,95.
-📊 ARROBA FEV/2026: SP R$351/@, MT R$320-340/@, MS R$310-330/@, GO R$315-335/@.
+📊 ARROBA MAR/2026 (estimativa regional): SP R$362/@, BA R$330-345/@, MT R$325-340/@, MS R$315-335/@.
+📊 CUSTO DE OPORTUNIDADE BA: R$335/@ ÷ 15 = R$22,33/kg carcaça (referencial de compra BA Sul).
 `;
+
 
 // ── EMBRAPA — Dados de Raças e Rendimento ──
 export const EMBRAPA_BREEDS_CONTEXT = `

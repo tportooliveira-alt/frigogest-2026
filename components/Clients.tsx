@@ -37,8 +37,8 @@ import { CURRENT_DATE } from '../constants';
 
 interface ClientsProps {
   clients: Client[];
-  addClient: (c: Client) => void;
-  updateClient?: (c: Client) => void;
+  addClient: (c: Client) => Promise<void>;
+  updateClient?: (c: Client) => Promise<void>;
   onBack: () => void;
   onGoToFinancial?: () => void;
   sales: Sale[];

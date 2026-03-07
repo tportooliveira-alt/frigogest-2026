@@ -971,24 +971,30 @@ ${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}
 
                 MERCADO: `
 ## SNAPSHOT MERCADO — FRIGOGEST(${new Date().toLocaleDateString('pt-BR')})
-REFERÊNCIA CEPEA - BA Sul: R$311, 50 / @vivo(Fev / 2026) → R$${(311.50 / 15).toFixed(2)}/kg carcaça (seu custo de oportunidade)
-SAZONALIDADE ATUAL: ${new Date().getMonth() >= 0 && new Date().getMonth() <= 5 ? '🟢 SAFRA (Jan-Jun) — boa oferta, preço firme, janela de compra razoável' : new Date().getMonth() >= 6 && new Date().getMonth() <= 10 ? '🔴 ENTRESSAFRA (Jul-Nov) — escassez, preço máximo, comprar com cautela' : '🟡 FESTAS/ÁGUAS (Dez) — demanda alta, preço em alta'}
+REFERÊNCIA CEPEA-BA Sul: R$335,00/@ (Mar/2026, estimativa regional) → R$${(335.00 / 15).toFixed(2)}/kg carcaça (custo de oportunidade BA)
+SAZONALIDADE ATUAL: ${(() => {
+    const m = new Date().getMonth();
+    if (m === 2 || m === 3) return '🟡 QUARESMA (Mar/Abr) — demanda bovina cai 8-12%. Boa hora para estocar com cautela.';
+    if (m >= 0 && m <= 5) return '🟢 SAFRA (Jan-Jun) — boa oferta, preço firme, janela de compra razoável';
+    if (m >= 6 && m <= 10) return '🔴 ENTRESSAFRA (Jul-Nov) — escassez, preço máximo, comprar com cautela';
+    return '🟡 FESTAS/ÁGUAS (Dez) — demanda alta, preço em alta';
+})()}
 
 INDICADORES INTERNOS:
-Custo médio compra / kg: R$${batches.length > 0 ? (batches.reduce((s, b) => s + b.custo_real_kg, 0) / batches.length).toFixed(2) : '0.00'} ${batches.length > 0 ? ((batches.reduce((s, b) => s + b.custo_real_kg, 0) / batches.length) > (311.50 / 15) ? '🔴 ACIMA do referencial CEPEA-BA' : '🟢 ABAIXO do referencial CEPEA-BA') : ''}
-Preço médio venda / kg: R$${sales.length > 0 ? (sales.reduce((s, v) => s + v.preco_venda_kg, 0) / sales.length).toFixed(2) : '0.00'} | Mín: R$${sales.length > 0 ? Math.min(...sales.filter(s => s.preco_venda_kg > 0).map(v => v.preco_venda_kg)).toFixed(2) : '0.00'} | Máx: R$${sales.length > 0 ? Math.max(...sales.map(v => v.preco_venda_kg)).toFixed(2) : '0.00'}
-Margem bruta: ${sales.length > 0 && batches.length > 0 ? (((sales.reduce((s, v) => s + v.preco_venda_kg, 0) / sales.length) / (batches.reduce((s, b) => s + b.custo_real_kg, 0) / batches.length) - 1) * 100).toFixed(1) : 'N/A'}% (meta saudável: 20 - 30 % | abaixo de 15 % = alerta | negativa = CRÍTICO)
+Custo médio compra/kg: R$${batches.length > 0 ? (batches.reduce((s, b) => s + b.custo_real_kg, 0) / batches.length).toFixed(2) : '0.00'} ${batches.length > 0 ? ((batches.reduce((s, b) => s + b.custo_real_kg, 0) / batches.length) > (335.00 / 15) ? '🔴 ACIMA do referencial CEPEA-BA (R$' + (335.00/15).toFixed(2) + '/kg)' : '🟢 ABAIXO do referencial CEPEA-BA (R$' + (335.00/15).toFixed(2) + '/kg)') : ''}
+Preço médio venda/kg: R$${sales.length > 0 ? (sales.reduce((s, v) => s + v.preco_venda_kg, 0) / sales.length).toFixed(2) : '0.00'} | Mín: R$${sales.length > 0 ? Math.min(...sales.filter(s => s.preco_venda_kg > 0).map(v => v.preco_venda_kg)).toFixed(2) : '0.00'} | Máx: R$${sales.length > 0 ? Math.max(...sales.map(v => v.preco_venda_kg)).toFixed(2) : '0.00'}
+Margem bruta média: ${sales.length > 0 && batches.length > 0 ? (((sales.reduce((s, v) => s + v.preco_venda_kg, 0) / sales.length) / (batches.reduce((s, b) => s + b.custo_real_kg, 0) / batches.length) - 1) * 100).toFixed(1) : 'N/A'}% (meta 20-30% | <15% = alerta | negativa = CRÍTICO)
 
-ÚLTIMOS 10 LOTES — custo, fornecedor e rendimento(compare com CEPEA):
+ÚLTIMOS 10 LOTES — custo vs CEPEA:
 ${batches.slice(-10).map(b => {
-                    const pecas = stock.filter(s => s.id_lote === b.id_lote);
-                    const pesoReal = pecas.reduce((s, p) => s + p.peso_entrada, 0);
-                    const rend = b.peso_total_romaneio > 0 ? ((pesoReal / b.peso_total_romaneio) * 100).toFixed(1) : 'N/A';
-                    return `- ${b.id_lote} | Forn: ${b.fornecedor} | Custo: R$${b.custo_real_kg.toFixed(2)}/kg | ${b.peso_total_romaneio}kg rom | Rend: ${rend}%`;
-                }).join('\n')
-                    }
+    const pecas = stock.filter(s => s.id_lote === b.id_lote);
+    const pesoReal = pecas.reduce((s, p) => s + p.peso_entrada, 0);
+    const rend = b.peso_total_romaneio > 0 ? ((pesoReal / b.peso_total_romaneio) * 100).toFixed(1) : 'N/A';
+    const gap = b.custo_real_kg > 0 ? ((b.custo_real_kg / (335/15) - 1) * 100).toFixed(1) : 'N/A';
+    return `- ${b.id_lote} | ${b.fornecedor} | R$${b.custo_real_kg.toFixed(2)}/kg | Gap vs CEPEA: ${gap}% | Rend: ${rend}%`;
+}).join('\n')}
 
-Região: Vitória da Conquista - BA(Sudoeste Baiano)
+Região: Vitória da Conquista - BA (Sudoeste Baiano)
 Alertas Mercado: ${agentAlerts.length}
 ${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')} `.trim(),
 
@@ -1610,7 +1616,16 @@ URGÊNCIA REAL:
             };
 
 
-            const baseRules = `\nRegras gerais: \n - Responda SEMPRE em português brasileiro\n - Seja DIRETO, PRÁTICO e ACIONÁVEL — fale como gerente de frigorífico, não como robô\n - Use emojis: 🔴 crítico, 🟡 atenção, 🟢 ok\n - Cite NÚMEROS ESPECÍFICOS do snapshot — nunca invente dados\n - Se não tiver dados suficientes, diga claramente o que falta\n - Máximo 600 palavras\n - Termine SEMPRE com 3 ações concretas numeradas: "FAÇA AGORA: 1. ... 2. ... 3. ..."`;
+            const baseRules = `\nREGRAS INVIOLÁVEIS:
+ 1. Responda SEMPRE em português brasileiro
+ 2. DADOS REAIS OBRIGATÓRIOS: antes de qualquer resposta, extraia do SNAPSHOT abaixo os números relevantes. Se não encontrar → diga "Não encontrei esse dado no sistema" — NUNCA invente
+ 3. PROIBIDO generalizar: não escreva "há clientes inativos" — escreva "João Silva, 18 dias sem comprar, último pedido R$380"
+ 4. PROIBIDO inventar preços, kg, datas, nomes ou percentuais que não estejam no snapshot
+ 5. Emojis semânticos: 🔴 crítico, 🟡 atenção, 🟢 ok
+ 6. Tom: gerente de frigorífico experiente — direto, prático, sem enrolação
+ 7. Máximo 600 palavras na resposta
+ 8. Termine SEMPRE com: "FAÇA AGORA: 1. [ação concreta] 2. [ação concreta] 3. [ação concreta]"
+ 9. Se o snapshot estiver vazio (sem vendas, sem clientes, sem estoque): diga isso claramente e oriente o dono a cadastrar dados primeiro`;
 
             // 🧠 MEMÓRIA PERSISTENTE — Buscar e injetar memórias anteriores
             let memoryBlock = '';
@@ -1624,7 +1639,19 @@ URGÊNCIA REAL:
             const dreBlock = (agentType === 'AUDITOR' || agentType === 'ADMINISTRATIVO') ? `\n\n${formatDREText(dreReport)} ` : '';
             const pricingBlock = (agentType === 'ESTOQUE' || agentType === 'COMERCIAL' || agentType === 'PRODUCAO') ? formatPrecificacaoForPrompt(precificacao) : '';
             const rfmBlock = (agentType === 'COMERCIAL' || agentType === 'MARKETING' || agentType === 'SATISFACAO') ? formatRFMForPrompt(clientScores) : '';
-            const fullPrompt = `${prompts[agentType]}${baseRules}${memoryBlock} \n\n${dataPackets[agentType]}${predictionsBlock}${dreBlock}${pricingBlock}${rfmBlock}${newsBlock} \n\nINSTRUÇÃO CRÍTICA: A data de HOJE é ${new Date().toLocaleDateString('pt-BR')}.Use as NOTÍCIAS DO MERCADO acima como base para sua análise.NÃO invente notícias — cite apenas as que foram fornecidas.Se não houver notícias, diga que o feed não está disponível no momento.LEMBRE - SE: CARNE DURA NO MÁXIMO 8 DIAS NA CÂMARA.Peças com 6 + dias = VENDA URGENTE.`;
+
+            // Bloco de verificação de dados — força o modelo a checar antes de responder
+            const dataCheckBlock = `\n\n⚠️ VERIFICAÇÃO OBRIGATÓRIA ANTES DE RESPONDER:
+Extraia do SNAPSHOT abaixo e cite na sua resposta (use os dados reais, não exemplos):
+- Quantidade de clientes ativos e quais estão inativos há mais dias
+- Peças em estoque com mais de 5 dias (IDs reais)
+- Vendas pendentes (valor total e nomes dos clientes)
+- Saldo de caixa atual
+Se algum dado não estiver disponível no snapshot, diga explicitamente qual falta.
+DATA DE HOJE: ${new Date().toLocaleDateString('pt-BR')}
+REGRA CÂMARA: Carne dura NO MÁXIMO 8 dias. Peças com 6+ dias = VENDER URGENTE.\n\n`;
+
+            const fullPrompt = `${prompts[agentType]}${baseRules}${memoryBlock}${dataCheckBlock}=== DADOS DO SISTEMA (SNAPSHOT REAL) ===\n${dataPackets[agentType]}${predictionsBlock}${dreBlock}${pricingBlock}${rfmBlock}${newsBlock}`;
             const { text, provider } = await runCascade(fullPrompt, agentType);
             setAgentResponse(`_via ${provider} | 🧠 ${(memoryCounts[agentType] || 0) + 1} memórias_\n\n${text} `);
 
