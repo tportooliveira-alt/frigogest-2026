@@ -519,6 +519,7 @@ ${payablesVencidos.length > 0 ? `🔴 VENCIDAS: ${payablesVencidos.length} conta
                 topic,
                 steps: [],
                 finalDecision: '',
+                agentesEscolhidos: [],
                 status: 'RUNNING',
                 startedAt: new Date(),
                 finishedAt: new Date()

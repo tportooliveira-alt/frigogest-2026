@@ -7,7 +7,7 @@ import {
     Calendar, MessageCircle, ShieldCheck, Beef, Bot,
     Loader2, Send, Sparkles
 } from 'lucide-react';
-import { runCascade } from '../services/llmCascade';
+import { runCascade } from './AIChat';
 import { fetchAllNews, formatNewsForAgent, NewsItem } from '../services/newsService';
 import { sendWhatsAppMessage } from '../utils/whatsappAPI';
 import { OPERATION_CONTEXT, OPERATION_SUMMARY } from '../operationConfig';
@@ -31,8 +31,7 @@ import {
     PROMPT_FLUXO_CAIXA, PROMPT_RH_GESTOR, PROMPT_FISCAL_CONTABIL, PROMPT_QUALIDADE
 } from '../agentPrompts';
 
-// re-export para compatibilidade com AIChat.tsx
-export { runCascade } from '../services/llmCascade';
+export { runCascade } from './AIChat';
 
 import {
     AgentType, AgentConfig, AgentAlert, AlertSeverity,
