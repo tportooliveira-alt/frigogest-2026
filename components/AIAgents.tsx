@@ -22,6 +22,7 @@ import ContentStudioModal from './ContentStudioModal';
 import { generateDRE, formatDREText, calculateESGScore, COMPLIANCE_CHECKLIST, DREReport } from '../services/complianceService';
 import { calcularPrecificacao, formatPrecificacaoForPrompt, PrecificacaoItem } from '../services/pricingEngine';
 import { calculateClientScores, formatRFMForPrompt, getClientTierSummary, ClientScore } from '../services/clientScoringService';
+import { analyzeCampaignResults, formatCampaignLearningForAgent, detectNPSPendente, formatNPSPendenteForAgent } from '../services/campaignLearningService';
 import {
     PROMPT_ADMINISTRATIVO, PROMPT_PRODUCAO, PROMPT_COMERCIAL, PROMPT_AUDITOR,
     PROMPT_ESTOQUE, PROMPT_COMPRAS, PROMPT_MERCADO, PROMPT_MARKETING,
@@ -624,20 +625,45 @@ const AIAgents: React.FC<AIAgentsProps> = ({
             });
         });
 
-        // ── CAMILA (SATISFAÇÃO): Pesquisa NPS e Follow-up Qualidade ──
-        sales.filter(s => s.status_pagamento !== 'ESTORNADO').sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime()).slice(0, 5).forEach(s => {
-            const dias = Math.floor((now.getTime() - new Date(s.data_venda).getTime()) / 86400000);
-            if (dias >= 1 && dias <= 3) { // Janela ideal de feedback
+        // ── CAMILA (SATISFAÇÃO): NPS por entrega_confirmada_em (Fase 2) ──
+        // Prioridade 1: entregas confirmadas (dado preciso)
+        const npsPorEntrega = sales.filter(s =>
+            s.entrega_confirmada_em &&
+            s.status_pagamento !== 'ESTORNADO'
+        );
+        npsPorEntrega.forEach(s => {
+            const horas = Math.floor((now.getTime() - new Date(s.entrega_confirmada_em!).getTime()) / 3600000);
+            if (horas >= 4 && horas <= 48) { // Janela ideal: 4-48h após entrega confirmada
                 const cli = clients.find(c => c.id_ferro === s.id_cliente);
+                const janela = horas <= 24 ? 'IDEAL' : 'TARDE';
                 alerts.push({
-                    id: `SAT - NPS - ${s.id_venda} `, agent: 'SATISFACAO', severity: 'ALERTA',
-                    module: 'CLIENTES', title: `Feedback NPS: ${cli?.nome_social || s.id_cliente} `,
-                    message: `Venda concluída há ${dias} dias.Momento ideal para perguntar sobre a qualidade do gado e satisfação com a entrega.`,
+                    id: `SAT-NPS-ENT-${s.id_venda}`, agent: 'SATISFACAO', severity: janela === 'IDEAL' ? 'ALERTA' : 'INFO',
+                    module: 'CLIENTES', title: `NPS ${janela === 'IDEAL' ? '🟢 AGORA' : '🟡 ainda válido'}: ${cli?.nome_social || s.id_cliente}`,
+                    message: `Entrega confirmada há ${horas}h. ${janela === 'IDEAL' ? 'Janela ideal para NPS.' : 'Ainda dá tempo — enviar hoje.'} WhatsApp: ${cli?.whatsapp || 'não cadastrado'}`,
                     timestamp: now.toISOString(), status: 'NOVO',
                     data: { venda_id: s.id_venda, whatsapp: cli?.whatsapp }
                 });
             }
         });
+        // Prioridade 2: vendas sem entrega confirmada (fallback por data_venda)
+        if (npsPorEntrega.length === 0) {
+            sales.filter(s => s.status_pagamento !== 'ESTORNADO' && !s.entrega_confirmada_em)
+                .sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())
+                .slice(0, 3)
+                .forEach(s => {
+                    const dias = Math.floor((now.getTime() - new Date(s.data_venda).getTime()) / 86400000);
+                    if (dias >= 1 && dias <= 3) {
+                        const cli = clients.find(c => c.id_ferro === s.id_cliente);
+                        alerts.push({
+                            id: `SAT-NPS-${s.id_venda}`, agent: 'SATISFACAO', severity: 'INFO',
+                            module: 'CLIENTES', title: `NPS estimado: ${cli?.nome_social || s.id_cliente}`,
+                            message: `Venda há ${dias} dias (entrega não confirmada). Confirme a entrega com 🚚 para NPS preciso.`,
+                            timestamp: now.toISOString(), status: 'NOVO',
+                            data: { venda_id: s.id_venda, whatsapp: cli?.whatsapp }
+                        });
+                    }
+                });
+        }
 
         // ═══ 📈 ALERTAS PREDITIVOS (FASE 3) ═══
         const pred = calculatePredictions(sales, stock, batches, clients, payables, transactions);
@@ -903,8 +929,9 @@ Clientes: ${clients.length} total
 ${clients.filter(c => c.saldo_devedor > 0).slice(0, 10).map(c => `- ${c.nome_social}: Devendo R$${c.saldo_devedor.toFixed(2)} | Limite R$${c.limite_credito.toFixed(2)}`).join('\n')}
 Top vendas pendentes:
 ${vendasPendentes.slice(0, 8).map(v => `- ${v.nome_cliente || v.id_cliente}: ${v.peso_real_saida}kg × R$${v.preco_venda_kg}/kg = R$${(v.peso_real_saida * v.preco_venda_kg).toFixed(2)} | Venc: ${v.data_vencimento}`).join('\n')}
-Alertas Comercial: ${agentAlerts.length}
-${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')} `.trim(),
+Alertas Comercial: ${agentAlerts.filter(a => a.agent === 'COMERCIAL' || a.agent === 'MARCOS').length}
+${agentAlerts.filter(a => a.agent === 'COMERCIAL' || a.agent === 'MARCOS').map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n') || '- Sem alertas comerciais'}
+${formatCampaignLearningForAgent(analyzeCampaignResults(sales, clients))} `.trim(),
 
                 AUDITOR: `
 ## SNAPSHOT FINANCEIRO — FRIGOGEST(${new Date().toLocaleDateString('pt-BR')})
@@ -1056,10 +1083,10 @@ LTV Médio VIP: R$${ltvVip.toFixed(2)} | Total Clientes: ${clients.filter(c => c
 
 ═══ 🎯 SEGMENTAÇÃO RFM(FUNIL ABM) ═══
 🟣 VIP ATIVO(≤15d, ≥3 compras): ${vips.length} clientes
-${vips.slice(0, 5).map(c => `  → ${c.nome_social} | ${c.recencia}d | ${c.frequencia} compras | R$${c.valor.toFixed(0)} | Perfil: ${c.perfil_compra || 'N/I'} | Gordura: ${c.padrao_gordura || 'N/I'} | WhatsApp: ${c.whatsapp || 'N/A'}`).join('\n')}
+${vips.slice(0, 5).map(c => `  → ${c.nome_social} | ${c.recencia}d | ${c.frequencia} compras | R$${c.valor.toFixed(0)} | Preço: ${(c as any).preco_negociado_kg ? 'R$' + (c as any).preco_negociado_kg.toFixed(2) + '/kg' : 'padrão'} | Perfil: ${c.perfil_compra || 'N/I'} | WhatsApp: ${c.whatsapp || 'N/A'}`).join('\n')}
 🟢 ATIVO(≤30d): ${clientRFM.filter(c => c.segmento === 'ATIVO').length} clientes
 🟡 ESFRIANDO(30 - 60d): ${esfriando.length} clientes — ALVO REATIVAÇÃO
-${esfriando.slice(0, 5).map(c => `  → ${c.nome_social} | ${c.recencia}d sem comprar | Objeções: ${c.objecoes_frequentes || 'Nenhuma'} | WhatsApp: ${c.whatsapp || 'N/A'}`).join('\n')}
+${esfriando.slice(0, 5).map(c => `  → ${c.nome_social} | ${c.recencia}d sem comprar | Preço: ${(c as any).preco_negociado_kg ? 'R$' + (c as any).preco_negociado_kg.toFixed(2) + '/kg' : 'não definido'} | Objeções: ${c.objecoes_frequentes || 'Nenhuma'} | WhatsApp: ${c.whatsapp || 'N/A'}`).join('\n')}
 🔴 EM RISCO(60 - 90d): ${emRisco.length} clientes — URGÊNCIA
 ${emRisco.slice(0, 3).map(c => `  → ${c.nome_social} | ${c.recencia}d | Último R$${c.valor.toFixed(0)}`).join('\n')}
 ⚫ PERDIDO(> 90d): ${perdidos.length} | NUNCA COMPROU: ${nuncaComprou.length}
@@ -1067,6 +1094,8 @@ ${emRisco.slice(0, 3).map(c => `  → ${c.nome_social} | ${c.recencia}d | Últim
 ═══ 🧠 DADOS PARA NEUROMARKETING ═══
 PERFIS PSICOGRÁFICOS(para Decoy Effect e Anchoring):
 ${clientRFM.filter(c => c.perfil_compra || c.padrao_gordura || c.objecoes_frequentes).slice(0, 8).map(c => `- ${c.nome_social}: Prefere ${c.perfil_compra || '?'} | Gordura ${c.padrao_gordura || '?'} | Objeção: "${c.objecoes_frequentes || 'nenhuma'}" | Mimo: ${c.mimo_recebido_data || 'nunca'}`).join('\n')}
+
+${formatCampaignLearningForAgent(analyzeCampaignResults(sales, clients))}
 
 ═══ 📦 GATILHOS DE ESCASSEZ(Campanhas Urgentes) ═══
 Estoque > 6 dias(PERDE COM 8!): ${estoqueVelho.length} peças — PROMO RELÂMPAGO URGENTE
@@ -1088,32 +1117,33 @@ Alertas Marketing: ${agentAlerts.length}
 ${agentAlerts.map(a => '- [' + a.severity + '] ' + a.title + ': ' + a.message).join('\n')} `.trim();
                 })(),
 
-                SATISFACAO: `
-## SNAPSHOT CUSTOMER SUCCESS & QUALIDADE — FRIGOGEST(${new Date().toLocaleDateString('pt-BR')})
-ÚLTIMAS 8 ENTREGAS(candidatos a pesquisa pós - venda — enviar entre 24h - 48h após entrega):
-${sales.filter(s => s.status_pagamento !== 'ESTORNADO').sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime()).slice(0, 8).map(s => {
-                    const cli = clients.find(c => c.id_ferro === s.id_cliente);
-                    const item = stock.find(st => st.id_completo === s.id_completo);
-                    const tipoStr = item ? (item.tipo === 1 ? 'Inteiro' : item.tipo === 2 ? 'Dianteiro' : 'Traseiro') : 'N/A';
-                    const dias = Math.floor((new Date().getTime() - new Date(s.data_venda).getTime()) / 86400000);
-                    return `- ${cli?.nome_social || s.id_cliente} | ${s.peso_real_saida}kg (${tipoStr}) | ${s.data_venda} (${dias}d atrás) | ${s.status_pagamento}`;
-                }).join('\n')
-                    }
+                SATISFACAO: (() => {
+                    const npsPendentes = detectNPSPendente(sales, clients);
+                    const campaignPattern = analyzeCampaignResults(sales, clients);
+                    const now = new Date();
+                    return `
+## SNAPSHOT CUSTOMER EXPERIENCE — FRIGOGEST (${now.toLocaleDateString('pt-BR')})
+${formatNPSPendenteForAgent(npsPendentes)}
 
-PERFIL COMPLETO DOS CLIENTES ATIVOS(para pesquisa personalizada):
+PERFIL DOS CLIENTES ATIVOS (para pesquisa personalizada):
 ${clients.filter(c => sales.some(s => s.id_cliente === c.id_ferro && s.status_pagamento !== 'ESTORNADO')).slice(0, 8).map(c => {
-                        const clienteSales = sales.filter(s => s.id_cliente === c.id_ferro && s.status_pagamento !== 'ESTORNADO');
-                        const kgTotal = clienteSales.reduce((s, v) => s + v.peso_real_saida, 0);
-                        const lastSale = [...clienteSales].sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())[0];
-                        const diasSemComprar = lastSale ? Math.floor((new Date().getTime() - new Date(lastSale.data_venda).getTime()) / 86400000) : 999;
-                        return `- ${c.nome_social}${kgTotal >= 500 ? ' 🏆VIP' : ''} | Total: ${kgTotal.toFixed(0)}kg | ${diasSemComprar}d sem comprar | Prefere: ${c.perfil_compra || 'N/A'} | Gordura: ${c.padrao_gordura || 'N/A'} | Objeções: ${c.objecoes_frequentes || 'Nenhuma'} | Devendo: R$${(c.saldo_devedor || 0).toFixed(2)}`;
-                    }).join('\n')
-                    }
+    const clienteSales = sales.filter(s => s.id_cliente === c.id_ferro && s.status_pagamento !== 'ESTORNADO');
+    const kgTotal = clienteSales.reduce((s, v) => s + v.peso_real_saida, 0);
+    const lastSale = [...clienteSales].sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())[0];
+    const diasSemComprar = lastSale ? Math.floor((now.getTime() - new Date(lastSale.data_venda).getTime()) / 86400000) : 999;
+    const tier = diasSemComprar <= 10 ? '🥇VIP' : diasSemComprar <= 30 ? '🥈Ativo' : diasSemComprar <= 60 ? '🟡Esfriando' : '🔴Risco';
+    return `- ${c.nome_social} ${tier} | ${kgTotal.toFixed(0)}kg total | ${diasSemComprar}d sem comprar | Prefere: ${c.perfil_compra || 'N/A'} | Gordura: ${c.padrao_gordura || 'N/A'} | Objeções: ${c.objecoes_frequentes || 'Nenhuma'} | Preço: ${(c as any).preco_negociado_kg ? 'R$' + (c as any).preco_negociado_kg.toFixed(2) + '/kg' : 'padrão'}`;
+}).join('\n')}
 
 PRÓXIMAS ENTREGAS AGENDADAS:
 ${scheduledOrders.filter(o => o.status === 'ABERTO').slice(0, 5).map(o => `- ${o.nome_cliente} | Entrega: ${o.data_entrega}`).join('\n') || '- Nenhum pedido agendado aberto'}
-Alertas Customer Success: ${agentAlerts.length}
-${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')} `.trim(),
+
+APRENDIZADO CAMPANHAS (para Camila ajustar tom pós-venda):
+${campaignPattern ? `Taxa conversão geral: ${campaignPattern.taxaConversao}% | ${campaignPattern.insightPrincipal}` : '- Nenhum dado de campanha disponível ainda'}
+
+Alertas Customer Success: ${agentAlerts.filter(a => a.agent === 'SATISFACAO').length}
+${agentAlerts.filter(a => a.agent === 'SATISFACAO').map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n') || '- Sem alertas ativos'} `.trim();
+                })(),
                 // ─── JURIDICO: Dra. Carla ─────────────────────────────────
                 JURIDICO: `
 ## CONTEXTO JURÍDICO — FRIGOGEST(${new Date().toLocaleDateString('pt-BR')})
