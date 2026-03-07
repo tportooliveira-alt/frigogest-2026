@@ -23,6 +23,7 @@ import { generateDRE, formatDREText, calculateESGScore, COMPLIANCE_CHECKLIST, DR
 import { calcularPrecificacao, formatPrecificacaoForPrompt, PrecificacaoItem } from '../services/pricingEngine';
 import { calculateClientScores, formatRFMForPrompt, getClientTierSummary, ClientScore } from '../services/clientScoringService';
 import { analyzeCampaignResults, formatCampaignLearningForAgent, detectNPSPendente, formatNPSPendenteForAgent } from '../services/campaignLearningService';
+import { fetchMarketPrices, formatMarketPricesForAgent, MarketPrices } from '../services/marketPricesService';
 import {
     PROMPT_ADMINISTRATIVO, PROMPT_PRODUCAO, PROMPT_COMERCIAL, PROMPT_AUDITOR,
     PROMPT_ESTOQUE, PROMPT_COMPRAS, PROMPT_MERCADO, PROMPT_MARKETING,
@@ -236,6 +237,7 @@ const AIAgents: React.FC<AIAgentsProps> = ({
     const [drePeriodo, setDrePeriodo] = useState<'SEMANA' | 'MES' | 'TOTAL'>('MES');
     const [expandedDiagnostic, setExpandedDiagnostic] = useState<string | null>(null);
     const [marketNews, setMarketNews] = useState<NewsItem[]>([]);
+    const [livePrices, setLivePrices] = useState<MarketPrices | null>(null);
     const [newsLoading, setNewsLoading] = useState(false);
 
     // ═══ BUSCAR NOTÍCIAS DO MERCADO ═══
@@ -244,6 +246,8 @@ const AIAgents: React.FC<AIAgentsProps> = ({
             setNewsLoading(true);
             try {
                 const news = await fetchAllNews();
+                const mktPrices = await fetchMarketPrices().catch(() => null);
+                if (mktPrices) setLivePrices(mktPrices);
                 setMarketNews(news);
             } catch { /* silencioso */ }
             setNewsLoading(false);
@@ -998,8 +1002,7 @@ ${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}
 
                 MERCADO: `
 ## SNAPSHOT MERCADO — FRIGOGEST(${new Date().toLocaleDateString('pt-BR')})
-REFERÊNCIA CEPEA-BA Sul: R$335,00/@ (Mar/2026, estimativa regional) → R$${(335.00 / 15).toFixed(2)}/kg carcaça (custo de oportunidade BA)
-SAZONALIDADE ATUAL: ${(() => {
+${livePrices ? formatMarketPricesForAgent(livePrices) : "\u26a0\ufe0f CEPEA: R$335/@ (fallback — atualize no Dashboard de Mercado)"}\nSAZONALIDADE ATUAL: ${(() => {
     const m = new Date().getMonth();
     if (m === 2 || m === 3) return '🟡 QUARESMA (Mar/Abr) — demanda bovina cai 8-12%. Boa hora para estocar com cautela.';
     if (m >= 0 && m <= 5) return '🟢 SAFRA (Jan-Jun) — boa oferta, preço firme, janela de compra razoável';
@@ -1017,7 +1020,8 @@ ${batches.slice(-10).map(b => {
     const pecas = stock.filter(s => s.id_lote === b.id_lote);
     const pesoReal = pecas.reduce((s, p) => s + p.peso_entrada, 0);
     const rend = b.peso_total_romaneio > 0 ? ((pesoReal / b.peso_total_romaneio) * 100).toFixed(1) : 'N/A';
-    const gap = b.custo_real_kg > 0 ? ((b.custo_real_kg / (335/15) - 1) * 100).toFixed(1) : 'N/A';
+    const arrobaRef = livePrices?.arroba_kg_carcaca ?? (335/15);
+    const gap = b.custo_real_kg > 0 ? ((b.custo_real_kg / arrobaRef - 1) * 100).toFixed(1) : 'N/A';
     return `- ${b.id_lote} | ${b.fornecedor} | R$${b.custo_real_kg.toFixed(2)}/kg | Gap vs CEPEA: ${gap}% | Rend: ${rend}%`;
 }).join('\n')}
 
@@ -1681,7 +1685,8 @@ Se algum dado não estiver disponível no snapshot, diga explicitamente qual fal
 DATA DE HOJE: ${new Date().toLocaleDateString('pt-BR')}
 REGRA CÂMARA: Carne dura NO MÁXIMO 8 dias. Peças com 6+ dias = VENDER URGENTE.\n\n`;
 
-            const fullPrompt = `${prompts[agentType]}${baseRules}${memoryBlock}${dataCheckBlock}=== DADOS DO SISTEMA (SNAPSHOT REAL) ===\n${dataPackets[agentType]}${predictionsBlock}${dreBlock}${pricingBlock}${rfmBlock}${newsBlock}`;
+            const livePricesBlock = livePrices ? `\n\n${formatMarketPricesForAgent(livePrices)}` : '';
+            const fullPrompt = `${prompts[agentType]}${baseRules}${memoryBlock}${dataCheckBlock}=== DADOS DO SISTEMA (SNAPSHOT REAL) ===\n${dataPackets[agentType]}${predictionsBlock}${dreBlock}${pricingBlock}${rfmBlock}${newsBlock}${livePricesBlock}`;
             const { text, provider } = await runCascade(fullPrompt, agentType);
             setAgentResponse(`_via ${provider} | 🧠 ${(memoryCounts[agentType] || 0) + 1} memórias_\n\n${text} `);
 

@@ -59,3 +59,41 @@ WHERE table_name IN ('sales', 'clients')
     'whatsapp'
   )
 ORDER BY table_name, column_name;
+
+-- ═══════════════════════════════════════════════════════════════
+-- FRIGOGEST 2026 — MIGRATION FASE 2: PREÇOS DE MERCADO
+-- ═══════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS market_prices (
+  id           BIGSERIAL PRIMARY KEY,
+  arroba_sp    NUMERIC NOT NULL,         -- R$/@ SP
+  arroba_ba    NUMERIC NOT NULL,         -- R$/@ BA Sul
+  arroba_kg_carcaca NUMERIC,            -- arroba_ba / 15
+  arroba_data  TEXT,                    -- data de referência (dd/mm/aaaa)
+  arroba_fonte TEXT DEFAULT 'SUPABASE_MANUAL',
+  arroba_variacao NUMERIC DEFAULT 0,
+  dolar        NUMERIC,
+  dolar_data   TEXT,
+  dolar_fonte  TEXT DEFAULT 'FALLBACK',
+  selic        NUMERIC,
+  selic_data   TEXT,
+  selic_fonte  TEXT DEFAULT 'FALLBACK',
+  atualizado_em TIMESTAMPTZ DEFAULT NOW(),
+  atualizado_por TEXT DEFAULT 'DONO',
+  erros        TEXT[] DEFAULT '{}'
+);
+
+-- Seed com valor inicial para não ficar vazio
+INSERT INTO market_prices (arroba_sp, arroba_ba, arroba_kg_carcaca, arroba_data, arroba_fonte, atualizado_por)
+VALUES (362.00, 335.00, 22.33, '06/03/2026', 'SUPABASE_MANUAL', 'SISTEMA')
+ON CONFLICT DO NOTHING;
+
+-- Índice para buscar o mais recente rapidamente
+CREATE INDEX IF NOT EXISTS idx_market_prices_atualizado
+  ON market_prices (atualizado_em DESC);
+
+-- Verificar
+SELECT id, arroba_sp, arroba_ba, arroba_fonte, atualizado_em, atualizado_por
+FROM market_prices
+ORDER BY atualizado_em DESC
+LIMIT 3;
