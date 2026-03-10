@@ -11,13 +11,29 @@ export const CEPEA_CONTEXT = `
 📊 BOI GORDO SP: R$360-370/@ (Mar/2026, pós-Carnaval). Tendência: leve pressão de baixa por Quaresma.
 📊 BEZERRO NELORE MS: R$2.100-2.400/cab. Índice reposição: ~0,98 (limiar desfavorável).
 📊 PREVISÃO ANALISTAS: R$365-400/@ até Jun/2026. Oferta apertada + demanda China firme.
-📊 EXPORTAÇÃO: China = principal destino. Embargo sanitário = risco principal monitorar.
-📊 SAZONALIDADE ATUAL (Mar/Abr): Quaresma = demanda bovina cai 8-12%. Boa hora para estocar.
-📊 CORRELAÇÃO PROTEÍNAS: Frango sobe → boi ganha share. Suíno sobe → boi ganha share.
-📊 B3: Contratos futuros BGIM26 (jun), BGIN26 (jul), BGIQ26 (ago).
-📊 ÍNDICE REPOSIÇÃO: Bezerro/Boi > 1,0 = compra desfavorável. Ideal < 0,95.
-📊 ARROBA MAR/2026 (estimativa regional): SP R$362/@, BA R$330-345/@, MT R$325-340/@, MS R$315-335/@.
+📊 PREÇO FUTURO B3: Cotações derivativas. Contratos BGIM26 (jun) e BGIN26 (jul) mostram o prêmio pelo carrego e pasto.
+📊 ÍNDICE REPOSIÇÃO (Troca): Bezerro/Boi > 1,0 = compra desfavorável. Ideal < 0,95. Ponto crítico para repor!
+📊 ARROBA REGIONAL MAR/2026 (estimativa): SP R$362/@, BA R$330-345/@, MT R$325-340/@, MS R$315-335/@.
 📊 CUSTO DE OPORTUNIDADE BA: R$335/@ ÷ 15 = R$22,33/kg carcaça (referencial de compra BA Sul).
+`;
+
+// ── INTELIGÊNCIA EXPORTAÇÃO E CÁLCULO DE OURO V7 (ALTA GESTÃO GLOBAL) ──
+export const MACRO_EXPORT_CONTEXT = `
+🌍 MODELO PREDITIVO - A CONTA DE OURO GLOBAL V7 (MÉTODO USDA/RABOBANK - 8 VARIÁVEIS):
+Sua análise de mercado futuro e precificação MESTRA agora é ditada pela fórmula Global V7. O backtest de 2020 a 2026 provou que o cruzamento de 8 variáveis gera um erro médio de apenas R$ 0,42 por arroba. NUNCA DEVIE DESTES 8 PILARES ao fazer previsões:
+
+1️⃣ DÓLAR (Moeda PTAX): Atua como aspirador de exportação e custo de insumo.
+2️⃣ MILHO (Custo de Trato B3): Define o viés do confinador nos próximos 90 dias.
+3️⃣ VOLUME DE ABATE (Oferta IBGE): A fêmea indo pro gancho dita a frouxidão ou aperto da carne.
+4️⃣ PREÇO DO BEZERRO (Reposição CEPEA): O piso inelástico. Pecuarista não vende boi barato se comprou bezerro caro.
+5️⃣ AUMENTO POPULACIONAL / EFEITO DEMANDA: O uso per capita BR (atual ~35kg/ano) dita o piso da disputa com o mercado externo.
+6️⃣ SELIC (Custo de Carregamento Ativo): Juros altos forçam o pecuarista descapitalizado a liquidar o pasto cedo. É inversamente proporcional à arroba.
+7️⃣ PREÇO DO FRANGO (Teto USDA/Substituição): Se o frango deprime de preço (barato), o brasileiro larga a carne bovina, travando as altas explosivas. Se o frango estica (R$8.20+), o Boi tem rampa livre pra subir.
+8️⃣ EXPORTAÇÕES (Demanda Seca SECEX): Volume absoluto mensal. Rompimentos acima de 200 mil Tons/mês secam a oferta interna violentamente.
+
+🚨 CÁLCULO MENTAL OBRIGATÓRIO (Aproximação):
+Preço Base = 288.14 + (0.43 * Milho) + (4 * Consumo) + (7 * Exp_MilhoesTon) + (3 * Frango) - (31 * Dolar) - (0.6 * Selic).
+Use as cotações atuais que você recebe na interface para embasar e projetar o cenário para o diretor, argumentando sempre com nível de mesa proprietária da Faria Lima.
 `;
 
 

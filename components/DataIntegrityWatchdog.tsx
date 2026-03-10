@@ -19,6 +19,7 @@ interface Violation {
 
 const DataIntegrityWatchdog: React.FC<WatchdogProps> = ({ stock, sales, transactions, payables, batches }) => {
     const [violations, setViolations] = useState<Violation[]>([]);
+    const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
     const [isMinimized, setIsMinimized] = useState(false);
 
     useEffect(() => {
@@ -37,12 +38,15 @@ const DataIntegrityWatchdog: React.FC<WatchdogProps> = ({ stock, sales, transact
                     );
 
                     if (!txExists) {
-                        newViolations.push({
-                            id: `MISSING-TX-${sale.id_venda}`,
-                            type: 'ERROR',
-                            message: `Venda ${sale.id_venda} (${sale.nome_cliente}) tem pagamento de R$${sale.valor_pago?.toFixed(2)}, mas não gerou ENTRADA no caixa!`,
-                            timestamp: new Date().toLocaleTimeString()
-                        });
+                        const id = `MISSING-TX-${sale.id_venda}`;
+                        if (!dismissedIds.has(id)) {
+                            newViolations.push({
+                                id,
+                                type: 'ERROR',
+                                message: `Venda ${sale.id_venda} (${sale.nome_cliente}) tem pagamento de R$${sale.valor_pago?.toFixed(2)}, mas não gerou ENTRADA no caixa!`,
+                                timestamp: new Date().toLocaleTimeString()
+                            });
+                        }
                     }
                 }
             });
@@ -57,12 +61,15 @@ const DataIntegrityWatchdog: React.FC<WatchdogProps> = ({ stock, sales, transact
                     );
 
                     if (!saleExists) {
-                        newViolations.push({
-                            id: `GHOST-STOCK-${item.id_completo}`,
-                            type: 'ERROR',
-                            message: `Peça ${item.id_completo} consta como VENDIDA, mas não encontrei nenhum cupom/venda ligada a ela!`,
-                            timestamp: new Date().toLocaleTimeString()
-                        });
+                        const id = `GHOST-STOCK-${item.id_completo}`;
+                        if (!dismissedIds.has(id)) {
+                            newViolations.push({
+                                id,
+                                type: 'ERROR',
+                                message: `Peça ${item.id_completo} consta como VENDIDA, mas não encontrei nenhum cupom/venda ligada a ela!`,
+                                timestamp: new Date().toLocaleTimeString()
+                            });
+                        }
                     }
                 }
             });
@@ -100,15 +107,18 @@ const DataIntegrityWatchdog: React.FC<WatchdogProps> = ({ stock, sales, transact
                     );
 
                     if (!hasFretePayable && !hasFreteTx && !hasCompraGeralComFrete) {
-                        newViolations.push({
-                            id: `MISSING-FREIGHT-${batch.id_lote}`,
-                            type: 'WARNING',
-                            message: `Lote ${batch.id_lote} possui frete de R$${batch.frete?.toFixed(2)}, mas não foi lançado no Contas a Pagar/Caixa. Verifique se comprou com a versão antiga.`,
-                            timestamp: new Date().toLocaleTimeString()
-                        });
+                        const id = `MISSING-FREIGHT-${batch.id_lote}`;
+                        if (!dismissedIds.has(id)) {
+                            newViolations.push({
+                                id,
+                                type: 'WARNING',
+                                message: `Lote ${batch.id_lote} possui frete de R$${batch.frete?.toFixed(2)}, mas não foi lançado no Contas a Pagar/Caixa. Verifique se comprou com a versão antiga.`,
+                                timestamp: new Date().toLocaleTimeString()
+                            });
+                        }
                     }
                 }
-            })
+            });
 
             // Atualiza estado se mudou
             setViolations(prev => {
@@ -123,9 +133,14 @@ const DataIntegrityWatchdog: React.FC<WatchdogProps> = ({ stock, sales, transact
         checkIntegrity(); // Roda na hora
 
         return () => clearInterval(interval);
-    }, [stock, sales, transactions, payables, batches]);
+    }, [stock, sales, transactions, payables, batches, dismissedIds]);
 
     if (violations.length === 0) return null;
+
+    const handleClear = () => {
+        setDismissedIds(prev => new Set([...prev, ...violations.map(v => v.id)]));
+        setViolations([]);
+    };
 
     return (
         <div className={`fixed bottom-4 left-4 z-[9999] bg-white rounded-2xl shadow-2xl border-2 transition-all ${violations.some(v => v.type === 'ERROR') ? 'border-rose-500 shadow-rose-500/20' : 'border-orange-500 shadow-orange-500/20'} ${isMinimized ? 'w-16 h-16 cursor-pointer hover:scale-105' : 'w-96'}`}>
@@ -143,7 +158,7 @@ const DataIntegrityWatchdog: React.FC<WatchdogProps> = ({ stock, sales, transact
                             <span className="font-black uppercase tracking-widest text-[10px]">IA Auditora (Live)</span>
                         </div>
                         <div className="flex gap-2">
-                            <button onClick={() => setViolations([])} className="p-1 px-3 text-[9px] font-black uppercase tracking-tighter bg-white/20 hover:bg-white/40 rounded transition-colors flex items-center gap-1"><Trash2 size={12} /> Limpar</button>
+                            <button onClick={handleClear} className="p-1 px-3 text-[9px] font-black uppercase tracking-tighter bg-white/20 hover:bg-white/40 rounded transition-colors flex items-center gap-1"><Trash2 size={12} /> Limpar</button>
                             <button onClick={() => setIsMinimized(true)} className="p-1 hover:bg-rose-700 rounded transition-colors"><X size={16} /></button>
                         </div>
                     </div>

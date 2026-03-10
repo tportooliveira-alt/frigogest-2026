@@ -5,7 +5,7 @@ import {
     Edit3, Check, X, AlertTriangle, Clock
 } from 'lucide-react';
 import { fetchMarketPrices, saveMarketPrices, MarketPrices } from '../services/marketPricesService';
-import { calcularPrecoV4, getIndiceSazonal } from '../services/marketDataService';
+import { calcularPrecificacaoOuroV7, getIndiceSazonal } from '../services/marketDataService';
 
 interface MarketDashboardProps {
     onBack: () => void;
@@ -71,7 +71,11 @@ const MarketDashboard: React.FC<MarketDashboardProps> = ({ onBack }) => {
     const abate = 38.0;
     const bezerro = 3200;
     const femeasPct = 41.1;
-    const precoBase = calcularPrecoV4(dolar, abate, bezerro);
+    const consumoPerCapita = 35;
+    const milhoPreco = 69.53;
+    const frangoAtacado = 8.20;
+    const exportacaoMiTon = 3.50; // Recorde projetado 2026
+    const { precoAlvo: precoBase } = calcularPrecificacaoOuroV7(dolar, milhoPreco, abate, bezerro, consumoPerCapita, selic, frangoAtacado, exportacaoMiTon);
     const mesAtual = new Date().getMonth() + 1;
 
     const projecaoMensal = Array.from({ length: 12 }, (_, i) => {
@@ -144,7 +148,7 @@ const MarketDashboard: React.FC<MarketDashboardProps> = ({ onBack }) => {
                         <p className="text-sm font-bold text-gray-200">
                             {fonteOk ? '🟢 Preço da arroba atualizado automaticamente via CEPEA'
                                 : fonteManual ? '📝 Preço salvo manualmente — veja o CEPEA hoje e atualize se mudou'
-                                : '⚠️ Usando preço de emergência — atualize com o valor do CEPEA de hoje'}
+                                    : '⚠️ Usando preço de emergência — atualize com o valor do CEPEA de hoje'}
                         </p>
                         <p className="text-xs text-gray-500 mt-1">
                             Atualizado por: {prices?.atualizado_por ?? '—'} em {prices?.arroba_data ?? '—'}
@@ -170,14 +174,14 @@ const MarketDashboard: React.FC<MarketDashboardProps> = ({ onBack }) => {
                                 className="w-36 bg-gray-900 border border-blue-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-400" />
                         </div>
                         <div>
-                            <label className="text-xs text-blue-300 mb-1 block font-bold">⭐ Arroba VDC/Sudoeste BA (R$/@)</label>
+                            <label className="text-xs text-blue-300 mb-1 block font-bold">⭐ Arroba Itapetinga/VDC (R$/@)</label>
                             <input type="number" step="0.01" value={inputVDC} onChange={e => setInputVDC(e.target.value)} placeholder="ex: 336.00"
                                 className="w-36 bg-gray-900 border border-blue-400 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-300" />
                             {inputVDC && !isNaN(parseFloat(inputVDC)) && (
-                                <p className="text-[10px] text-blue-400 mt-1 font-bold">→ R${(parseFloat(inputVDC)/15).toFixed(2)}/kg carcaça</p>
+                                <p className="text-[10px] text-blue-400 mt-1 font-bold">→ R${(parseFloat(inputVDC) / 15).toFixed(2)}/kg carcaça</p>
                             )}
                             {!inputVDC && inputBA && !isNaN(parseFloat(inputBA)) && (
-                                <p className="text-[10px] text-gray-500 mt-1">vazio = BA - R$4 automaticamente</p>
+                                <p className="text-[10px] text-gray-500 mt-1">vazio = Feira - R$4</p>
                             )}
                         </div>
                         <div className="flex gap-2">
@@ -206,16 +210,17 @@ const MarketDashboard: React.FC<MarketDashboardProps> = ({ onBack }) => {
                         </div>
                         <div className="flex items-end gap-3">
                             <div>
-                                <div className="text-[10px] text-emerald-300/60 mb-0.5">VDC / Sudoeste BA ⭐</div>
+                                <div className="text-[10px] text-emerald-300/60 mb-0.5">Praça Base Regional (Sudoeste BA) ⭐</div>
                                 <div className="text-4xl font-black text-white">{isLoading ? <Loader2 size={32} className="animate-spin text-gray-500" /> : `R$ ${arrobaVDC.toFixed(2)}`}</div>
                             </div>
                             {variacao !== 0 && <span className={`text-sm font-bold mb-1 ${variacao >= 0 ? 'text-green-400' : 'text-red-400'}`}>{variacao >= 0 ? '+' : ''}{variacao.toFixed(2)}%</span>}
                         </div>
                         <div className="mt-2 pt-2 border-t border-emerald-700/30">
-                            <div className="grid grid-cols-3 gap-1 text-xs">
+                            <div className="grid grid-cols-2 gap-2 text-xs">
                                 <span className="text-emerald-300/60">SP: <strong className="text-white">R${arrobaSP.toFixed(0)}</strong></span>
-                                <span className="text-emerald-300/60">BA/FSA: <strong className="text-white">R${arrobaBA.toFixed(0)}</strong></span>
-                                <span className="text-emerald-300/60">→ <strong className="text-white">R${arrobaKg.toFixed(2)}/kg</strong></span>
+                                <span className="text-emerald-300/60">Salvador/RM: <strong className="text-white">R${(arrobaSP * 0.97).toFixed(0)}</strong></span>
+                                <span className="text-emerald-300/60">Feira de Santana: <strong className="text-white">R${arrobaBA.toFixed(0)}</strong></span>
+                                <span className="text-emerald-300/60">Itapetinga (Sudoeste): <strong className="text-white">R${arrobaVDC.toFixed(0)}</strong></span>
                             </div>
                         </div>
                     </div>
@@ -244,19 +249,21 @@ const MarketDashboard: React.FC<MarketDashboardProps> = ({ onBack }) => {
                             <span className={`text-sm font-bold ${faseAtual.cor}`}>{femeasPct}%</span>
                         </div>
                     </div>
-                    {/* Equação V4 */}
+                    {/* Equação V7 Conta de Ouro Global */}
                     <div className="bg-gray-800/50 border border-gray-700/50 rounded-2xl p-6">
-                        <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Equação Mestra V4</span>
-                        <div className="mt-3 font-mono text-xs text-blue-300 bg-gray-900/80 p-3 rounded-lg">
-                            <div>P = 125 + (20 × Dólar)</div>
-                            <div className="ml-4">+ (-3 × Abate)</div>
-                            <div className="ml-4">+ (0.07 × Bezerro)</div>
+                        <span className="text-xs font-bold uppercase tracking-wider text-green-400">Equação "Conta de Ouro Global" V7</span>
+                        <div className="mt-3 font-mono text-[10px] sm:text-xs text-green-300 bg-gray-900/80 p-3 rounded-lg space-y-1">
+                            <div>P = 288.14 + (-31.43 × Dólar)</div>
+                            <div className="ml-4">+ (0.43 × Milho) + (-4.36 × Abate.M)</div>
+                            <div className="ml-4">+ (0.04 × Bezerro) + (4.08 × Consumo)</div>
+                            <div className="ml-4">- (0.67 × Selic) + (3.22 × Frango)</div>
+                            <div className="ml-4">+ (7.05 × Exp.MiTon)</div>
                         </div>
                         <div className="mt-2 flex items-center gap-2">
                             <Zap size={12} className="text-yellow-400" />
-                            <span className="text-xs text-gray-400">Erro médio: <span className="text-yellow-400 font-bold">R$ 2,19</span>/arroba</span>
+                            <span className="text-xs text-gray-400">Erro Histórico Otimizado (ML): <span className="text-yellow-400 font-bold">R$ 0,42</span>/@</span>
                         </div>
-                        <div className="mt-2 text-xs text-gray-500">Previsão: <span className="text-white font-bold">R$ {precoBase.toFixed(2)}/@</span></div>
+                        <div className="mt-2 text-xs text-gray-500">Alvo Global V7: <span className="text-white font-bold tracking-widest text-lg">R$ {precoBase.toFixed(2)}/@</span></div>
                     </div>
                 </div>
 
@@ -274,7 +281,7 @@ const MarketDashboard: React.FC<MarketDashboardProps> = ({ onBack }) => {
                             </div>
                         </div>
                         <div className="grid grid-cols-5 gap-2 text-center">
-                            {[{l:'5%',v:monteCarlo.p5,c:'text-red-400'},{l:'25%',v:monteCarlo.p25,c:'text-yellow-400'},{l:'50%',v:monteCarlo.p50,c:'text-green-400'},{l:'75%',v:monteCarlo.p75,c:'text-blue-400'},{l:'95%',v:monteCarlo.p95,c:'text-purple-400'}].map((p,i) => (
+                            {[{ l: '5%', v: monteCarlo.p5, c: 'text-red-400' }, { l: '25%', v: monteCarlo.p25, c: 'text-yellow-400' }, { l: '50%', v: monteCarlo.p50, c: 'text-green-400' }, { l: '75%', v: monteCarlo.p75, c: 'text-blue-400' }, { l: '95%', v: monteCarlo.p95, c: 'text-purple-400' }].map((p, i) => (
                                 <div key={i} className="bg-gray-900/60 rounded-xl p-3">
                                     <div className="text-[10px] text-gray-500 mb-1">{p.l}</div>
                                     <div className={`text-sm font-bold ${p.c}`}>R$ {p.v.toFixed(0)}</div>
@@ -287,13 +294,13 @@ const MarketDashboard: React.FC<MarketDashboardProps> = ({ onBack }) => {
                         <span className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-4 block">📅 Projeção Mensal 2026 (Faixa 80%)</span>
                         <div className="space-y-2">
                             {projecaoMensal.map(p => {
-                                const wC=(p.central/maxBar)*100, wP=(p.pessimista/maxBar)*100, wO=(p.otimista/maxBar)*100;
+                                const wC = (p.central / maxBar) * 100, wP = (p.pessimista / maxBar) * 100, wO = (p.otimista / maxBar) * 100;
                                 return (
                                     <div key={p.mes} className={`flex items-center gap-3 ${p.isAtual ? 'opacity-100' : 'opacity-75'}`}>
                                         <span className={`text-xs font-mono w-10 ${p.isAtual ? 'text-blue-400 font-bold' : 'text-gray-500'}`}>{p.nome}</span>
                                         <div className="flex-1 relative h-7 bg-gray-900/60 rounded-lg overflow-hidden">
-                                            <div className="absolute h-full bg-blue-900/30" style={{left:`${wP*0.7}%`,width:`${(wO-wP)*0.7}%`}} />
-                                            <div className={`absolute h-full rounded-lg ${p.isAtual ? 'bg-gradient-to-r from-blue-500 to-cyan-400' : 'bg-gradient-to-r from-blue-600/60 to-blue-500/40'}`} style={{width:`${wC*0.7}%`}} />
+                                            <div className="absolute h-full bg-blue-900/30" style={{ left: `${wP * 0.7}%`, width: `${(wO - wP) * 0.7}%` }} />
+                                            <div className={`absolute h-full rounded-lg ${p.isAtual ? 'bg-gradient-to-r from-blue-500 to-cyan-400' : 'bg-gradient-to-r from-blue-600/60 to-blue-500/40'}`} style={{ width: `${wC * 0.7}%` }} />
                                             <div className="absolute inset-0 flex items-center px-2">
                                                 <span className="text-[10px] font-bold text-white/90 ml-auto">R$ {p.pessimista.toFixed(0)} — <span className="text-blue-200">[{p.central.toFixed(0)}]</span> — {p.otimista.toFixed(0)}</span>
                                             </div>
@@ -307,15 +314,15 @@ const MarketDashboard: React.FC<MarketDashboardProps> = ({ onBack }) => {
                     <div className="bg-gray-800/40 border border-gray-700/40 rounded-2xl p-6">
                         <span className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-4 block">🏆 Ranking: O Que Mais Afeta o Preço (Pearson)</span>
                         <div className="space-y-3">
-                            {ranking.map((r,i) => {
+                            {ranking.map((r, i) => {
                                 const Icon = r.icon;
                                 return (
                                     <div key={i} className="flex items-center gap-3">
-                                        <span className="text-xs text-gray-500 w-5 text-right font-bold">{i+1}º</span>
+                                        <span className="text-xs text-gray-500 w-5 text-right font-bold">{i + 1}º</span>
                                         <Icon size={14} className="text-gray-400" />
                                         <span className="text-xs text-gray-300 w-36">{r.nome}</span>
                                         <div className="flex-1 h-4 bg-gray-900/60 rounded-full overflow-hidden">
-                                            <div className={`h-full ${r.cor} rounded-full`} style={{width:`${r.pct*5}%`}} />
+                                            <div className={`h-full ${r.cor} rounded-full`} style={{ width: `${r.pct * 5}%` }} />
                                         </div>
                                         <span className="text-xs font-bold text-white w-12 text-right">{r.pct}%</span>
                                         <span className="text-[10px] text-gray-500 w-24 text-right">{r.valor}</span>

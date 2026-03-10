@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { AppState, Client, StockItem, Batch } from '../types';
-import { Bot, Megaphone, Target, MessageCircle, Gift, TrendingUp, AlertTriangle, Search, Filter, Phone, Star, Settings, CheckCircle2, Instagram, Link, PlayCircle, BookOpen, Video, QrCode, Sparkles, Wand2, ArrowRight, ArrowLeft, Zap, Plus, Contact, FileText, Grid, Image, Download, Loader2, Paintbrush, RefreshCw } from 'lucide-react';
+import { Bot, Megaphone, Target, MessageCircle, Gift, TrendingUp, AlertTriangle, Search, Filter, Phone, Star, Settings, CheckCircle2, Instagram, Link, PlayCircle, BookOpen, Video, QrCode, Sparkles, Wand2, ArrowRight, ArrowLeft, Zap, Plus, Contact, FileText, Grid, Image, Download, Loader2, Paintbrush, RefreshCw, ShieldAlert, UserCheck } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 
 interface MarketingHubProps {
@@ -9,7 +9,7 @@ interface MarketingHubProps {
 }
 
 const MarketingHub: React.FC<MarketingHubProps> = ({ data, onBack }) => {
-    const [activeTab, setActiveTab] = useState<'campaigns' | 'clients' | 'supplier-vip' | 'stitch' | 'academy' | 'studio'>('studio');
+    const [activeTab, setActiveTab] = useState<'campaigns' | 'clients' | 'supplier-vip' | 'stitch' | 'academy' | 'studio' | 'audit'>('audit');
     const [imagenPrompt, setImagenPrompt] = useState('');
     const [imagenLoading, setImagenLoading] = useState(false);
     const [generatedImages, setGeneratedImages] = useState<{ url: string; prompt: string; ts: Date }[]>([]);
@@ -201,6 +201,19 @@ const MarketingHub: React.FC<MarketingHubProps> = ({ data, onBack }) => {
 
         return recommendations;
     }, [data.stock]);
+
+    // 4. Auditoria de Inteligência (The Professor's Eye)
+    const menthorAudit = useMemo(() => {
+        const issues = {
+            debtors: data.clients.filter(c => (c.saldo_devedor || 0) > (c.limite_credito || 0)),
+            incomplete: data.clients.filter(c => !c.cpf_cnpj || !c.whatsapp || !c.cidade),
+            highPotential: data.clients.filter(c => (c.limite_credito || 0) > 5000 && (c.saldo_devedor || 0) === 0),
+            churnRisk: clientStatus.filter(c => c.status === 'FRIO')
+        };
+        return issues;
+    }, [data.clients, clientStatus]);
+
+
 
 
     // ============================================
@@ -1086,6 +1099,8 @@ const MarketingHub: React.FC<MarketingHubProps> = ({ data, onBack }) => {
                 {/* NAVIGATION TABS */}
                 <div className="flex flex-wrap justify-center gap-4 mb-12 relative z-10 animate-fade-in">
                     {[
+                        { id: 'audit', label: 'Auditoria Menthor', icon: ShieldAlert },
+                        { id: 'audit', label: 'Auditoria Menthor', icon: ShieldAlert },
                         { id: 'campaigns', label: 'Campanhas Sugeridas', icon: Megaphone },
                         { id: 'clients', label: 'CRM B2B', icon: Target },
                         { id: 'studio', label: 'Comando Criativo', icon: Wand2 },

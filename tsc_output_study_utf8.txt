@@ -1,0 +1,29 @@
+﻿App.tsx(120,21): error TS2345: Argument of type '"error"' is not assignable to parameter of type 'SetStateAction<"online" | "offline" | "checking">'.
+components/AIAgents.tsx(649,15): error TS2339: Property 'entrega_confirmada_em' does not exist on type 'Sale'.
+components/AIAgents.tsx(653,66): error TS2339: Property 'entrega_confirmada_em' does not exist on type 'Sale'.
+components/AIAgents.tsx(668,72): error TS2339: Property 'entrega_confirmada_em' does not exist on type 'Sale'.
+components/AIAgents.tsx(950,73): error TS2367: This comparison appears to be unintentional because the types '"ADMINISTRATIVO" | "PRODUCAO" | "AUDITOR" | "ESTOQUE" | "COMPRAS" | "MERCADO" | "MARKETING" | "SATISFACAO" | "WHATSAPP_BOT" | "COBRANCA" | "JURIDICO" | "FLUXO_CAIXA" | "RH_GESTOR" | "FISCAL_CONTABIL" | "QUALIDADE" | "PROFESSOR"' and '"MARCOS"' have no overlap.
+components/AIAgents.tsx(951,54): error TS2367: This comparison appears to be unintentional because the types '"ADMINISTRATIVO" | "PRODUCAO" | "AUDITOR" | "ESTOQUE" | "COMPRAS" | "MERCADO" | "MARKETING" | "SATISFACAO" | "WHATSAPP_BOT" | "COBRANCA" | "JURIDICO" | "FLUXO_CAIXA" | "RH_GESTOR" | "FISCAL_CONTABIL" | "QUALIDADE" | "PROFESSOR"' and '"MARCOS"' have no overlap.
+components/AIAgents.tsx(1406,71): error TS2367: This comparison appears to be unintentional because the types '"ADMINISTRATIVO" | "PRODUCAO" | "COMERCIAL" | "AUDITOR" | "ESTOQUE" | "COMPRAS" | "MERCADO" | "MARKETING" | "SATISFACAO" | "WHATSAPP_BOT" | "JURIDICO" | "FLUXO_CAIXA" | "RH_GESTOR" | "FISCAL_CONTABIL" | "QUALIDADE" | "PROFESSOR"' and '"DIANA"' have no overlap.
+components/AIAgents.tsx(1407,53): error TS2367: This comparison appears to be unintentional because the types '"ADMINISTRATIVO" | "PRODUCAO" | "COMERCIAL" | "AUDITOR" | "ESTOQUE" | "COMPRAS" | "MERCADO" | "MARKETING" | "SATISFACAO" | "WHATSAPP_BOT" | "JURIDICO" | "FLUXO_CAIXA" | "RH_GESTOR" | "FISCAL_CONTABIL" | "QUALIDADE" | "PROFESSOR"' and '"DIANA"' have no overlap.
+components/AIAgents.tsx(1458,70): error TS2367: This comparison appears to be unintentional because the types '"ADMINISTRATIVO" | "PRODUCAO" | "COMERCIAL" | "AUDITOR" | "ESTOQUE" | "COMPRAS" | "MERCADO" | "MARKETING" | "SATISFACAO" | "COBRANCA" | "JURIDICO" | "FLUXO_CAIXA" | "RH_GESTOR" | "FISCAL_CONTABIL" | "QUALIDADE" | "PROFESSOR"' and '"WELLINGTON"' have no overlap.
+components/MarketingHub.tsx(206,11): error TS2451: Cannot redeclare block-scoped variable 'menthorAudit'.
+components/MarketingHub.tsx(217,11): error TS2451: Cannot redeclare block-scoped variable 'menthorAudit'.
+components/MarketingHub.tsx(1141,47): error TS2552: Cannot find name 'renderAuditTab'. Did you mean 'renderStudioTab'?
+components/MarketingHub.tsx(1142,47): error TS2552: Cannot find name 'renderAuditTab'. Did you mean 'renderStudioTab'?
+services/campaignLearningService.ts(88,11): error TS2339: Property 'resultado_campanha' does not exist on type 'Sale'.
+services/campaignLearningService.ts(94,48): error TS2339: Property 'resultado_campanha' does not exist on type 'Sale'.
+services/campaignLearningService.ts(95,50): error TS2339: Property 'resultado_campanha' does not exist on type 'Sale'.
+services/campaignLearningService.ts(96,48): error TS2339: Property 'resultado_campanha' does not exist on type 'Sale'.
+services/campaignLearningService.ts(97,47): error TS2339: Property 'resultado_campanha' does not exist on type 'Sale'.
+services/campaignLearningService.ts(114,15): error TS2339: Property 'resultado_campanha' does not exist on type 'Sale'.
+services/campaignLearningService.ts(115,15): error TS2339: Property 'resultado_campanha' does not exist on type 'Sale'.
+services/campaignLearningService.ts(116,15): error TS2339: Property 'resultado_campanha' does not exist on type 'Sale'.
+services/campaignLearningService.ts(131,15): error TS2339: Property 'resultado_campanha' does not exist on type 'Sale'.
+services/campaignLearningService.ts(152,15): error TS2339: Property 'resultado_campanha' does not exist on type 'Sale'.
+services/campaignLearningService.ts(173,15): error TS2339: Property 'resultado_campanha' does not exist on type 'Sale'.
+services/campaignLearningService.ts(174,15): error TS2339: Property 'resultado_campanha' does not exist on type 'Sale'.
+services/campaignLearningService.ts(270,15): error TS2339: Property 'entrega_confirmada_em' does not exist on type 'Sale'.
+services/campaignLearningService.ts(275,44): error TS2339: Property 'entrega_confirmada_em' does not exist on type 'Sale'.
+services/campaignLearningService.ts(290,42): error TS2339: Property 'entrega_confirmada_em' does not exist on type 'Sale'.
+

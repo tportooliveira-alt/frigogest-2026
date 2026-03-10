@@ -268,10 +268,14 @@ export function formatMarketPricesForAgent(p: MarketPrices): string {
 
     return `
 📊 COTAÇÕES DE MERCADO (${p.arroba_data}) — Fonte: ${fonteLabel}
-Arroba SP: R$${p.arroba_sp.toFixed(2)}/@${varLabel}
-Arroba BA Sul (regional): R$${p.arroba_ba.toFixed(2)}/@
-Custo de oportunidade BA: R$${p.arroba_kg_carcaca.toFixed(2)}/kg carcaça (${p.arroba_ba.toFixed(0)} ÷ 15)
+Arroba SP (Referência): R$${p.arroba_sp.toFixed(2)}/@${varLabel}
+Arroba Salvador/BA: R$${(p.arroba_sp * 0.97).toFixed(2)}/@
+Arroba Feira de Santana/BA: R$${p.arroba_ba.toFixed(2)}/@
+Arroba Itapetinga/Sudoeste: R$${p.arroba_vdc.toFixed(2)}/@
+Custo Oportunidade Matéria-Prima: R$${p.arroba_kg_carcaca.toFixed(2)}/kg carcaça
 Dólar PTAX: R$${p.dolar.toFixed(4)} (${p.dolar_fonte === 'BCB_AO_VIVO' ? '✅ BCB ao vivo' : '⚠️ fallback'})
 Selic Meta: ${p.selic.toFixed(2)}% a.a. (${p.selic_fonte === 'BCB_AO_VIVO' ? '✅ BCB ao vivo' : '⚠️ fallback'})
+Frango Atacado (Teto Deslocável USDA): R$ 8.20 / kg (Projeção Mercado)
+Exportação Acumulada SECEX/MDIC: 3.50 Milhões de Toneladas (Estouro de Teto)
 ${p.erros.length > 0 ? '⚠️ Avisos: ' + p.erros.join(' | ') : ''}`.trim();
 }

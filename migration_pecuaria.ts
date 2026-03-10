@@ -3,6 +3,7 @@ import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { Supplier, Client } from './types';
 
 dotenv.config();
 
@@ -45,17 +46,23 @@ const runMigration = async () => {
             });
             if (!resp.ok) throw new Error(`Falha ao ler Firebase: ${resp.statusText}`);
             const json = await resp.json();
-            return (json.documents || []).map(parseFirestoreDoc);
+            return (json.documents || []).map(parseFirestoreDoc) as any[];
         };
 
         // 4. Migrar Fornecedores (suppliers)
         console.log('\n📦 Puxando Fornecedores...');
-        const suppliers = await fetchCollection('suppliers');
+        const suppliers = (await fetchCollection('suppliers')) as (Supplier & { id: string })[];
         let suppliersMigrated = 0;
         for (const sup of suppliers) {
             const { error } = await supabase.from('suppliers').upsert({
-                id: sup.id, nome_fantasia: sup.nome_fantasia || '', cpf_cnpj: sup.cpf_cnpj || '', status: sup.status || 'ATIVO',
-                inscricao_estadual: sup.inscricao_estadual, telefone: sup.telefone, raca_predominante: sup.raca_predominante, regiao: sup.regiao
+                id: sup.id,
+                nome_fantasia: sup.nome_fantasia || '',
+                cpf_cnpj: sup.cpf_cnpj || '',
+                status: sup.status || 'ATIVO',
+                inscricao_estadual: sup.inscricao_estadual,
+                telefone: sup.telefone,
+                raca_predominante: sup.raca_predominante,
+                regiao: sup.regiao
             });
             if (!error) suppliersMigrated++;
         }
@@ -63,28 +70,35 @@ const runMigration = async () => {
 
         // 5. Migrar Clientes (clients)
         console.log('\n📦 Puxando Clientes...');
-        const clients = await fetchCollection('clients');
+        const clients = (await fetchCollection('clients')) as (Client & { id: string })[];
         let clientsMigrated = 0;
         for (const cli of clients) {
             const id_ferro = cli.id_ferro || cli.id;
             if (!id_ferro) continue;
             const { error } = await supabase.from('clients').upsert({
-                id_ferro: id_ferro, nome_social: cli.nome_social || '', whatsapp: cli.whatsapp || '', status: cli.status || 'ATIVO',
-                cpf_cnpj: cli.cpf_cnpj || '', cidade: cli.cidade || '', perfil_compra: cli.perfil_compra || 'MISTO'
+                id_ferro: id_ferro,
+                nome_social: cli.nome_social || '',
+                whatsapp: cli.whatsapp || '',
+                status: cli.status || 'ATIVO',
+                cpf_cnpj: cli.cpf_cnpj || '',
+                cidade: cli.cidade || '',
+                perfil_compra: cli.perfil_compra || 'MISTO'
             });
             if (!error) clientsMigrated++;
         }
         console.log(`✅ Clientes migrados: ${clientsMigrated} / ${clients.length}`);
 
         // 6. Migrar Clientes Secundarios (tentando se houver)
-        const backupClients = await fetchCollection('clientes').catch(() => []);
+        const backupClients = (await fetchCollection('clientes').catch(() => [])) as any[];
         let bkpMigrated = 0;
         if (backupClients.length > 0) {
             for (const cli of backupClients) {
                 const id_ferro = cli.id_ferro || cli.id;
                 if (!id_ferro) continue;
                 const { error } = await supabase.from('clients').upsert({
-                    id_ferro: id_ferro, nome_social: cli.nome || cli.nome_social || '', status: 'ATIVO'
+                    id_ferro: id_ferro,
+                    nome_social: cli.nome || cli.nome_social || '',
+                    status: 'ATIVO'
                 });
                 if (!error) bkpMigrated++;
             }

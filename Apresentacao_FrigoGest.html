@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FrigoGest 2026: Ecossistema de Vanguarda</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap');
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: #0b0f19;
+            color: #e2e8f0;
+            overflow-x: hidden;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Tipografia Premium */
+        h1,
+        h2,
+        h3,
+        h4 {
+            font-family: 'Outfit', sans-serif;
+        }
+
+        .data-font {
+            font-family: 'JetBrains Mono', monospace;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Fundo Dinâmico Sutil */
+        .bg-grid {
+            background-image:
+                linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        .glow-orb {
+            position: fixed;
+            width: 600px;
+            height: 600px;
+            border-radius: 50%;
+            filter: blur(100px);
+            opacity: 0.15;
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        /* Efeitos Glassmorphism e Cards */
+        .premium-card {
+            background: rgba(20, 27, 45, 0.6);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 1.5rem;
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .premium-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+
+        .premium-card:hover {
+            transform: translateY(-8px);
+            border-color: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+        }
+
+        .premium-card:hover::before {
+            opacity: 1;
+        }
+
+        /* Animações Core */
+        @keyframes float {
+
+            0%,
+            100% {
+                transform: translateY(0px);
+            }
+
+            50% {
+                transform: translateY(-12px);
+            }
+        }
+
+        @keyframes pulse-ring {
+            0% {
+                box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.4);
+            }
+
+            70% {
+                box-shadow: 0 0 0 20px rgba(74, 222, 128, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(74, 222, 128, 0);
+            }
+        }
+
+        @keyframes data-flow {
+            0% {
+                stroke-dashoffset: 24;
+            }
+
+            100% {
+                stroke-dashoffset: 0;
+            }
+        }
+
+        .floating {
+            animation: float 6s ease-in-out infinite;
+        }
+
+        .pulsing-green {
+            animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        /* Gradientes Textuais */
+        .text-gradient-ai {
+            background: linear-gradient(135deg, #a855f7, #d946ef);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .text-gradient-op {
+            background: linear-gradient(135deg, #38bdf8, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .text-gradient-fin {
+            background: linear-gradient(135deg, #4ade80, #34d399);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* Linhas Conectoras SVGs (Desenhadas via Tailwind no HTML) */
+        .connector-line {
+            fill: none;
+            stroke: rgba(255, 255, 255, 0.2);
+            stroke-width: 2;
+            stroke-dasharray: 6;
+            animation: data-flow 1s linear infinite;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0b0f19;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+
+        .tag-pill {
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-size: 0.65rem;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+
+<body class="min-h-screen text-slate-300 pb-20">
+
+    <div class="bg-grid"></div>
+    <div class="glow-orb" style="top: -200px; left: -200px; background: #0ea5e9;"></div>
+    <div class="glow-orb" style="bottom: -200px; right: -200px; background: #8b5cf6;"></div>
+
+    <div class="max-w-[1400px] mx-auto px-6 pt-16">
+
+        <!-- CABEÇALHO -->
+        <header class="text-center mb-24 relative">
+            <div
+                class="inline-block mb-4 px-4 py-1 rounded-full bg-slate-800/50 border border-slate-700 text-sm font-semibold tracking-wider text-slate-400">
+                ARQUITETURA DE DADOS V4.5.0 SOTA
+            </div>
+            <h1 class="text-6xl md:text-7xl font-extrabold tracking-tight text-white mb-6 floating">
+                FrigoGest <span class="text-gradient-ai">Elite</span>
+            </h1>
+            <p class="text-xl text-slate-400 max-w-3xl mx-auto leading-relaxed">
+                Um mapa interativo do fluxo do código. Do gado no pasto ao lucro líquido, vigiado por inteligência
+                artificial autônoma sem perda de 1 grama de informação.
+            </p>
+        </header>
+
+        <!-- GRID PRINCIPAL - 3 PILARES -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 relative">
+
+            <!-- LINHAS DE FUNDO (DECORATIVAS APENAS PARA DESKTOP) -->
+            <div class="hidden lg:block absolute inset-0 pointer-events-none z-0">
+                <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+                    <!-- Da Expedição para Caixa -->
+                    <path d="M 33% 750 C 45% 750, 45% 500, 66% 500" class="connector-line" />
+                    <!-- De IA pra tudo -->
+                    <path d="M 75% 250 C 60% 250, 60% 200, 33% 200" class="connector-line" stroke="#a855f7" />
+                </svg>
+            </div>
+
+            <!-- PILAR 1: OPERAÇÃO (AZUL) -->
+            <div class="flex flex-col gap-6 relative z-10 p-2">
+                <div class="flex items-center gap-3 mb-6">
+                    <div
+                        class="w-10 h-10 rounded-xl bg-sky-500/20 flex items-center justify-center border border-sky-500/30 shadow-[0_0_15px_rgba(56,189,248,0.2)]">
+                        <i class="fa-solid fa-industry text-sky-400"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-white tracking-wide">Operacional</h2>
+                </div>
+
+                <!-- Lote -->
+                <div class="premium-card p-6 border-l-4 border-l-sky-500">
+                    <div class="flex justify-between items-start mb-4">
+                        <div
+                            class="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-sky-400 text-xl ring-1 ring-white/10">
+                            <i class="fa-solid fa-tractor"></i>
+                        </div>
+                        <span class="tag-pill bg-slate-800 text-sky-300 border border-sky-500/30">Lote V4</span>
+                    </div>
+                    <h3 class="text-xl font-bold text-white mb-2">Aquisição & GTA</h3>
+                    <p class="text-sm text-slate-400 mb-4">Entrada do rebanho gerando separação estrita de dívidas.</p>
+                    <div class="bg-slate-900/50 rounded-lg p-3 border border-white/5">
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="text-slate-500">Preço Arroba</span>
+                            <i class="fa-solid fa-arrow-right text-slate-600"></i>
+                            <span class="text-red-400 font-semibold">Conta Produtor</span>
+                        </div>
+                        <div class="flex justify-between items-center text-xs mt-2 border-t border-white/5 pt-2">
+                            <span class="text-slate-500">Custo do Frete</span>
+                            <i class="fa-solid fa-arrow-right text-slate-600"></i>
+                            <span class="text-red-400 font-semibold">Conta Motorista</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Abate -->
+                <div class="premium-card p-6">
+                    <div class="flex items-center gap-4 mb-4">
+                        <div
+                            class="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-sky-400 text-xl ring-1 ring-white/10">
+                            <i class="fa-solid fa-scale-balanced"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-bold text-white">Balança de Rendimento</h3>
+                            <p class="text-xs text-sky-300/70">Calculadora de Drip Loss</p>
+                        </div>
+                    </div>
+                    <div class="w-full bg-slate-800 rounded-full h-1.5 mb-2 mt-4 overflow-hidden">
+                        <div class="bg-gradient-to-r from-red-500 to-sky-500 h-1.5 rounded-full" style="width: 53%">
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-slate-500 flex justify-between font-mono">
+                        <span>Peso Vivo: 100%</span>
+                        <span>Carcaça Quente: 53%</span>
+                    </p>
+                </div>
+
+                <!-- Estoque -->
+                <div class="premium-card p-6 border border-sky-500/20 bg-sky-900/10">
+                    <div class="flex justify-between items-center mb-4">
+                        <div class="flex items-center gap-3">
+                            <i class="fa-solid fa-snowflake text-sky-300 text-xl"></i>
+                            <h3 class="text-lg font-bold text-white">Câmara Fria</h3>
+                        </div>
+                        <span class="text-xs data-font text-sky-300 font-bold px-2 py-1 bg-sky-500/10 rounded">FIFO
+                            ATIVO</span>
+                    </div>
+                    <p class="text-sm text-slate-400 mb-3">Cada meia-carcaça ganha UUID próprio (Ex: <code
+                            class="text-xs text-slate-500">Banda-A-1a2b</code>).</p>
+                    <div class="flex gap-2">
+                        <span class="w-2 h-2 rounded-full bg-green-500 mt-1"></span>
+                        <span class="text-xs text-slate-300">Status <strong>DISPONÍVEL</strong>: Pronta pra Venda</span>
+                    </div>
+                </div>
+
+                <!-- Expedição -->
+                <div class="premium-card p-6 relative overflow-hidden">
+                    <div class="absolute -right-6 -top-6 text-slate-800 opacity-50 transform rotate-12">
+                        <i class="fa-solid fa-truck-ramp-box text-8xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-white relative z-10 mb-1">Expedição e Faturamento</h3>
+                    <p class="text-sm text-slate-400 relative z-10 opacity-90 mb-4">Romaneios vinculados ao código de
+                        barras real.</p>
+
+                    <div class="grid grid-cols-2 gap-2 relative z-10">
+                        <div
+                            class="bg-green-500/10 border border-green-500/20 rounded p-2 text-center transition hover:bg-green-500/20">
+                            <i class="fa-regular fa-money-bill-1 text-green-400 mb-1"></i>
+                            <p class="text-[10px] text-green-300 font-bold">VENDA À VISTA</p>
+                            <p class="text-[9px] text-slate-500 mt-1">Vai para Caixa Oficial</p>
+                        </div>
+                        <div
+                            class="bg-amber-500/10 border border-amber-500/20 rounded p-2 text-center transition hover:bg-amber-500/20">
+                            <i class="fa-solid fa-file-signature text-amber-400 mb-1"></i>
+                            <p class="text-[10px] text-amber-300 font-bold">VENDA A PRAZO</p>
+                            <p class="text-[9px] text-slate-500 mt-1">Gera Conta a Receber</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- PILAR 2: FINANCEIRO (VERDE) -->
+            <div class="flex flex-col gap-6 relative z-10 p-2">
+
+                <div class="flex items-center gap-3 mb-6">
+                    <div
+                        class="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center border border-emerald-500/30 shadow-[0_0_15px_rgba(52,211,153,0.2)]">
+                        <i class="fa-solid fa-vault text-emerald-400"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-white tracking-wide">Tesouraria Forensic</h2>
+                </div>
+
+                <!-- Caixa -->
+                <div class="premium-card p-6 border-2 border-emerald-500/40 pulsing-green"
+                    style="background: radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.15) 0%, transparent 70%);">
+                    <div class="text-center mb-6">
+                        <p class="text-xs text-emerald-400 font-bold tracking-widest uppercase mb-2">The Source of Truth
+                        </p>
+                        <h3 class="text-3xl font-black text-white">Fluxo de Caixa</h3>
+                        <p class="text-[10px] text-slate-400 mt-1">Entradas e Saídas em Tempo Real</p>
+                    </div>
+
+                    <div class="space-y-3">
+                        <div
+                            class="flex justify-between items-center bg-slate-900/60 p-3 rounded-lg border border-emerald-500/10">
+                            <div class="flex items-center gap-3">
+                                <div class="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center"><i
+                                        class="fa-solid fa-arrow-down text-emerald-400 text-xs"></i></div>
+                                <span class="text-sm font-semibold text-white">Vendas à Vista</span>
+                            </div>
+                            <span class="text-xs text-emerald-400">Automático</span>
+                        </div>
+
+                        <div
+                            class="flex justify-between items-center bg-slate-900/60 p-3 rounded-lg border border-red-500/10">
+                            <div class="flex items-center gap-3">
+                                <div class="w-6 h-6 rounded-full bg-red-500/20 flex items-center justify-center"><i
+                                        class="fa-solid fa-arrow-up text-red-400 text-xs"></i></div>
+                                <span class="text-sm font-semibold text-white">Pagamento Lotes</span>
+                            </div>
+                            <span class="text-xs text-red-400">Manual/Baixa</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <!-- A Pagar -->
+                    <div class="premium-card p-4 border-t-2 border-t-red-500/50">
+                        <i class="fa-solid fa-hand-holding-dollar text-red-400 text-xl mb-2"></i>
+                        <h3 class="font-bold text-white text-sm mb-1">A Pagar</h3>
+                        <p class="text-[10px] text-slate-400 leading-tight">Boletos do Gado e do Motorista separados
+                            rigorosamente.</p>
+                    </div>
+
+                    <!-- A Receber -->
+                    <div class="premium-card p-4 border-t-2 border-t-emerald-500/50">
+                        <i class="fa-solid fa-file-invoice-dollar text-emerald-400 text-xl mb-2"></i>
+                        <h3 class="font-bold text-white text-sm mb-1">A Receber</h3>
+                        <p class="text-[10px] text-slate-400 leading-tight">Vendas a prazo. Filtro persistente por saldo
+                            devedor.</p>
+                    </div>
+                </div>
+
+                <!-- Motor de Estorno (Abaixo) -->
+                <div
+                    class="premium-card p-5 border border-amber-500/30 bg-gradient-to-r from-amber-500/10 to-transparent mt-2">
+                    <div class="flex gap-4 items-center">
+                        <div
+                            class="bg-amber-500 text-slate-900 w-10 h-10 rounded text-xl flex items-center justify-center shadow-[0_0_15px_rgba(245,158,11,0.4)]">
+                            <i class="fa-solid fa-backward"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-white font-bold text-lg leading-tight">Estorno Atômico</h3>
+                            <p class="text-xs text-amber-200 mt-1">Ação Cascata Sem Perdas</p>
+                        </div>
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-amber-500/20 text-xs text-slate-300">
+                        Se acionado, apaga a dívida do financeiro <strong>E</strong> reverte a banda de carne exata por
+                        código para a Câmara Fria como "Disponível".
+                    </div>
+                </div>
+            </div>
+
+            <!-- PILAR 3: IA MESTRA (ROXO) -->
+            <div class="flex flex-col gap-6 relative z-10 p-2">
+                <div class="flex items-center gap-3 mb-6">
+                    <div
+                        class="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center border border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.3)]">
+                        <i class="fa-solid fa-microchip text-purple-400"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-white tracking-wide">Inteligência AIOS</h2>
+                </div>
+
+                <!-- Dona Clara -->
+                <div class="premium-card p-6 border border-purple-500/40"
+                    style="background: linear-gradient(180deg, rgba(30,27,75,0.8) 0%, rgba(15,23,42,0.8) 100%);">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="flex items-center gap-3">
+                            <div class="relative">
+                                <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Clara&backgroundColor=581c87"
+                                    alt="IA" class="w-12 h-12 rounded-full border-2 border-purple-500">
+                                <div
+                                    class="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-slate-900">
+                                </div>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-bold text-white">Dona Clara (CEO)</h3>
+                                <p class="text-[10px] uppercase tracking-wider text-purple-300 font-bold">Tier: MESTRA
+                                    (Gemini Pro)</p>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="text-sm text-slate-300 border-l-2 border-purple-500 pl-3 py-1 mb-4 italic">
+                        "O EBITDA despencou 1.2% ontem. Verificando Contas a Pagar e sugerindo segurar compras de Gado
+                        acima de R$260/arroba."
+                    </p>
+                    <div class="flex justify-between items-center text-xs">
+                        <span class="text-slate-400 bg-slate-800 px-2 py-1 rounded"><i
+                                class="fa-solid fa-clock-rotate-left mr-1"></i> Persistent Alerts Fixados</span>
+                    </div>
+                </div>
+
+                <!-- Demais Agentes -->
+                <div class="grid grid-cols-1 gap-3">
+
+                    <div
+                        class="premium-card p-3 flex items-center gap-4 bg-slate-800/40 hover:bg-slate-800/80 cursor-pointer">
+                        <div
+                            class="w-10 h-10 rounded bg-rose-500/20 text-rose-400 flex items-center justify-center text-lg">
+                            <i class="fa-solid fa-user-secret"></i></div>
+                        <div class="flex-1">
+                            <h4 class="text-sm font-bold text-white">Ana Luíza <span
+                                    class="text-[9px] font-normal text-slate-400 ml-1">Auditora</span></h4>
+                            <p class="text-[11px] text-slate-400 leading-tight">Vigia fraudes, discrepâncias de peso na
+                                balança e estornos fantasmas nas vendas.</p>
+                        </div>
+                    </div>
+
+                    <div
+                        class="premium-card p-3 flex items-center gap-4 bg-slate-800/40 hover:bg-slate-800/80 cursor-pointer">
+                        <div
+                            class="w-10 h-10 rounded bg-blue-500/20 text-blue-400 flex items-center justify-center text-lg">
+                            <i class="fa-solid fa-handshake"></i></div>
+                        <div class="flex-1">
+                            <h4 class="text-sm font-bold text-white">Marcos <span
+                                    class="text-[9px] font-normal text-slate-400 ml-1">Comercial</span></h4>
+                            <p class="text-[11px] text-slate-400 leading-tight">Analisa LTV (Life Time Value) de
+                                clientes. Dispara metas CRM para clientes que sumiram.</p>
+                        </div>
+                    </div>
+
+                    <div
+                        class="premium-card p-3 flex items-center gap-4 bg-slate-800/40 hover:bg-slate-800/80 cursor-pointer">
+                        <div
+                            class="w-10 h-10 rounded bg-teal-500/20 text-teal-400 flex items-center justify-center text-lg">
+                            <i class="fa-solid fa-temperature-arrow-down"></i></div>
+                        <div class="flex-1">
+                            <h4 class="text-sm font-bold text-white">Joaquim <span
+                                    class="text-[9px] font-normal text-slate-400 ml-1">Logística</span></h4>
+                            <p class="text-[11px] text-slate-400 leading-tight">Encontra carnes encalhadas na câmara
+                                fria prevenindo desidratação (perda R$).</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="premium-card p-4 border border-indigo-500/30 flex items-center gap-4 mt-2">
+                    <div
+                        class="w-12 h-12 bg-indigo-500/20 text-indigo-400 rounded flex flex-col justify-center items-center">
+                        <i class="fa-solid fa-satellite-dish"></i>
+                    </div>
+                    <div>
+                        <h4 class="text-sm font-bold text-white">Integração Externa (MCP)</h4>
+                        <p class="text-xs text-slate-400">O <strong>Professor</strong> chama a API <code
+                                class="text-indigo-300">[FETCH_CEPEA]</code> para ancorar decisões no mundo real.</p>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // Pequena interação hover nos cards para adicionar classe glowing extra nas IAs
+        document.querySelectorAll('.premium-card').forEach(card => {
+            card.addEventListener('mouseenter', () => {
+                const icon = card.querySelector('i');
+                if (icon) {
+                    icon.style.transform = 'scale(1.1)';
+                    icon.style.transition = 'transform 0.3s ease';
+                }
+            });
+            card.addEventListener('mouseleave', () => {
+                const icon = card.querySelector('i');
+                if (icon) {
+                    icon.style.transform = 'scale(1)';
+                }
+            });
+        });
+    </script>
+</body>
+
+</html>

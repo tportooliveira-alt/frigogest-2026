@@ -61,7 +61,7 @@ const triggerCamaraFria = (ctx: TriggerContext): AutoTriggerResult[] => {
         const batch = ctx.batches.find(b => b.id_lote === criticos[0]?.id_lote);
         const valorRisco = kgTotal * (batch?.custo_real_kg || 0);
         alerts.push({
-            triggerId: `camara-critico-${Date.now()}`,
+            triggerId: `camara-critico-${today().toDateString()}`,
             agentId: 'ESTOQUE',
             agentName: 'Joaquim',
             agentEmoji: '📦',
@@ -77,7 +77,7 @@ const triggerCamaraFria = (ctx: TriggerContext): AutoTriggerResult[] => {
     if (atencao.length > 0) {
         const kgTotal = atencao.reduce((s, i) => s + i.peso_entrada, 0);
         alerts.push({
-            triggerId: `camara-atencao-${Date.now()}`,
+            triggerId: `camara-atencao-${today().toDateString()}`,
             agentId: 'ESTOQUE',
             agentName: 'Joaquim',
             agentEmoji: '📦',
@@ -112,7 +112,7 @@ const triggerCobranca = (ctx: TriggerContext): AutoTriggerResult[] => {
     if (vencidasHoje.length > 0) {
         const total = vencidasHoje.reduce((s, v) => s + (v.peso_real_saida * v.preco_venda_kg), 0);
         alerts.push({
-            triggerId: `cobranca-hoje-${Date.now()}`,
+            triggerId: `cobranca-hoje-${today().toDateString()}`,
             agentId: 'COBRANCA',
             agentName: 'Diana',
             agentEmoji: '💰',
@@ -129,7 +129,7 @@ const triggerCobranca = (ctx: TriggerContext): AutoTriggerResult[] => {
         const total = vencidasAtrasadas.reduce((s, v) => s + (v.peso_real_saida * v.preco_venda_kg), 0);
         const maxAtraso = Math.max(...vencidasAtrasadas.map(v => daysDiff(v.data_vencimento)));
         alerts.push({
-            triggerId: `cobranca-atrasada-${Date.now()}`,
+            triggerId: `cobranca-atrasada-${today().toDateString()}`,
             agentId: 'COBRANCA',
             agentName: 'Diana',
             agentEmoji: '💰',
@@ -170,7 +170,7 @@ const triggerCaixa = (ctx: TriggerContext): AutoTriggerResult[] => {
 
     if (saldo < 5000) {
         alerts.push({
-            triggerId: `caixa-emergencia-${Date.now()}`,
+            triggerId: `caixa-emergencia-${today().toDateString()}`,
             agentId: 'FLUXO_CAIXA',
             agentName: 'Mateus',
             agentEmoji: '💵',
@@ -183,7 +183,7 @@ const triggerCaixa = (ctx: TriggerContext): AutoTriggerResult[] => {
         });
     } else if (saldo < limiteMinimo) {
         alerts.push({
-            triggerId: `caixa-atencao-${Date.now()}`,
+            triggerId: `caixa-atencao-${today().toDateString()}`,
             agentId: 'FLUXO_CAIXA',
             agentName: 'Mateus',
             agentEmoji: '💵',
@@ -235,7 +235,7 @@ const triggerClientesSumindo = (ctx: TriggerContext): AutoTriggerResult[] => {
         const top3 = clientesSumindo.slice(0, 3);
         const nomes = top3.map(c => `${c.nome} (${c.diasSemCompra}d)`).join(', ');
         alerts.push({
-            triggerId: `clientes-sumindo-${Date.now()}`,
+            triggerId: `clientes-sumindo-${today().toDateString()}`,
             agentId: 'COMERCIAL',
             agentName: 'Marcos',
             agentEmoji: '🤝',
@@ -300,7 +300,7 @@ const triggerContasPagar = (ctx: TriggerContext): AutoTriggerResult[] => {
     const vencidas = vencendo.filter(p => daysDiff(p.data_vencimento) >= 0);
 
     return [{
-        triggerId: `contas-pagar-${Date.now()}`,
+        triggerId: `contas-pagar-${today().toDateString()}`,
         agentId: 'AUDITOR',
         agentName: 'Ana Luiza',
         agentEmoji: '🔍',

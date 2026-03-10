@@ -20,7 +20,7 @@ import {
     PROMPT_FLUXO_CAIXA, PROMPT_RH_GESTOR, PROMPT_FISCAL_CONTABIL, PROMPT_QUALIDADE,
     PROMPT_PROFESSOR, PROMPT_ADMINISTRATIVO, PROMPT_PRODUCAO, PROMPT_COMERCIAL,
     PROMPT_AUDITOR, PROMPT_ESTOQUE, PROMPT_COMPRAS, PROMPT_MERCADO, PROMPT_MARKETING
-} from '../agentPrompts';
+} from '../config/agentPrompts';
 
 import { runCascade } from '../services/llmCascade';
 import { getAgentMemories, formatMemoriesForPrompt } from '../services/agentMemoryService';

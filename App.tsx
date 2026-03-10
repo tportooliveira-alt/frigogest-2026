@@ -22,13 +22,13 @@ import { syncAllToSheets, forceSyncToSheets, isSheetsConfigured } from './utils/
 import { todayBR } from './utils/helpers';
 import CollaboratorReport from './components/CollaboratorReport';
 import HeiferManager from './components/HeiferManager';
-import SalesAgent from './components/SalesAgent';
+import SalesAgent from './ai/components/SalesAgent';
 import AuditLogView from './components/AuditLogView';
-import AIAgents from './components/AIAgents';
+import AIAgents from './ai/components/AIAgents';
 import DataIntegrityWatchdog from './components/DataIntegrityWatchdog';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import AIChat from './components/AIChat';
-import AIMeetingRoom from './components/AIMeetingRoom';
+import AIChat from './ai/components/AIChat';
+import AIMeetingRoom from './ai/components/AIMeetingRoom';
 import MeetingChat from './components/MeetingChat';
 import MarketingHub from './components/MarketingHub';
 import MarketDashboard from './components/MarketDashboard';
@@ -36,9 +36,12 @@ import PricingEngine from './components/PricingEngine';
 import AlertCenter from './components/AlertCenter';
 import ScenarioSimulator from './components/ScenarioSimulator';
 import { ActionApprovalCenter } from './components/ActionApprovalCenter';
-import { DetectedAction } from './services/actionParserService';
-import { AIOSPanel } from './components/AIOSPanel';
-import { runAutoTriggers, AutoTriggerResult, shouldShowBriefingToday, markBriefingShownToday } from './services/autoTriggerService';
+import { DetectedAction, parseActionsFromResponse, generateWhatsAppLink } from './services/actionParserService';
+import { AIOSPanel } from './ai/components/AIOSPanel';
+import { OrchestratorView } from './components/OrchestratorView';
+import { runAutoTriggers, AutoTriggerResult, shouldShowBriefingToday, markBriefingShownToday } from './ai/services/autoTriggerService';
+import { runOrchestration, OrchestrationResult } from './services/orchestratorService';
+import { runCascade } from './ai/services/llmCascade';
 
 
 const App: React.FC = () => {
@@ -48,11 +51,14 @@ const App: React.FC = () => {
   const [session, setSession] = useState<any>(OFFLINE_MODE ? { user: { email: 'offline@local' } } : null);
   const [currentView, setCurrentView] = useState('menu');
   const [viewParams, setViewParams] = useState<any>(null);
-  const [dbStatus, setDbStatus] = useState<'online' | 'offline' | 'checking'>(OFFLINE_MODE ? 'offline' : 'checking');
+  const [dbStatus, setDbStatus] = useState<'online' | 'offline' | 'checking' | 'error'>(OFFLINE_MODE ? 'offline' : 'checking');
   const [data, setData] = useState<AppState>({ ...MOCK_DATA, scheduledOrders: [], suppliers: [], payables: [] });
   const [loading, setLoading] = useState(!OFFLINE_MODE);
   const [sheetsSyncStatus, setSheetsSyncStatus] = useState<'idle' | 'syncing' | 'ok' | 'error'>('idle');
   const [aiosAlerts, setAiosAlerts] = useState<AutoTriggerResult[]>([]);
+  const [orchestratorResult, setOrchestratorResult] = useState<OrchestrationResult | null>(null);
+  const [isOrchestrating, setIsOrchestrating] = useState(false);
+  const [detectedActions, setDetectedActions] = useState<DetectedAction[]>([]);
   const [dismissedAlerts] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -101,7 +107,7 @@ const App: React.FC = () => {
         supabase.from('payables').select('*'),
       ]);
 
-      const TABLE_NAMES = ['clients','batches','stock_items','sales','transactions','scheduled_orders','daily_reports','suppliers','payables'];
+      const TABLE_NAMES = ['clients', 'batches', 'stock_items', 'sales', 'transactions', 'scheduled_orders', 'daily_reports', 'suppliers', 'payables'];
       const getResData = (res: PromiseSettledResult<any>) =>
         res.status === 'fulfilled' ? (res.value.data || []) : [];
 
@@ -113,7 +119,7 @@ const App: React.FC = () => {
         console.error('[fetchData] Tabelas com erro:', failedTables);
         setDbStatus('error');
         // Não interrompe — carrega o que conseguiu, mas avisa o dono
-        if (failedTables.some(t => ['sales','clients','stock_items'].includes(t!))) {
+        if (failedTables.some(t => ['sales', 'clients', 'stock_items'].includes(t!))) {
           console.warn('[fetchData] Tabela crítica falhou — dados dos agentes podem estar incompletos');
         }
       }
@@ -168,6 +174,14 @@ const App: React.FC = () => {
           scheduledOrders
         });
         setAiosAlerts(triggers);
+
+        // AUTO-ORCHESTRATION: Se houver BLOQUEIO, inicia o conselho de agentes automaticamente
+        const bloqueio = triggers.find(t => t.severity === 'BLOQUEIO');
+        if (bloqueio && !isOrchestrating && !orchestratorResult) {
+          console.log('[AIOS] 🚨 Bloqueio detectado! Iniciando Orquestrador para:', bloqueio.title);
+          executeOrchestration(bloqueio.title + ": " + bloqueio.message);
+        }
+
         // Marca briefing como mostrado hoje (1x/dia)
         if (triggers.some(t => t.triggerId.startsWith('briefing-'))) {
           markBriefingShownToday();
@@ -200,6 +214,45 @@ const App: React.FC = () => {
       setDbStatus('offline');
     }
   }, [session]);
+
+  const executeOrchestration = async (topic: string) => {
+    if (isOrchestrating) return;
+    setIsOrchestrating(true);
+    setCurrentView('orchestrator');
+    try {
+      // Snapshot básico para o orquestrador
+      const snapshot = `STK: ${data.stock.length} itens | FIN: R$ ${data.transactions.reduce((acc, t) => acc + (t.tipo === 'ENTRADA' ? t.valor : -t.valor), 0).toFixed(2)} | CLT: ${data.clients.length}`;
+      const res = await runOrchestration(topic, snapshot, runCascade);
+      setOrchestratorResult(res);
+
+      // PARSE DE AÇÕES: Extrai ações da decisão final da Dona Clara
+      if (res.status === 'COMPLETED' && res.finalDecision) {
+        const actions = parseActionsFromResponse(res.finalDecision, data.clients);
+        if (actions.length > 0) {
+          setDetectedActions(prev => [...actions, ...prev].slice(0, 8)); // Mantém as mais recentes
+        }
+      }
+    } catch (err) {
+      console.error('Erro na orquestração:', err);
+    } finally {
+      setIsOrchestrating(false);
+    }
+  };
+
+  const handleExecuteAction = (action: DetectedAction) => {
+    console.log('[App] Executando ação:', action.type, action.label);
+
+    if (action.type === 'WHATSAPP' && action.clientPhone) {
+      const msg = action.message || `Olá ${action.clientName}, aqui é da FrigoGest. ${action.description}`;
+      window.open(generateWhatsAppLink(action.clientPhone, msg), '_blank');
+    } else if (action.type === 'COBRAR' && action.clientPhone) {
+      const msg = `Olá ${action.clientName}, notamos um pagamento pendente no valor de R$ ${action.value?.toFixed(2)}. Como podemos facilitar?`;
+      window.open(generateWhatsAppLink(action.clientPhone, msg), '_blank');
+    }
+
+    // Remove da lista após executar
+    setDetectedActions(prev => prev.filter(a => a.id !== action.id));
+  };
 
   useEffect(() => {
     fetchData();
@@ -488,83 +541,37 @@ const App: React.FC = () => {
       await supabase.from('sales').update({ status_pagamento: 'ESTORNADO', valor_pago: 0 }).eq('id_venda', saleId);
 
       // 2. Devolver item(ns) ao estoque → DISPONÍVEL
-      // ESTRATÉGIA: 3 tentativas em cascata para garantir que as carcaças voltem ao gancho
+      // ESTRATÉGIA: Derivar os IDs reais Baseado no ID Completo da Venda
       const restoredIds = new Set<string>();
 
-      // Passo 2a: pegar IDs originais do campo stock_ids_originais (vindo do banco)
-      const rawIds: string[] = (sale as any).stock_ids_originais && Array.isArray((sale as any).stock_ids_originais) && (sale as any).stock_ids_originais.length > 0
-        ? (sale as any).stock_ids_originais
-        : [sale.id_completo];
+      // Quando vendido inteiro, id_completo finaliza com -INTEIRO (ex: LOTE-1234-1-INTEIRO)
+      // Quando BANDA_A, finaliza direto com -BANDA_A ou -BANDA_B
+      const isInteira = sale.id_completo.endsWith('-INTEIRO');
 
-      // Passo 2b: expandir IDs virtuais -INTEIRO para as bandas reais
-      const expandedIds: string[] = [];
-      rawIds.forEach((id: string) => {
-        if (id.endsWith('-INTEIRO')) {
-          const base = id.replace(/-INTEIRO$/, '');
-          expandedIds.push(`${base}-BANDA_A`, `${base}-BANDA_B`);
-        } else {
-          expandedIds.push(id);
-        }
-      });
-
-      console.log(`📦 Tentativa 1 — devolvendo por IDs expandidos:`, expandedIds);
-
-      for (const stockId of expandedIds) {
-        const { data: found, error } = await supabase!.from('stock_items')
-          .select('id_completo').eq('id_completo', stockId).limit(1);
-        if (!error && found && found.length > 0) {
-          await supabase!.from('stock_items').update({ status: 'DISPONIVEL' }).eq('id_completo', stockId);
-          restoredIds.add(stockId);
-          console.log(`✅ Item ${stockId} -> DISPONIVEL`);
-        }
+      const targetIds = [];
+      if (isInteira) {
+        const base = sale.id_completo.replace(/-INTEIRO$/, '');
+        targetIds.push(`${base}-BANDA_A`, `${base}-BANDA_B`);
+      } else {
+        targetIds.push(sale.id_completo);
       }
 
-      // Passo 2c: FALLBACK ROBUSTO — só ativa se a tentativa 1 não restaurou nada
-      // REGRA CRÍTICA: banda avulsa  → restaura SÓ a banda vendida (id_completo exato)
-      //                carcaça inteira → restaura BANDA_A + BANDA_B pelo id_lote + sequência
-      if (restoredIds.size === 0) {
-        const tipoVenda = (sale as any).tipo_venda; // 'CARCACA_INTEIRA' | 'BANDA_AVULSA' | undefined
-        const isBandaAvulsa = tipoVenda === 'BANDA_AVULSA' || (!tipoVenda && !sale.id_completo.endsWith('-INTEIRO'));
+      console.log(`📦 Devolvendo peças ao estoque:`, targetIds);
 
-        if (isBandaAvulsa) {
-          // Banda avulsa: restaurar apenas o id_completo exato da venda
-          console.warn(`⚠️ Fallback BANDA_AVULSA: tentando id_completo direto "${sale.id_completo}"`);
-          const { data: found } = await supabase!.from('stock_items')
-            .select('id_completo, status').eq('id_completo', sale.id_completo).limit(1);
-          if (found && found.length > 0 && found[0].status === 'VENDIDO') {
-            await supabase!.from('stock_items').update({ status: 'DISPONIVEL' }).eq('id_completo', sale.id_completo);
-            restoredIds.add(sale.id_completo);
-            console.log(`✅ Fallback banda: ${sale.id_completo} -> DISPONIVEL`);
+      for (const stockId of targetIds) {
+        const { data: found, error } = await supabase!.from('stock_items')
+          .select('id_completo, status').eq('id_completo', stockId).limit(1);
+
+        if (!error && found && found.length > 0) {
+          if (found[0].status === 'VENDIDO') {
+            await supabase!.from('stock_items').update({ status: 'DISPONIVEL' }).eq('id_completo', stockId);
+            restoredIds.add(stockId);
+            console.log(`✅ Item ${stockId} -> DISPONIVEL`);
           } else {
-            console.error(`❌ Fallback banda falhou: "${sale.id_completo}" não encontrado ou não está VENDIDO`);
+            console.log(`⚠️ Item ${stockId} já não estava VENDIDO (Status atual: ${found[0].status})`);
           }
         } else {
-          // Carcaça inteira: restaurar as duas bandas pelo id_lote + sequência
-          console.warn(`⚠️ Fallback CARCACA_INTEIRA: buscando por id_lote + sequência...`);
-          const parts = sale.id_completo.split('-');
-          if (parts.length >= 3) {
-            const seqStr = parts[parts.length - 2];
-            const idLote = parts.slice(0, parts.length - 2).join('-');
-            const seqNum = parseInt(seqStr, 10);
-
-            console.log(`🔍 Fallback carcaça: id_lote="${idLote}" sequencia=${seqNum}`);
-
-            let query = supabase!.from('stock_items').select('id_completo, status').eq('id_lote', idLote);
-            if (!isNaN(seqNum)) query = query.eq('sequencia', seqNum);
-
-            const { data: stockByLote, error: loteErr } = await query;
-            if (!loteErr && stockByLote && stockByLote.length > 0) {
-              for (const item of stockByLote) {
-                if (item.status === 'VENDIDO') {
-                  await supabase!.from('stock_items').update({ status: 'DISPONIVEL' }).eq('id_completo', item.id_completo);
-                  restoredIds.add(item.id_completo);
-                  console.log(`✅ Fallback carcaça: ${item.id_completo} -> DISPONIVEL`);
-                }
-              }
-            } else {
-              console.error(`❌ Fallback carcaça falhou para lote="${idLote}" seq="${seqStr}". Erro:`, loteErr);
-            }
-          }
+          console.error(`❌ Item não encontrado no Supabase para restaurar: ${stockId}`, error);
         }
       }
 
@@ -631,7 +638,7 @@ const App: React.FC = () => {
         )
       }));
 
-      const fallbackUsed = restoredIds.size > 0 && expandedIds.every(id => !restoredIds.has(id));
+      const fallbackUsed = restoredIds.size > 0 && targetIds.every(id => !restoredIds.has(id));
       logAction(session?.user, 'ESTORNO', 'SALE', `Venda estornada: ${saleId} (${sale.nome_cliente}) - Pago: R$${valorPago.toFixed(2)}`, { saleId, valorPago, restoredIds: [...restoredIds] });
 
       if (restoredIds.size === 0) {
@@ -905,45 +912,68 @@ const App: React.FC = () => {
   };
 
   const registerBatchFinancial = async (batch: Batch) => {
-    // 1. Calcular custo total de aquisição
+    // 1. Separar custos de aquisição e frete
     const valorCompra = parseFloat(batch.valor_compra_total as any) || 0;
     const frete = parseFloat(batch.frete as any) || 0;
     const extras = parseFloat(batch.gastos_extras as any) || 0;
-    const totalCost = valorCompra + frete + extras;
 
-    if (totalCost === 0) return;
+    // Gado + Extras compõem o valor do lote. Frete é isolado.
+    const valorGadoTotal = valorCompra + extras;
+
+    // Se o custo total for zero (lote vazio), não tem o que registrar
+    if (valorGadoTotal + frete === 0) return;
 
     const formaPagamento = (batch as any).forma_pagamento || 'OUTROS';
     const valorEntrada = parseFloat((batch as any).valor_entrada) || 0;
     const dataRecebimento = batch.data_recebimento || todayBR();
 
-    console.log(`🏦 registerBatchFinancial Lote: ${batch.id_lote} | Total: R$ ${totalCost} | Form: ${formaPagamento}`);
+    console.log(`🏦 registerBatchFinancial Lote: ${batch.id_lote} | Gado+Extras: R$ ${valorGadoTotal.toFixed(2)} | Frete: R$ ${frete.toFixed(2)} | Form: ${formaPagamento}`);
 
     if (formaPagamento === 'VISTA') {
-      // PAGAMENTO TOTAL À VISTA
-      // Guard consultando DIRETAMENTE o Supabase (não o state React, que pode estar desatualizado)
-      const txId = `TR-LOTE-${batch.id_lote}`;
-      const { data: existingTx } = await supabase!.from('transactions').select('id').eq('id', txId).limit(1);
+      // PAGAMENTO TOTAL À VISTA (Caixa Imediato)
 
-      if (!existingTx || existingTx.length === 0) {
-        await addTransaction({
-          id: txId,
-          data: dataRecebimento,
-          descricao: `Compra Lote ${batch.id_lote} - ${batch.fornecedor}`,
-          tipo: 'SAIDA',
-          categoria: 'COMPRA_GADO',
-          valor: totalCost,
-          metodo_pagamento: formaPagamento,
-          referencia_id: batch.id_lote
-        } as any);
-        console.log(`💰 Saída À VISTA registrada: R$ ${totalCost}`);
-      } else {
-        console.log(`⚠️ Transação ${txId} já existe no Supabase, ignorando.`);
+      // 1. CAIXA: GADO
+      if (valorGadoTotal > 0) {
+        const txIdGado = `TR-LOTE-GADO-${batch.id_lote}`;
+        const { data: existingTx } = await supabase!.from('transactions').select('id').eq('id', txIdGado).limit(1);
+
+        if (!existingTx || existingTx.length === 0) {
+          await addTransaction({
+            id: txIdGado,
+            data: dataRecebimento,
+            descricao: `Compra Lote ${batch.id_lote} (Gado+Extras) - ${batch.fornecedor}`,
+            tipo: 'SAIDA',
+            categoria: 'COMPRA_GADO',
+            valor: valorGadoTotal,
+            metodo_pagamento: formaPagamento,
+            referencia_id: batch.id_lote
+          } as any);
+        }
       }
-    } else if (formaPagamento === 'PRAZO') {
-      // COMPRA A PRAZO (Pode ter entrada)
 
-      // 1. SE TIVER ENTRADA, LANÇA A SAÍDA AGORA (guard via Supabase direto)
+      // 2. CAIXA: FRETE
+      if (frete > 0) {
+        const txIdFrete = `TR-LOTE-FRETE-${batch.id_lote}`;
+        const { data: existingTxFrete } = await supabase!.from('transactions').select('id').eq('id', txIdFrete).limit(1);
+
+        if (!existingTxFrete || existingTxFrete.length === 0) {
+          await addTransaction({
+            id: txIdFrete,
+            data: dataRecebimento,
+            descricao: `Frete Lote ${batch.id_lote} - ${batch.fornecedor}`,
+            tipo: 'SAIDA',
+            categoria: 'FRETE',
+            valor: frete,
+            metodo_pagamento: formaPagamento,
+            referencia_id: batch.id_lote
+          } as any);
+        }
+      }
+
+    } else if (formaPagamento === 'PRAZO') {
+      // COMPRA A PRAZO (A Pagar)
+
+      // 1. ENTRADA (vai abater prioritariamente do Gado)
       if (valorEntrada > 0) {
         const txEntradaId = `TR-LOTE-ENTRADA-${batch.id_lote}`;
         const { data: existingEntrada } = await supabase!.from('transactions').select('id').eq('id', txEntradaId).limit(1);
@@ -955,38 +985,62 @@ const App: React.FC = () => {
             descricao: `Entrada/Adiantamento Lote ${batch.id_lote} - ${batch.fornecedor}`,
             tipo: 'SAIDA',
             categoria: 'COMPRA_GADO',
-            valor: valorEntrada,
+            valor: Math.min(valorEntrada, valorGadoTotal + frete),
             metodo_pagamento: 'OUTROS',
             referencia_id: batch.id_lote
           } as any);
         }
       }
 
-      // 2. REGISTRAR O RESTANTE COMO CONTA A PAGAR (PAYABLE)
-      const valorRestante = totalCost - valorEntrada;
-      if (valorRestante > 0) {
-        const payableId = `PAY-LOTE-${batch.id_lote}`;
-        // Guard via Supabase direto (não state React, que pode estar desatualizado)
-        const { data: existingPay } = await supabase!.from('payables').select('id').eq('id', payableId).limit(1);
+      const vencimentoBase = (() => {
+        const d = new Date(dataRecebimento);
+        d.setDate(d.getDate() + ((batch as any).prazo_dias || 30));
+        return d.toISOString().split('T')[0];
+      })();
 
-        if (!existingPay || existingPay.length === 0) {
+      // Distribuição da entrada para calcular o A Pagar pendente:
+      const entradaNoGado = Math.min(valorEntrada, valorGadoTotal);
+      const entradaNoFrete = Math.max(0, valorEntrada - valorGadoTotal);
+
+      // 2. PAYABLE DO GADO (Se restou valor após a entrada)
+      const valorRestanteGado = parseFloat((valorGadoTotal - entradaNoGado).toFixed(2));
+      if (valorRestanteGado > 0) {
+        const payableGadoId = `PAY-LOTE-GADO-${batch.id_lote}`;
+        const { data: existingPayGado } = await supabase!.from('payables').select('id').eq('id', payableGadoId).limit(1);
+
+        if (!existingPayGado || existingPayGado.length === 0) {
           await handleAddPayable({
-            id: payableId,
+            id: payableGadoId,
             id_lote: batch.id_lote,
-            descricao: `Pagamento Lote ${batch.id_lote} - ${batch.fornecedor} (Restante)`,
+            descricao: `Pagamento Gado Lote ${batch.id_lote} - ${batch.fornecedor}`,
             beneficiario: batch.fornecedor,
-            valor: valorRestante,
+            valor: valorRestanteGado,
             valor_pago: 0,
-            data_vencimento: (() => {
-              const d = new Date(dataRecebimento);
-              d.setDate(d.getDate() + ((batch as any).prazo_dias || 30));
-              return d.toISOString().split('T')[0];
-            })(),
+            data_vencimento: vencimentoBase,
             status: 'PENDENTE',
             categoria: 'COMPRA_GADO'
           } as any);
-        } else {
-          console.log(`⚠️ Payable ${payableId} já existe no Supabase, ignorando.`);
+        }
+      }
+
+      // 3. PAYABLE DO FRETE (Separado)
+      const freteRealPendente = parseFloat((frete - entradaNoFrete).toFixed(2));
+      if (freteRealPendente > 0) {
+        const payableFreteId = `PAY-LOTE-FRETE-${batch.id_lote}`;
+        const { data: existingPayFrete } = await supabase!.from('payables').select('id').eq('id', payableFreteId).limit(1);
+
+        if (!existingPayFrete || existingPayFrete.length === 0) {
+          await handleAddPayable({
+            id: payableFreteId,
+            id_lote: batch.id_lote,
+            descricao: `Pagamento Frete Lote ${batch.id_lote} - ${batch.fornecedor}`,
+            beneficiario: batch.fornecedor,
+            valor: freteRealPendente,
+            valor_pago: 0,
+            data_vencimento: vencimentoBase,
+            status: 'PENDENTE',
+            categoria: 'FRETE'
+          } as any);
         }
       }
     }
@@ -1174,6 +1228,14 @@ const App: React.FC = () => {
       {currentView === 'system_reset' && <SystemReset onBack={() => setCurrentView('menu')} refreshData={fetchData} />}
       {currentView === 'dashboard' && (
         <div>
+          {detectedActions.length > 0 && (
+            <ActionApprovalCenter
+              actions={detectedActions}
+              onApprove={handleExecuteAction}
+              onReject={(id) => setDetectedActions(prev => prev.filter(a => a.id !== id))}
+              onClearAll={() => setDetectedActions([])}
+            />
+          )}
           <AIOSPanel
             alerts={aiosAlerts}
             onDismiss={(id) => setAiosAlerts(prev => prev.filter(a => a.triggerId !== id))}
@@ -1432,6 +1494,22 @@ const App: React.FC = () => {
         payables={data.payables}
         scheduledOrders={data.scheduledOrders}
       />}
+      {currentView === 'orchestrator' && (
+        <div className="p-4 md:p-8 animate-fade-in relative z-10 w-full max-w-6xl mx-auto">
+          <OrchestratorView
+            result={orchestratorResult}
+            isLoading={isOrchestrating}
+            onApprove={(decision) => {
+              console.log('[App] Decisão aprovada:', decision);
+              setCurrentView('menu');
+            }}
+            onReject={() => {
+              setOrchestratorResult(null);
+              setCurrentView('menu');
+            }}
+          />
+        </div>
+      )}
       {currentView === 'meeting_chat' && <MeetingChat onBack={() => setCurrentView('menu')} />}
       {currentView === 'system_reset' && <SystemReset onBack={() => setCurrentView('menu')} refreshData={fetchData} />}
       {currentView === 'scenario_simulator' && <ScenarioSimulator onBack={() => setCurrentView('menu')} onApplyScenario={(simData) => {

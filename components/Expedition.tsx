@@ -378,7 +378,7 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
         items: itemsWithWeights,
         pricePerKg,
         extrasCost,
-        pagoNoAto: true, // Por padrão na expedição assume-se pago ou define-se via UI
+        pagoNoAto,
         metodoPagamento: 'DINHEIRO'
       });
       setSelectedClient(null); setSelectedItems([]); setPricePerKg(0); setExtrasCost(0);

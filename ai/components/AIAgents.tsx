@@ -7,7 +7,7 @@ import {
     Calendar, MessageCircle, ShieldCheck, Beef, Bot,
     Loader2, Send, Sparkles
 } from 'lucide-react';
-import { runCascade } from './AIChat';
+import { runCascade } from '../services/llmCascade';
 import { fetchAllNews, formatNewsForAgent, NewsItem } from '../services/newsService';
 import { sendWhatsAppMessage } from '../utils/whatsappAPI';
 import { OPERATION_CONTEXT, OPERATION_SUMMARY } from '../operationConfig';
@@ -28,10 +28,11 @@ import {
     PROMPT_ADMINISTRATIVO, PROMPT_PRODUCAO, PROMPT_COMERCIAL, PROMPT_AUDITOR,
     PROMPT_ESTOQUE, PROMPT_COMPRAS, PROMPT_MERCADO, PROMPT_MARKETING,
     PROMPT_SATISFACAO, PROMPT_COBRANCA, PROMPT_WHATSAPP_BOT, PROMPT_JURIDICO,
-    PROMPT_FLUXO_CAIXA, PROMPT_RH_GESTOR, PROMPT_FISCAL_CONTABIL, PROMPT_QUALIDADE
-} from '../agentPrompts';
+    PROMPT_FLUXO_CAIXA, PROMPT_RH_GESTOR, PROMPT_FISCAL_CONTABIL, PROMPT_QUALIDADE,
+    PROMPT_PROFESSOR
+} from '../config/agentPrompts';
 
-export { runCascade } from './AIChat';
+
 
 import {
     AgentType, AgentConfig, AgentAlert, AlertSeverity,
@@ -177,13 +178,27 @@ const DEFAULT_AGENTS: AgentConfig[] = [
         triggerCount: 0,
     },
     {
-        id: 'QUALIDADE', name: 'Dr. Ricardo',
-        description: 'Médico Veterinário — HACCP, BPF, RIISPOA, microbiologia.',
-        icon: '🩺', color: 'teal', enabled: false,
-        systemPrompt: PROMPT_QUALIDADE,
-        modules: ['ESTOQUE', 'LOTES', 'ADMINISTRATIVO'],
-        triggerCount: 0,
+        id: "QUALIDADE",
+        name: "Dr. Ricardo",
+        description: "Médico Veterinário & Responsável Técnico (SIF/SIE).",
+        icon: "🛡️",
+        color: "teal",
+        enabled: true,
+        modules: ["LOTES", "ESTOQUE"],
+        triggerCount: 3,
+        systemPrompt: PROMPT_QUALIDADE
     },
+    {
+        id: "PROFESSOR",
+        name: "Menthor",
+        description: "Professor & Estrategista IA. Mentoria de setores e novidades do mercado.",
+        icon: "🧠",
+        color: "indigo",
+        enabled: true,
+        modules: ["SISTEMA", "MERCADO"],
+        triggerCount: 5,
+        systemPrompt: PROMPT_PROFESSOR
+    }
 ];
 
 
@@ -932,8 +947,8 @@ Clientes: ${clients.length} total
 ${clients.filter(c => c.saldo_devedor > 0).slice(0, 10).map(c => `- ${c.nome_social}: Devendo R$${c.saldo_devedor.toFixed(2)} | Limite R$${c.limite_credito.toFixed(2)}`).join('\n')}
 Top vendas pendentes:
 ${vendasPendentes.slice(0, 8).map(v => `- ${v.nome_cliente || v.id_cliente}: ${v.peso_real_saida}kg × R$${v.preco_venda_kg}/kg = R$${(v.peso_real_saida * v.preco_venda_kg).toFixed(2)} | Venc: ${v.data_vencimento}`).join('\n')}
-Alertas Comercial: ${agentAlerts.filter(a => a.agent === 'COMERCIAL' || a.agent === 'MARCOS').length}
-${agentAlerts.filter(a => a.agent === 'COMERCIAL' || a.agent === 'MARCOS').map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n') || '- Sem alertas comerciais'}
+Alertas Comercial: ${agentAlerts.filter(a => a.agent === 'COMERCIAL').length}
+${agentAlerts.filter(a => a.agent === 'COMERCIAL').map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n') || '- Sem alertas comerciais'}
 ${formatCampaignLearningForAgent(analyzeCampaignResults(sales, clients))} `.trim(),
 
                 AUDITOR: `
@@ -1002,27 +1017,27 @@ ${agentAlerts.map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}
                 MERCADO: `
 ## SNAPSHOT MERCADO — FRIGOGEST(${new Date().toLocaleDateString('pt-BR')})
 ${livePrices ? formatMarketPricesForAgent(livePrices) : "\u26a0\ufe0f CEPEA: R$335/@ (fallback — atualize no Dashboard de Mercado)"}\nSAZONALIDADE ATUAL: ${(() => {
-    const m = new Date().getMonth();
-    if (m === 2 || m === 3) return '🟡 QUARESMA (Mar/Abr) — demanda bovina cai 8-12%. Boa hora para estocar com cautela.';
-    if (m >= 0 && m <= 5) return '🟢 SAFRA (Jan-Jun) — boa oferta, preço firme, janela de compra razoável';
-    if (m >= 6 && m <= 10) return '🔴 ENTRESSAFRA (Jul-Nov) — escassez, preço máximo, comprar com cautela';
-    return '🟡 FESTAS/ÁGUAS (Dez) — demanda alta, preço em alta';
-})()}
+                        const m = new Date().getMonth();
+                        if (m === 2 || m === 3) return '🟡 QUARESMA (Mar/Abr) — demanda bovina cai 8-12%. Boa hora para estocar com cautela.';
+                        if (m >= 0 && m <= 5) return '🟢 SAFRA (Jan-Jun) — boa oferta, preço firme, janela de compra razoável';
+                        if (m >= 6 && m <= 10) return '🔴 ENTRESSAFRA (Jul-Nov) — escassez, preço máximo, comprar com cautela';
+                        return '🟡 FESTAS/ÁGUAS (Dez) — demanda alta, preço em alta';
+                    })()}
 
 INDICADORES INTERNOS:
-Custo médio compra/kg: R$${batches.length > 0 ? (batches.reduce((s, b) => s + b.custo_real_kg, 0) / batches.length).toFixed(2) : '0.00'} ${batches.length > 0 ? ((batches.reduce((s, b) => s + b.custo_real_kg, 0) / batches.length) > (335.00 / 15) ? '🔴 ACIMA do referencial CEPEA-BA (R$' + (335.00/15).toFixed(2) + '/kg)' : '🟢 ABAIXO do referencial CEPEA-BA (R$' + (335.00/15).toFixed(2) + '/kg)') : ''}
+Custo médio compra/kg: R$${batches.length > 0 ? (batches.reduce((s, b) => s + b.custo_real_kg, 0) / batches.length).toFixed(2) : '0.00'} ${batches.length > 0 ? ((batches.reduce((s, b) => s + b.custo_real_kg, 0) / batches.length) > (335.00 / 15) ? '🔴 ACIMA do referencial CEPEA-BA (R$' + (335.00 / 15).toFixed(2) + '/kg)' : '🟢 ABAIXO do referencial CEPEA-BA (R$' + (335.00 / 15).toFixed(2) + '/kg)') : ''}
 Preço médio venda/kg: R$${sales.length > 0 ? (sales.reduce((s, v) => s + v.preco_venda_kg, 0) / sales.length).toFixed(2) : '0.00'} | Mín: R$${sales.length > 0 ? Math.min(...sales.filter(s => s.preco_venda_kg > 0).map(v => v.preco_venda_kg)).toFixed(2) : '0.00'} | Máx: R$${sales.length > 0 ? Math.max(...sales.map(v => v.preco_venda_kg)).toFixed(2) : '0.00'}
 Margem bruta média: ${sales.length > 0 && batches.length > 0 ? (((sales.reduce((s, v) => s + v.preco_venda_kg, 0) / sales.length) / (batches.reduce((s, b) => s + b.custo_real_kg, 0) / batches.length) - 1) * 100).toFixed(1) : 'N/A'}% (meta 20-30% | <15% = alerta | negativa = CRÍTICO)
 
 ÚLTIMOS 10 LOTES — custo vs CEPEA:
 ${batches.slice(-10).map(b => {
-    const pecas = stock.filter(s => s.id_lote === b.id_lote);
-    const pesoReal = pecas.reduce((s, p) => s + p.peso_entrada, 0);
-    const rend = b.peso_total_romaneio > 0 ? ((pesoReal / b.peso_total_romaneio) * 100).toFixed(1) : 'N/A';
-    const arrobaRef = livePrices?.arroba_kg_carcaca ?? (335/15);
-    const gap = b.custo_real_kg > 0 ? ((b.custo_real_kg / arrobaRef - 1) * 100).toFixed(1) : 'N/A';
-    return `- ${b.id_lote} | ${b.fornecedor} | R$${b.custo_real_kg.toFixed(2)}/kg | Gap vs CEPEA: ${gap}% | Rend: ${rend}%`;
-}).join('\n')}
+                        const pecas = stock.filter(s => s.id_lote === b.id_lote);
+                        const pesoReal = pecas.reduce((s, p) => s + p.peso_entrada, 0);
+                        const rend = b.peso_total_romaneio > 0 ? ((pesoReal / b.peso_total_romaneio) * 100).toFixed(1) : 'N/A';
+                        const arrobaRef = livePrices?.arroba_kg_carcaca ?? (335 / 15);
+                        const gap = b.custo_real_kg > 0 ? ((b.custo_real_kg / arrobaRef - 1) * 100).toFixed(1) : 'N/A';
+                        return `- ${b.id_lote} | ${b.fornecedor} | R$${b.custo_real_kg.toFixed(2)}/kg | Gap vs CEPEA: ${gap}% | Rend: ${rend}%`;
+                    }).join('\n')}
 
 Região: Vitória da Conquista - BA (Sudoeste Baiano)
 Alertas Mercado: ${agentAlerts.length}
@@ -1130,13 +1145,13 @@ ${formatNPSPendenteForAgent(npsPendentes)}
 
 PERFIL DOS CLIENTES ATIVOS (para pesquisa personalizada):
 ${clients.filter(c => sales.some(s => s.id_cliente === c.id_ferro && s.status_pagamento !== 'ESTORNADO')).slice(0, 8).map(c => {
-    const clienteSales = sales.filter(s => s.id_cliente === c.id_ferro && s.status_pagamento !== 'ESTORNADO');
-    const kgTotal = clienteSales.reduce((s, v) => s + v.peso_real_saida, 0);
-    const lastSale = [...clienteSales].sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())[0];
-    const diasSemComprar = lastSale ? Math.floor((now.getTime() - new Date(lastSale.data_venda).getTime()) / 86400000) : 999;
-    const tier = diasSemComprar <= 10 ? '🥇VIP' : diasSemComprar <= 30 ? '🥈Ativo' : diasSemComprar <= 60 ? '🟡Esfriando' : '🔴Risco';
-    return `- ${c.nome_social} ${tier} | ${kgTotal.toFixed(0)}kg total | ${diasSemComprar}d sem comprar | Prefere: ${c.perfil_compra || 'N/A'} | Gordura: ${c.padrao_gordura || 'N/A'} | Objeções: ${c.objecoes_frequentes || 'Nenhuma'} | Preço: ${(c as any).preco_negociado_kg ? 'R$' + (c as any).preco_negociado_kg.toFixed(2) + '/kg' : 'padrão'}`;
-}).join('\n')}
+                        const clienteSales = sales.filter(s => s.id_cliente === c.id_ferro && s.status_pagamento !== 'ESTORNADO');
+                        const kgTotal = clienteSales.reduce((s, v) => s + v.peso_real_saida, 0);
+                        const lastSale = [...clienteSales].sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())[0];
+                        const diasSemComprar = lastSale ? Math.floor((now.getTime() - new Date(lastSale.data_venda).getTime()) / 86400000) : 999;
+                        const tier = diasSemComprar <= 10 ? '🥇VIP' : diasSemComprar <= 30 ? '🥈Ativo' : diasSemComprar <= 60 ? '🟡Esfriando' : '🔴Risco';
+                        return `- ${c.nome_social} ${tier} | ${kgTotal.toFixed(0)}kg total | ${diasSemComprar}d sem comprar | Prefere: ${c.perfil_compra || 'N/A'} | Gordura: ${c.padrao_gordura || 'N/A'} | Objeções: ${c.objecoes_frequentes || 'Nenhuma'} | Preço: ${(c as any).preco_negociado_kg ? 'R$' + (c as any).preco_negociado_kg.toFixed(2) + '/kg' : 'padrão'}`;
+                    }).join('\n')}
 
 PRÓXIMAS ENTREGAS AGENDADAS:
 ${scheduledOrders.filter(o => o.status === 'ABERTO').slice(0, 5).map(o => `- ${o.nome_cliente} | Entrega: ${o.data_entrega}`).join('\n') || '- Nenhum pedido agendado aberto'}
@@ -1379,17 +1394,17 @@ Total a receber (inadimplentes): R$${totalDevendo.toFixed(2)} | ${devedores.leng
 
 DEVEDORES — ORDENADO POR VALOR (máx 12):
 ${devedores.slice(0, 12).map(c =>
-    `- ${c.nome_social} | R$${c.saldo_devedor.toFixed(2)} | Limite: R$${(c.limite_credito || 0).toFixed(2)} | ${c.diasAtraso}d | Perfil: ${c.perfil} | Whats: ${(c as any).whatsapp || 'N/A'}`
-).join('\n') || '- Nenhum devedor'}
+                        `- ${c.nome_social} | R$${c.saldo_devedor.toFixed(2)} | Limite: R$${(c.limite_credito || 0).toFixed(2)} | ${c.diasAtraso}d | Perfil: ${c.perfil} | Whats: ${(c as any).whatsapp || 'N/A'}`
+                    ).join('\n') || '- Nenhum devedor'}
 
 VENDAS VENCIDAS NÃO PAGAS (máx 8):
 ${vendasVencidas.slice(0, 8).map(v => {
-    const diasVenc = Math.floor((now.getTime() - new Date(v.data_vencimento!).getTime()) / msDay);
-    return `- ${v.nome_cliente || v.id_cliente} | R$${(v.peso_real_saida * v.preco_venda_kg).toFixed(2)} | Venceu: ${v.data_vencimento} (${diasVenc}d atrás)`;
-}).join('\n') || '- Nenhuma venda vencida'}
+                        const diasVenc = Math.floor((now.getTime() - new Date(v.data_vencimento!).getTime()) / msDay);
+                        return `- ${v.nome_cliente || v.id_cliente} | R$${(v.peso_real_saida * v.preco_venda_kg).toFixed(2)} | Venceu: ${v.data_vencimento} (${diasVenc}d atrás)`;
+                    }).join('\n') || '- Nenhuma venda vencida'}
 
-Alertas Cobrança: ${agentAlerts.filter(a => a.agent === 'COBRANCA' || a.agent === 'DIANA').length}
-${agentAlerts.filter(a => a.agent === 'COBRANCA' || a.agent === 'DIANA').map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}`.trim();
+Alertas Cobrança: ${agentAlerts.filter(a => a.agent === 'COBRANCA').length}
+${agentAlerts.filter(a => a.agent === 'COBRANCA').map(a => `- [${a.severity}] ${a.title}: ${a.message}`).join('\n')}`.trim();
                 })(),
 
                 // ─── WELLINGTON — WhatsApp Bot ──────────────────────────────────
@@ -1424,23 +1439,23 @@ ESTOQUE DISPONÍVEL PARA CATÁLOGO:
 
 PEÇAS COM URGÊNCIA (5+ dias — usar como promoção):
 ${pecasUrgentes.slice(0, 8).map(s => {
-    const tipo = s.tipo === 1 ? 'INT' : s.tipo === 2 ? 'DIA' : 'TRA';
-    const urgencia = s.dias >= 7 ? '🔴 LIQUIDAR' : '🟠 PROMO';
-    return `- ${s.id_completo} | ${tipo} | ${s.peso_entrada}kg | ${s.dias}d | ${urgencia}`;
-}).join('\n') || '- Nenhuma peça urgente'}
+                        const tipo = s.tipo === 1 ? 'INT' : s.tipo === 2 ? 'DIA' : 'TRA';
+                        const urgencia = s.dias >= 7 ? '🔴 LIQUIDAR' : '🟠 PROMO';
+                        return `- ${s.id_completo} | ${tipo} | ${s.peso_entrada}kg | ${s.dias}d | ${urgencia}`;
+                    }).join('\n') || '- Nenhuma peça urgente'}
 
 PEDIDOS AGENDADOS ABERTOS:
 ${scheduledOrders.filter(o => o.status === 'ABERTO').slice(0, 5).map(o =>
-    `- ${o.nome_cliente} | Entrega: ${o.data_entrega} | Status: ${o.status}`
-).join('\n') || '- Nenhum pedido agendado aberto'}
+                        `- ${o.nome_cliente} | Entrega: ${o.data_entrega} | Status: ${o.status}`
+                    ).join('\n') || '- Nenhum pedido agendado aberto'}
 
 CLIENTES COM COMPRAS RECENTES (últimos 7d):
 ${sales.filter(s => {
-    const dias = Math.floor((now.getTime() - new Date(s.data_venda).getTime()) / msDay);
-    return dias <= 7 && s.status_pagamento !== 'ESTORNADO';
-}).slice(0, 6).map(s => `- ${s.nome_cliente || s.id_cliente} | ${s.peso_real_saida}kg | ${s.data_venda}`).join('\n') || '- Nenhuma venda nos últimos 7 dias'}
+                        const dias = Math.floor((now.getTime() - new Date(s.data_venda).getTime()) / msDay);
+                        return dias <= 7 && s.status_pagamento !== 'ESTORNADO';
+                    }).slice(0, 6).map(s => `- ${s.nome_cliente || s.id_cliente} | ${s.peso_real_saida}kg | ${s.data_venda}`).join('\n') || '- Nenhuma venda nos últimos 7 dias'}
 
-Alertas Bot: ${agentAlerts.filter(a => a.agent === 'WHATSAPP_BOT' || a.agent === 'WELLINGTON').length}`.trim();
+Alertas Bot: ${agentAlerts.filter(a => a.agent === 'WHATSAPP_BOT').length}`.trim();
                 })(),
 
             } as Record<string, string>;
@@ -2263,1028 +2278,1028 @@ Regras:
 
     return (
         <>
-        <div className="p-4 md:p-10 min-h-screen bg-[#f8fafc] animate-reveal pb-20 font-sans">
-            {/* HEADER */}
-            <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
-                <div className="flex flex-col gap-4">
-                    <button onClick={onBack} className="group self-start flex items-center gap-2 px-4 py-1.5 bg-white border border-gray-200 rounded-full text-xs font-bold text-gray-500 hover:text-blue-700 hover:border-blue-100 transition-all shadow-sm">
-                        <ArrowLeft size={14} /> Voltar ao Início
-                    </button>
-                    <div className="flex items-center gap-5">
-                        <div className="bg-slate-900 p-3 rounded-2xl text-purple-400 shadow-xl shadow-purple-900/40 relative group">
-                            <Brain size={28} />
-                            <div className="absolute inset-0 bg-purple-400/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </div>
-                        <div>
-                            <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">
-                                Central de <span className="text-purple-600">Agentes IA</span>
-                            </h1>
-                            <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mt-1">
-                                Ecossistema Multi-Agente • {liveAlerts.length} alertas ativos
-                            </p>
+            <div className="p-4 md:p-10 min-h-screen bg-[#f8fafc] animate-reveal pb-20 font-sans">
+                {/* HEADER */}
+                <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
+                    <div className="flex flex-col gap-4">
+                        <button onClick={onBack} className="group self-start flex items-center gap-2 px-4 py-1.5 bg-white border border-gray-200 rounded-full text-xs font-bold text-gray-500 hover:text-blue-700 hover:border-blue-100 transition-all shadow-sm">
+                            <ArrowLeft size={14} /> Voltar ao Início
+                        </button>
+                        <div className="flex items-center gap-5">
+                            <div className="bg-slate-900 p-3 rounded-2xl text-purple-400 shadow-xl shadow-purple-900/40 relative group">
+                                <Brain size={28} />
+                                <div className="absolute inset-0 bg-purple-400/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </div>
+                            <div>
+                                <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">
+                                    Central de <span className="text-purple-600">Agentes IA</span>
+                                </h1>
+                                <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mt-1">
+                                    Ecossistema Multi-Agente • {liveAlerts.length} alertas ativos
+                                </p>
+                            </div>
                         </div>
                     </div>
+                    {/* TABS */}
+                    <nav className="flex p-1 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
+                        {[
+                            { id: 'overview' as const, icon: Activity, label: 'Visão Geral' },
+                            { id: 'alerts' as const, icon: Bell, label: `Alertas(${liveAlerts.length})` },
+                            { id: 'config' as const, icon: Settings, label: 'Config' },
+                        ].map(t => (
+                            <button
+                                key={t.id}
+                                onClick={() => setActiveTab(t.id)}
+                                className={`flex items - center gap - 2 px - 5 py - 2.5 rounded - xl text - [10px] font - black uppercase tracking - widest transition - all whitespace - nowrap ${activeTab === t.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'} `}
+                            >
+                                <t.icon size={14} /> {t.label}
+                            </button>
+                        ))}
+                    </nav>
                 </div>
-                {/* TABS */}
-                <nav className="flex p-1 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
-                    {[
-                        { id: 'overview' as const, icon: Activity, label: 'Visão Geral' },
-                        { id: 'alerts' as const, icon: Bell, label: `Alertas(${liveAlerts.length})` },
-                        { id: 'config' as const, icon: Settings, label: 'Config' },
-                    ].map(t => (
-                        <button
-                            key={t.id}
-                            onClick={() => setActiveTab(t.id)}
-                            className={`flex items - center gap - 2 px - 5 py - 2.5 rounded - xl text - [10px] font - black uppercase tracking - widest transition - all whitespace - nowrap ${activeTab === t.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'} `}
-                        >
-                            <t.icon size={14} /> {t.label}
-                        </button>
-                    ))}
-                </nav>
-            </div>
 
-            <div className="max-w-7xl mx-auto">
-                {/* ═══ OVERVIEW TAB ═══ */}
-                {activeTab === 'overview' && (
-                    <div className="animate-reveal space-y-8">
-                        {/* GLOBAL KPIs */}
-                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                            {[
-                                { label: 'Saldo Caixa', value: `R$${financialKPIs.saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} `, icon: <DollarSign size={18} />, color: financialKPIs.saldo >= 0 ? 'text-emerald-600' : 'text-rose-600' },
-                                { label: 'A Receber', value: `R$${financialKPIs.vendasPendentes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} `, icon: <TrendingUp size={18} />, color: 'text-blue-600' },
-                                { label: 'Estoque Parado', value: `R$${financialKPIs.estoqueValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} `, icon: <Package size={18} />, color: 'text-purple-600' },
-                                { label: 'Alertas Ativos', value: liveAlerts.length.toString(), icon: <Bell size={18} />, color: liveAlerts.length > 0 ? 'text-amber-600' : 'text-emerald-600' },
-                                { label: 'Críticos', value: liveAlerts.filter(a => a.severity === 'CRITICO' || a.severity === 'BLOQUEIO').length.toString(), icon: <AlertTriangle size={18} />, color: 'text-rose-600' },
-                            ].map((kpi, i) => (
-                                <div key={i} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <div className={`${kpi.color} opacity - 40`}>{kpi.icon}</div>
-                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{kpi.label}</span>
-                                    </div>
-                                    <p className={`text - xl font - black ${kpi.color} `}>{kpi.value}</p>
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* ═══ 📈 PAINEL PREDITIVO (FASE 3) ═══ */}
-                        <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-3xl p-6 shadow-xl border border-slate-700/50">
-                            <div className="flex items-center gap-3 mb-5">
-                                <div className="bg-blue-500/20 p-2 rounded-xl">
-                                    <TrendingUp size={20} className="text-blue-400" />
-                                </div>
-                                <div>
-                                    <h3 className="text-white font-black text-sm uppercase tracking-widest">📈 Analytics Preditivo</h3>
-                                    <p className="text-slate-500 text-[9px] font-bold">Projeções baseadas em médias móveis 7d/30d • Carne dura MAX 8 dias</p>
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <div className="max-w-7xl mx-auto">
+                    {/* ═══ OVERVIEW TAB ═══ */}
+                    {activeTab === 'overview' && (
+                        <div className="animate-reveal space-y-8">
+                            {/* GLOBAL KPIs */}
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                                 {[
-                                    {
-                                        label: 'Receita 30d',
-                                        value: `R$${predictions.receitaProjetada30d.toFixed(0)} `,
-                                        sub: `${predictions.tendenciaReceita === 'SUBINDO' ? '📈' : predictions.tendenciaReceita === 'CAINDO' ? '📉' : '➡️'} ${predictions.percentualVariacao > 0 ? '+' : ''}${predictions.percentualVariacao.toFixed(0)}% `,
-                                        color: predictions.tendenciaReceita === 'CAINDO' ? 'text-rose-400' : 'text-emerald-400'
-                                    },
-                                    {
-                                        label: 'Estoque esgota',
-                                        value: predictions.diasAteEsgotar === 999 ? 'N/A' : `${predictions.diasAteEsgotar} d`,
-                                        sub: `🥩 ${predictions.pecasVencendo} vencendo`,
-                                        color: predictions.alertaEstoqueBaixo ? 'text-rose-400' : 'text-emerald-400'
-                                    },
-                                    {
-                                        label: 'Caixa projetado',
-                                        value: `R$${predictions.caixaProjetado30d.toFixed(0)} `,
-                                        sub: predictions.alertaCaixaNegativo ? '🔴 Risco!' : '✅ Saudável',
-                                        color: predictions.alertaCaixaNegativo ? 'text-rose-400' : 'text-emerald-400'
-                                    },
-                                    {
-                                        label: 'Taxa Churn',
-                                        value: `${predictions.taxaChurn.toFixed(0)}% `,
-                                        sub: `${predictions.clientesAtivos30d} ativos`,
-                                        color: predictions.alertaChurnAlto ? 'text-rose-400' : 'text-emerald-400'
-                                    },
-                                    {
-                                        label: 'Comprar em',
-                                        value: `${predictions.proximaCompraIdealDias} d`,
-                                        sub: `Custo ${predictions.tendenciaCusto === 'SUBINDO' ? '🔴↑' : predictions.tendenciaCusto === 'CAINDO' ? '🟢↓' : '🟡→'} `,
-                                        color: predictions.proximaCompraIdealDias <= 2 ? 'text-rose-400' : 'text-blue-400'
-                                    },
-                                ].map((p, i) => (
-                                    <div key={i} className="bg-white/5 rounded-xl p-4 border border-white/5">
-                                        <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">{p.label}</p>
-                                        <p className={`text - xl font - black ${p.color} `}>{p.value}</p>
-                                        <p className="text-[9px] text-slate-500 font-bold mt-1">{p.sub}</p>
+                                    { label: 'Saldo Caixa', value: `R$${financialKPIs.saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} `, icon: <DollarSign size={18} />, color: financialKPIs.saldo >= 0 ? 'text-emerald-600' : 'text-rose-600' },
+                                    { label: 'A Receber', value: `R$${financialKPIs.vendasPendentes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} `, icon: <TrendingUp size={18} />, color: 'text-blue-600' },
+                                    { label: 'Estoque Parado', value: `R$${financialKPIs.estoqueValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} `, icon: <Package size={18} />, color: 'text-purple-600' },
+                                    { label: 'Alertas Ativos', value: liveAlerts.length.toString(), icon: <Bell size={18} />, color: liveAlerts.length > 0 ? 'text-amber-600' : 'text-emerald-600' },
+                                    { label: 'Críticos', value: liveAlerts.filter(a => a.severity === 'CRITICO' || a.severity === 'BLOQUEIO').length.toString(), icon: <AlertTriangle size={18} />, color: 'text-rose-600' },
+                                ].map((kpi, i) => (
+                                    <div key={i} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <div className={`${kpi.color} opacity - 40`}>{kpi.icon}</div>
+                                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{kpi.label}</span>
+                                        </div>
+                                        <p className={`text - xl font - black ${kpi.color} `}>{kpi.value}</p>
                                     </div>
                                 ))}
                             </div>
-                        </div>
 
-                        {/* ═══ BARRA DE AUTOMAÇÃO ═══ */}
-                        <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-3xl p-6 shadow-xl shadow-purple-200/30 flex flex-col md:flex-row items-center justify-between gap-4">
-                            <div className="flex items-center gap-4">
-                                <div className="bg-white/10 p-3 rounded-2xl">
-                                    <Zap size={24} className="text-yellow-300" />
-                                </div>
-                                <div>
-                                    <h3 className="text-white font-black text-sm uppercase tracking-widest">Automação IA</h3>
-                                    <p className="text-purple-200 text-[10px] font-bold uppercase tracking-wider">
-                                        {bulkRunning
-                                            ? `Analisando ${bulkProgress.currentAgent}... (${bulkProgress.current}/${bulkProgress.total})`
-                                            : autoRunDone
-                                                ? `✅ ${Object.keys(agentDiagnostics).length} agentes analisados — ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} `
-                                                : '⏳ Aguardando dados para iniciar...'}
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={runAllAgents}
-                                    disabled={bulkRunning}
-                                    className="bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all disabled:opacity-50 border border-white/10"
-                                >
-                                    {bulkRunning ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                                    {bulkRunning ? 'Analisando...' : '🔄 Diagnosticar Tudo'}
-                                </button>
-                                <button
-                                    onClick={() => { runOrchestratedReport(); }}
-                                    disabled={agentLoading || bulkRunning}
-                                    className="bg-yellow-400 hover:bg-yellow-300 text-slate-900 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all disabled:opacity-50 shadow-lg"
-                                >
-                                    <Brain size={14} /> 📋 Briefing Geral
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* BARRA DE PROGRESSO */}
-                        {bulkRunning && (
-                            <div className="bg-white rounded-2xl border border-purple-100 p-4 shadow-sm">
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="text-[10px] font-black text-purple-600 uppercase tracking-widest">Progresso</span>
-                                    <span className="text-[10px] font-black text-slate-400">{bulkProgress.current}/{bulkProgress.total}</span>
-                                </div>
-                                <div className="w-full bg-purple-100 rounded-full h-3 overflow-hidden">
-                                    <div
-                                        className="bg-gradient-to-r from-purple-500 to-indigo-500 h-3 rounded-full transition-all duration-500"
-                                        style={{ width: `${(bulkProgress.current / bulkProgress.total) * 100}% ` }}
-                                    />
-                                </div>
-                                <p className="text-xs text-slate-500 mt-2 text-center font-bold">
-                                    ⏳ {bulkProgress.currentAgent} está analisando...
-                                </p>
-                            </div>
-                        )}
-
-                        {/* ═══ 💲 PRECIFICAÇÃO INTELIGENTE (FASE 7) ═══ */}
-                        {precificacao.length > 0 && (
-                            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-                                <div className="p-6 border-b border-slate-50">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <div className="bg-emerald-500/10 p-2 rounded-xl">
-                                            <TrendingUp size={20} className="text-emerald-500" />
-                                        </div>
-                                        <div>
-                                            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">💲 Precificação Inteligente</h3>
-                                            <p className="text-[9px] font-bold text-slate-400">Preço automático por idade • FIFO • Margem protegida</p>
-                                        </div>
-                                    </div>
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-[9px]">
-                                            <thead>
-                                                <tr className="text-left text-slate-400 font-black uppercase tracking-widest border-b border-slate-100">
-                                                    <th className="pb-2">Peça</th>
-                                                    <th className="pb-2">Tipo</th>
-                                                    <th className="pb-2">Peso</th>
-                                                    <th className="pb-2">Dias</th>
-                                                    <th className="pb-2">Custo/kg</th>
-                                                    <th className="pb-2">Preço Sugerido</th>
-                                                    <th className="pb-2">Desc.</th>
-                                                    <th className="pb-2">Margem</th>
-                                                    <th className="pb-2">Status</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-50">
-                                                {precificacao.slice(0, 10).map(item => (
-                                                    <tr key={item.id_completo} className={item.diasNaCamara >= 7 ? 'bg-rose-50' : item.diasNaCamara >= 5 ? 'bg-amber-50' : ''}>
-                                                        <td className="py-2 font-mono font-bold text-slate-600">{item.id_completo}</td>
-                                                        <td className="py-2 text-slate-500">{item.tipoNome}</td>
-                                                        <td className="py-2 font-bold">{item.pesoKg.toFixed(1)}kg</td>
-                                                        <td className="py-2 font-black">{item.emoji} {item.diasNaCamara}d</td>
-                                                        <td className="py-2 text-slate-400">R${item.custoRealKg.toFixed(2)}</td>
-                                                        <td className="py-2 font-black text-emerald-600">R${item.precoSugerido.toFixed(2)}</td>
-                                                        <td className="py-2">{item.descontoAplicado > 0 ? <span className="text-rose-500 font-black">-{item.descontoAplicado}%</span> : '—'}</td>
-                                                        <td className={`py - 2 font - black ${item.margemEstimada >= 25 ? 'text-emerald-600' : item.margemEstimada >= 10 ? 'text-amber-500' : 'text-rose-500'} `}>{item.margemEstimada}%</td>
-                                                        <td className="py-2 text-[8px] font-black">{item.label}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* ═══ 👥 SCORING CLIENTES RFM (FASE 8) ═══ */}
-                        {clientScores.length > 0 && (
-                            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-                                <div className="p-6 border-b border-slate-50">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <div className="bg-purple-500/10 p-2 rounded-xl">
-                                            <Users size={20} className="text-purple-500" />
-                                        </div>
-                                        <div>
-                                            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">👥 Scoring de Clientes (RFM)</h3>
-                                            <p className="text-[9px] font-bold text-slate-400">Classificação automática • Recency × Frequency × Monetary</p>
-                                        </div>
-                                    </div>
-                                    {/* Tier Distribution */}
-                                    <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-4">
-                                        {([
-                                            { tier: 'OURO', emoji: '🥇', color: 'from-amber-400 to-yellow-500' },
-                                            { tier: 'PRATA', emoji: '🥈', color: 'from-slate-300 to-slate-400' },
-                                            { tier: 'BRONZE', emoji: '🥉', color: 'from-orange-400 to-amber-500' },
-                                            { tier: 'RISCO', emoji: '⚠️', color: 'from-rose-400 to-red-500' },
-                                            { tier: 'NOVO', emoji: '🆕', color: 'from-blue-400 to-cyan-500' },
-                                            { tier: 'INATIVO', emoji: '💤', color: 'from-gray-300 to-gray-400' },
-                                        ] as const).map(t => (
-                                            <div key={t.tier} className={`bg - gradient - to - r ${t.color} rounded - xl p - 3 text - center text - white`}>
-                                                <p className="text-lg font-black">{tierSummary[t.tier]}</p>
-                                                <p className="text-[8px] font-bold opacity-80">{t.emoji} {t.tier}</p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    {/* Top clients */}
-                                    <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                                        {clientScores.slice(0, 8).map(c => (
-                                            <div key={c.id_ferro} className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 transition-colors">
-                                                <span className="text-lg">{c.tierEmoji}</span>
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="text-[10px] font-black text-slate-700 truncate">{c.nome}</p>
-                                                    <p className="text-[8px] text-slate-400">{c.recomendacao.substring(0, 60)}...</p>
-                                                </div>
-                                                <div className="text-right">
-                                                    <p className="text-[9px] font-black text-slate-600">R${c.monetary.toFixed(0)}</p>
-                                                    <p className="text-[7px] text-slate-400">{c.frequency}x em 90d</p>
-                                                </div>
-                                                <span className={`text - [7px] font - black px - 2 py - 0.5 rounded - full ${c.tier === 'OURO' ? 'bg-amber-100 text-amber-700' : c.tier === 'RISCO' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'} `}>
-                                                    {c.totalScore}/15
-                                                </span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* ═══ 📋 DRE + ESG + COMPLIANCE (FASE 6) ═══ */}
-                        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-                            <div className="p-6 border-b border-slate-50">
-                                <div className="flex items-center justify-between mb-5">
-                                    <div className="flex items-center gap-3">
-                                        <div className="bg-indigo-500/10 p-2 rounded-xl">
-                                            <Activity size={20} className="text-indigo-500" />
-                                        </div>
-                                        <div>
-                                            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">📋 Compliance & Relatórios</h3>
-                                            <p className="text-[9px] font-bold text-slate-400">DRE automática • ESG Score • Checklist regulatório</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-1">
-                                        {(['SEMANA', 'MES', 'TOTAL'] as const).map(p => (
-                                            <button key={p} onClick={() => setDrePeriodo(p)}
-                                                className={`px - 3 py - 1.5 rounded - lg text - [8px] font - black uppercase tracking - widest transition - all ${drePeriodo === p ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
-                                                    } `}>
-                                                {p === 'SEMANA' ? '7d' : p === 'MES' ? '30d' : 'Total'}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* DRE Resumida */}
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-                                    {[
-                                        { label: 'Receita Líquida', value: `R$${dreReport.receitaLiquida.toFixed(0)} `, color: 'text-emerald-600' },
-                                        { label: 'CMV', value: `R$${dreReport.cmv.toFixed(0)} `, color: 'text-rose-500' },
-                                        { label: 'Lucro Bruto', value: `R$${dreReport.lucroBruto.toFixed(0)} `, color: dreReport.lucroBruto > 0 ? 'text-emerald-600' : 'text-rose-500' },
-                                        { label: 'Margem Bruta', value: `${dreReport.margemBruta.toFixed(1)}% `, color: dreReport.margemBruta >= 25 ? 'text-emerald-600' : dreReport.margemBruta >= 15 ? 'text-amber-500' : 'text-rose-500' },
-                                    ].map((k, i) => (
-                                        <div key={i} className="bg-slate-50 rounded-xl p-3">
-                                            <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">{k.label}</p>
-                                            <p className={`text - lg font - black ${k.color} `}>{k.value}</p>
-                                        </div>
-                                    ))}
-                                </div>
-
-                                {/* DRE Detalhada */}
-                                <div className="bg-slate-900 rounded-xl p-4 mb-5 overflow-x-auto">
-                                    <pre className="text-[10px] text-emerald-400 font-mono leading-relaxed whitespace-pre-wrap">
-                                        {formatDREText(dreReport)}
-                                    </pre>
-                                    <button onClick={() => { navigator.clipboard.writeText(formatDREText(dreReport)); alert('📋 DRE copiada!'); }}
-                                        className="mt-3 px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 text-[8px] font-black uppercase tracking-widest hover:bg-emerald-500/30 transition-all">
-                                        📋 Copiar DRE
-                                    </button>
-                                </div>
-
-                                {/* ESG + Compliance lado a lado */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {/* ESG Score */}
-                                    <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-2xl p-5 border border-emerald-100">
-                                        <div className="flex items-center justify-between mb-4">
-                                            <h4 className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">🌱 ESG Score</h4>
-                                            <div className={`text - 3xl font - black ${esgScore.nota >= 70 ? 'text-emerald-600' : esgScore.nota >= 40 ? 'text-amber-500' : 'text-rose-500'} `}>
-                                                {esgScore.nota}/100
-                                            </div>
-                                        </div>
-                                        <div className="space-y-2">
-                                            {esgScore.detalhes.map((d, i) => (
-                                                <div key={i} className="flex items-center justify-between">
-                                                    <span className="text-[9px] text-slate-600 font-bold">{d.status} {d.item}</span>
-                                                    <span className="text-[9px] font-black text-slate-500">{d.nota}%</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* Compliance Checklist */}
-                                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-5 border border-blue-100">
-                                        <h4 className="text-[10px] font-black text-blue-700 uppercase tracking-widest mb-3">🏛️ Checklist Compliance ({COMPLIANCE_CHECKLIST.length} itens)</h4>
-                                        <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                                            {COMPLIANCE_CHECKLIST.map(item => (
-                                                <div key={item.id} className="flex items-center gap-2 text-[9px]">
-                                                    <span>{item.icon}</span>
-                                                    <span className="font-bold text-slate-700 flex-1">{item.item}</span>
-                                                    <span className={`text - [7px] font - black px - 2 py - 0.5 rounded - full ${item.obrigatorio ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'
-                                                        } `}>{item.obrigatorio ? 'OBRIG.' : 'REC.'}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* ═══ 📱 WHATSAPP COMMERCE (FASE 5) ═══ */}
-                        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-                            <div className="p-6 border-b border-slate-50">
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="bg-green-500/10 p-2 rounded-xl">
-                                        <MessageCircle size={20} className="text-green-500" />
+                            {/* ═══ 📈 PAINEL PREDITIVO (FASE 3) ═══ */}
+                            <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-3xl p-6 shadow-xl border border-slate-700/50">
+                                <div className="flex items-center gap-3 mb-5">
+                                    <div className="bg-blue-500/20 p-2 rounded-xl">
+                                        <TrendingUp size={20} className="text-blue-400" />
                                     </div>
                                     <div>
-                                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">📱 WhatsApp Commerce</h3>
-                                        <p className="text-[9px] font-bold text-slate-400">8 templates prontos • Catálogo digital • FIFO automático</p>
+                                        <h3 className="text-white font-black text-sm uppercase tracking-widest">📈 Analytics Preditivo</h3>
+                                        <p className="text-slate-500 text-[9px] font-bold">Projeções baseadas em médias móveis 7d/30d • Carne dura MAX 8 dias</p>
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
-                                    {WHATSAPP_TEMPLATES.map(t => (
-                                        <button
-                                            key={t.id}
-                                            onClick={() => {
-                                                setSelectedWaTemplate(t.id);
-                                                setWaPreview('');
-                                            }}
-                                            className={`px - 3 py - 2.5 rounded - xl text - [9px] font - black uppercase tracking - widest flex items - center gap - 1.5 transition - all ${selectedWaTemplate === t.id
-                                                ? `bg-gradient-to-r ${t.color} text-white shadow-lg scale-[1.02]`
-                                                : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
-                                                } `}
-                                        >
-                                            <span>{t.icon}</span> {t.name}
-                                        </button>
-                                    ))}
-                                </div>
-                                {selectedWaTemplate && (
-                                    <div className="bg-slate-50 rounded-2xl p-4 space-y-3">
-                                        <div className="flex gap-3">
-                                            <select
-                                                value={selectedWaClient}
-                                                onChange={(e) => {
-                                                    setSelectedWaClient(e.target.value);
-                                                    const cli = clients.find(c => c.id_ferro === e.target.value);
-                                                    if (cli) {
-                                                        const tmpl = WHATSAPP_TEMPLATES.find(t => t.id === selectedWaTemplate);
-                                                        const catalog = generateCatalogFromStock(stock, sales);
-                                                        const diasInativo = sales.filter(s => s.id_cliente === cli.id_ferro && s.status_pagamento !== 'ESTORNADO')
-                                                            .sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())[0];
-                                                        const msg = tmpl?.generate(cli, {
-                                                            diasInativo: diasInativo ? Math.floor((Date.now() - new Date(diasInativo.data_venda).getTime()) / 86400000) : 30,
-                                                            valorDevido: cli.saldo_devedor,
-                                                            produtosEstoque: catalog.slice(0, 5)
-                                                        }) || '';
-                                                        setWaPreview(msg);
-                                                    }
-                                                }}
-                                                className="flex-1 px-4 py-3 rounded-xl bg-white border border-slate-200 text-sm text-slate-900 font-bold"
-                                            >
-                                                <option value="">Selecionar cliente...</option>
-                                                {clients.filter(c => c.whatsapp).map(c => {
-                                                    const suggested = suggestTemplateForClient(c, sales);
-                                                    return (
-                                                        <option key={c.id_ferro} value={c.id_ferro}>
-                                                            {c.nome_social} {c.saldo_devedor > 0 ? `(💰 R$${c.saldo_devedor.toFixed(0)})` : ''} {suggested === selectedWaTemplate ? '✅ Recomendado' : ''}
-                                                        </option>
-                                                    );
-                                                })}
-                                            </select>
+                                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                                    {[
+                                        {
+                                            label: 'Receita 30d',
+                                            value: `R$${predictions.receitaProjetada30d.toFixed(0)} `,
+                                            sub: `${predictions.tendenciaReceita === 'SUBINDO' ? '📈' : predictions.tendenciaReceita === 'CAINDO' ? '📉' : '➡️'} ${predictions.percentualVariacao > 0 ? '+' : ''}${predictions.percentualVariacao.toFixed(0)}% `,
+                                            color: predictions.tendenciaReceita === 'CAINDO' ? 'text-rose-400' : 'text-emerald-400'
+                                        },
+                                        {
+                                            label: 'Estoque esgota',
+                                            value: predictions.diasAteEsgotar === 999 ? 'N/A' : `${predictions.diasAteEsgotar} d`,
+                                            sub: `🥩 ${predictions.pecasVencendo} vencendo`,
+                                            color: predictions.alertaEstoqueBaixo ? 'text-rose-400' : 'text-emerald-400'
+                                        },
+                                        {
+                                            label: 'Caixa projetado',
+                                            value: `R$${predictions.caixaProjetado30d.toFixed(0)} `,
+                                            sub: predictions.alertaCaixaNegativo ? '🔴 Risco!' : '✅ Saudável',
+                                            color: predictions.alertaCaixaNegativo ? 'text-rose-400' : 'text-emerald-400'
+                                        },
+                                        {
+                                            label: 'Taxa Churn',
+                                            value: `${predictions.taxaChurn.toFixed(0)}% `,
+                                            sub: `${predictions.clientesAtivos30d} ativos`,
+                                            color: predictions.alertaChurnAlto ? 'text-rose-400' : 'text-emerald-400'
+                                        },
+                                        {
+                                            label: 'Comprar em',
+                                            value: `${predictions.proximaCompraIdealDias} d`,
+                                            sub: `Custo ${predictions.tendenciaCusto === 'SUBINDO' ? '🔴↑' : predictions.tendenciaCusto === 'CAINDO' ? '🟢↓' : '🟡→'} `,
+                                            color: predictions.proximaCompraIdealDias <= 2 ? 'text-rose-400' : 'text-blue-400'
+                                        },
+                                    ].map((p, i) => (
+                                        <div key={i} className="bg-white/5 rounded-xl p-4 border border-white/5">
+                                            <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">{p.label}</p>
+                                            <p className={`text - xl font - black ${p.color} `}>{p.value}</p>
+                                            <p className="text-[9px] text-slate-500 font-bold mt-1">{p.sub}</p>
                                         </div>
-                                        {waPreview && (
-                                            <>
-                                                <div className="bg-white rounded-xl p-4 border border-green-200 shadow-sm">
-                                                    <p className="text-[9px] font-black text-green-600 uppercase tracking-widest mb-2">👁️ Pré-visualização</p>
-                                                    <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">{waPreview}</p>
-                                                </div>
-                                                <div className="flex gap-2">
-                                                    <button
-                                                        onClick={() => {
-                                                            const cli = clients.find(c => c.id_ferro === selectedWaClient);
-                                                            if (cli?.whatsapp) {
-                                                                window.open(generateWhatsAppLinkFromTemplate(cli.whatsapp, waPreview), '_blank');
-                                                            }
-                                                        }}
-                                                        className="flex-1 px-4 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:from-green-600 hover:to-emerald-600 transition-all shadow-lg"
-                                                    >
-                                                        <MessageCircle size={14} /> Enviar via WhatsApp
-                                                    </button>
-                                                    <button
-                                                        onClick={() => { navigator.clipboard.writeText(waPreview); alert('📋 Mensagem copiada!'); }}
-                                                        className="px-4 py-3 rounded-xl bg-white text-slate-500 text-[10px] font-black uppercase tracking-widest border border-slate-200 hover:bg-slate-50 transition-all"
-                                                    >
-                                                        📋 Copiar
-                                                    </button>
-                                                </div>
-                                            </>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* ═══ 🤝 SÍNTESE EXECUTIVA — MULTI-AGENT DEBATE (FASE 4) ═══ */}
-                        {debateRunning && (
-                            <div className="bg-gradient-to-r from-amber-50 to-yellow-50 rounded-3xl border border-amber-200 p-6 shadow-sm">
-                                <div className="flex items-center gap-3">
-                                    <Loader2 size={20} className="animate-spin text-amber-500" />
-                                    <span className="text-sm font-black text-amber-700 uppercase tracking-widest">🤝 Dona Clara está sintetizando os relatórios de todos os diretores...</span>
-                                </div>
-                            </div>
-                        )}
-                        {debateSynthesis && !bulkRunning && !debateRunning && (
-                            <div className="bg-gradient-to-br from-amber-900 via-yellow-900 to-orange-900 rounded-3xl shadow-2xl overflow-hidden border border-amber-700/30">
-                                <div className="p-6 border-b border-amber-700/30 flex justify-between items-center">
-                                    <div className="flex items-center gap-3">
-                                        <div className="bg-yellow-500/20 p-2.5 rounded-xl">
-                                            <Users size={20} className="text-yellow-400" />
-                                        </div>
-                                        <div>
-                                            <h3 className="text-sm font-black text-yellow-300 uppercase tracking-widest">🤝 Síntese Executiva — Multi-Agent Debate</h3>
-                                            <p className="text-[9px] font-bold text-amber-500">
-                                                Dona Clara analisou {Object.keys(agentDiagnostics).length} relatórios • via {debateSynthesis.provider} • {debateSynthesis.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <button
-                                        onClick={() => { navigator.clipboard.writeText(debateSynthesis.text); alert('📋 Síntese copiada!'); }}
-                                        className="px-4 py-2 rounded-xl bg-yellow-500/20 text-yellow-300 text-[9px] font-black uppercase tracking-widest hover:bg-yellow-500/30 transition-all"
-                                    >
-                                        📋 Copiar
-                                    </button>
-                                </div>
-                                <div className="p-6">
-                                    <div className="text-sm text-amber-100 leading-relaxed whitespace-pre-wrap font-medium">
-                                        {debateSynthesis.text}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* ═══ DIAGNÓSTICOS DOS AGENTES ═══ */}
-                        {Object.keys(agentDiagnostics).length > 0 && !bulkRunning && (
-                            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-                                <div className="p-6 border-b border-slate-50 flex justify-between items-center">
-                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                        <Brain size={14} className="text-purple-500" /> Diagnóstico Automático — {Object.keys(agentDiagnostics).length} Agentes
-                                    </h3>
-                                    <span className="text-[9px] font-bold text-slate-300">
-                                        {Object.values(agentDiagnostics)[0]?.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                                    </span>
-                                </div>
-                                <div className="divide-y divide-slate-50">
-                                    {agents.map(agent => {
-                                        const diag = agentDiagnostics[agent.id];
-                                        if (!diag) return null;
-                                        const colors = colorMap[agent.color];
-                                        const isExpanded = expandedDiagnostic === agent.id;
-                                        return (
-                                            <div key={agent.id} className="transition-all">
-                                                <button
-                                                    onClick={() => setExpandedDiagnostic(isExpanded ? null : agent.id)}
-                                                    className="w-full p-5 flex items-start gap-4 hover:bg-slate-50/50 transition-colors text-left"
-                                                >
-                                                    <span className="text-2xl">{agent.icon}</span>
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="flex items-center gap-2 mb-1">
-                                                            <span className={`text - xs font - black ${colors.text} `}>{agent.name}</span>
-                                                            <span className="text-[9px] text-slate-300">•</span>
-                                                            <span className="text-[9px] text-slate-400 font-mono">via {diag.provider}</span>
-                                                        </div>
-                                                        <p className="text-xs text-slate-500 truncate">{diag.text.substring(0, 120)}...</p>
-                                                    </div>
-                                                    <ChevronRight size={16} className={`text - slate - 300 transition - transform ${isExpanded ? 'rotate-90' : ''} `} />
-                                                </button>
-                                                {isExpanded && (
-                                                    <div className={`px - 5 pb - 5 pt - 0 ml - 14 mr - 5 animate - reveal`}>
-                                                        <div className={`${colors.bg} border ${colors.border} rounded - 2xl p - 5 shadow - sm relative group / diag`}>
-                                                            <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{diag.text}</p>
-                                                            <div className="mt-4 flex gap-2">
-                                                                <button
-                                                                    onClick={(e) => { e.stopPropagation(); handleWhatsAppAction(diag.text); }}
-                                                                    className={`flex items - center gap - 2 px - 4 py - 2 rounded - xl text - [10px] font - black uppercase tracking - widest bg - emerald - 500 text - white hover: bg - emerald - 600 transition - all shadow - md`}
-                                                                >
-                                                                    <MessageCircle size={14} /> Enviar / Copiar Script
-                                                                </button>
-                                                                <button
-                                                                    onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(diag.text); alert('📋 Copiado!'); }}
-                                                                    className={`flex items - center gap - 2 px - 4 py - 2 rounded - xl text - [10px] font - black uppercase tracking - widest bg - white text - slate - 500 border border - slate - 200 hover: bg - slate - 50 transition - all`}
-                                                                >
-                                                                    <Activity size={14} /> Copiar Texto
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* ═══ NOTÍCIAS DO MERCADO ═══ */}
-                        {marketNews.length > 0 && (
-                            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-                                <div className="p-6 border-b border-slate-50 flex justify-between items-center">
-                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                        📰 Notícias do Mercado — {marketNews.filter(n => n.isRecent).length > 0 ? `${marketNews.filter(n => n.isRecent).length} recentes` : `${marketNews.length} disponíveis`}
-                                    </h3>
-                                    {newsLoading && <Loader2 size={14} className="animate-spin text-blue-400" />}
-                                </div>
-                                <div className="divide-y divide-slate-50 max-h-64 overflow-y-auto">
-                                    {marketNews.slice(0, 8).map((news, i) => (
-                                        <a key={i} href={news.link} target="_blank" rel="noopener noreferrer"
-                                            className="block p-4 hover:bg-blue-50/30 transition-colors">
-                                            <div className="flex items-start gap-3">
-                                                <span className="text-lg">{news.icon}</span>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <span className="text-[9px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">{news.category}</span>
-                                                        {news.isRecent && <span className="text-[9px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">🟢 RECENTE</span>}
-                                                    </div>
-                                                    <p className="text-xs font-semibold text-slate-700 leading-tight">{news.title}</p>
-                                                    {news.description && <p className="text-[10px] text-slate-400 mt-1 truncate">{news.description}</p>}
-                                                    <div className="flex items-center gap-2 mt-1">
-                                                        <span className="text-[9px] text-slate-300">{news.source}</span>
-                                                        {news.pubDate && <span className="text-[9px] text-slate-300">• {new Date(news.pubDate).toLocaleDateString('pt-BR')}</span>}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </a>
                                     ))}
                                 </div>
                             </div>
-                        )}
 
-                        {/* AGENT CARDS WITH CONSULT BUTTONS */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                            {agents.map(agent => {
-                                const stats = agentStats[agent.id] ?? { total: 0, criticos: 0, bloqueios: 0 };
-                                const colors = colorMap[agent.color] ?? COLOR_FALLBACK;
-                                const isThisLoading = agentLoading && consultingAgent === agent.id;
-                                return (
-                                    <div key={agent.id} className={`premium - card p - 6 bg - white group hover:${colors.border} transition - all hover: shadow - xl ${colors.glow} `}>
-                                        <button
-                                            onClick={() => { setSelectedAgent(agent.id); setActiveTab('alerts'); }}
-                                            className="w-full text-left"
-                                        >
-                                            <div className="flex items-start justify-between mb-5">
-                                                <div className={`text - 4xl`}>{agent.icon}</div>
-                                                <div className="flex items-center gap-1">
-                                                    {stats.bloqueios > 0 && (
-                                                        <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[9px] font-black">{stats.bloqueios} BLOQ</span>
-                                                    )}
-                                                    {stats.criticos > 0 && (
-                                                        <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-600 text-[9px] font-black">{stats.criticos} CRIT</span>
-                                                    )}
-                                                    {stats.total > 0 && stats.criticos === 0 && stats.bloqueios === 0 && (
-                                                        <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-600 text-[9px] font-black">{stats.total}</span>
-                                                    )}
-                                                    {stats.total === 0 && (
-                                                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-600 text-[9px] font-black">OK</span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight mb-1">
-                                                {agent.name}
-                                                {(memoryCounts[agent.id] || 0) > 0 && (
-                                                    <span className="ml-2 px-2 py-0.5 rounded-full bg-purple-100 text-purple-600 text-[8px] font-black align-middle" title={`${memoryCounts[agent.id]} memórias persistentes`}>
-                                                        🧠 {memoryCounts[agent.id]}
-                                                    </span>
-                                                )}
-                                            </h3>
-                                            <p className="text-[11px] text-slate-400 leading-relaxed mb-4">{agent.description}</p>
-                                            <div className="flex flex-wrap gap-1.5">
-                                                {agent.modules.slice(0, 4).map(m => (
-                                                    <span key={m} className={`px - 2 py - 0.5 rounded - md ${colors.bg} ${colors.text} text - [8px] font - black uppercase`}>{m}</span>
-                                                ))}
-                                                {agent.modules.length > 4 && (
-                                                    <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-400 text-[8px] font-black">+{agent.modules.length - 4}</span>
-                                                )}
-                                            </div>
-                                        </button>
-                                        <div className="mt-4 pt-4 border-t border-slate-50 space-y-2">
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); runAgentConsult(agent.id); setActiveTab('alerts'); setSelectedAgent(agent.id); }}
-                                                disabled={agentLoading}
-                                                className={`w - full py - 3 rounded - xl text - [10px] font - black uppercase tracking - widest flex items - center justify - center gap - 2 transition - all ${isThisLoading ? 'bg-purple-100 text-purple-600' : 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700 shadow-lg shadow-purple-200/30'} `}
-                                            >
-                                                {isThisLoading ? (
-                                                    <><Loader2 size={14} className="animate-spin" /> Analisando...</>
-                                                ) : (
-                                                    <><Sparkles size={14} /> Consultar IA</>
-                                                )}
-                                            </button>
-                                            {agent.id === 'ADMINISTRATIVO' && (
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); runOrchestratedReport(); }}
-                                                    disabled={agentLoading}
-                                                    className={`w - full py - 3 rounded - xl text - [10px] font - black uppercase tracking - widest flex items - center justify - center gap - 2 transition - all ${isThisLoading ? 'bg-amber-100 text-amber-700' : 'bg-gradient-to-r from-amber-500 to-orange-600 text-white hover:from-amber-600 hover:to-orange-700 shadow-lg shadow-amber-200/30'} `}
-                                                >
-                                                    {isThisLoading ? (
-                                                        <><Loader2 size={14} className="animate-spin" /> Orquestrando 7 agentes...</>
-                                                    ) : (
-                                                        <><Brain size={14} /> 📋 Relatório Executivo</>
-                                                    )}
-                                                </button>
-                                            )}
-                                        </div>
+                            {/* ═══ BARRA DE AUTOMAÇÃO ═══ */}
+                            <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-3xl p-6 shadow-xl shadow-purple-200/30 flex flex-col md:flex-row items-center justify-between gap-4">
+                                <div className="flex items-center gap-4">
+                                    <div className="bg-white/10 p-3 rounded-2xl">
+                                        <Zap size={24} className="text-yellow-300" />
                                     </div>
-                                );
-                            })}
-                        </div>
-
-                        {/* RECENT ALERTS (TOP 6) */}
-                        {liveAlerts.length > 0 && (
-                            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-                                <div className="p-6 border-b border-slate-50 flex justify-between items-center">
-                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                        <Zap size={14} className="text-amber-500" /> Alertas Recentes
-                                    </h3>
-                                    <button onClick={() => setActiveTab('alerts')} className="text-[10px] font-black text-blue-600 uppercase tracking-widest hover:underline">
-                                        Ver todos ({liveAlerts.length})
-                                    </button>
-                                </div>
-                                <div className="divide-y divide-slate-50">
-                                    {liveAlerts.slice(0, 6).map(alert => {
-                                        const sev = severityConfig[alert.severity];
-                                        const agentData = agents.find(a => a.id === alert.agent);
-                                        return (
-                                            <div key={alert.id} className="p-5 flex items-start gap-4 hover:bg-slate-50/50 transition-colors">
-                                                <div className={`w - 8 h - 8 rounded - xl ${sev.bg} ${sev.color} flex items - center justify - center shrink - 0`}>
-                                                    {sev.icon}
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <span className="text-[9px] font-black text-slate-300 uppercase">{agentData?.icon} {agentData?.name}</span>
-                                                        <span className={`px - 1.5 py - 0.5 rounded ${sev.bg} ${sev.color} text - [8px] font - black uppercase`}>{alert.severity}</span>
-                                                        <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-400 text-[8px] font-black uppercase">{alert.module}</span>
-                                                    </div>
-                                                    <h4 className="font-bold text-sm text-slate-900 truncate">{alert.title}</h4>
-                                                    <p className="text-xs text-slate-400 mt-0.5 truncate">{alert.message}</p>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        )}
-
-                        {liveAlerts.length === 0 && (
-                            <div className="bg-white rounded-3xl border border-emerald-100 p-16 text-center">
-                                <CheckCircle size={60} className="text-emerald-500 mx-auto mb-4" />
-                                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Tudo Limpo!</h3>
-                                <p className="text-sm text-slate-400 mt-2">Nenhum alerta detectado. Todos os sistemas operando normalmente.</p>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* ═══ ALERTS TAB ═══ */}
-                {activeTab === 'alerts' && (
-                    <div className="animate-reveal space-y-6">
-                        {/* FILTER BAR */}
-                        <div className="flex flex-wrap gap-2 items-center">
-                            <button
-                                onClick={() => setSelectedAgent(null)}
-                                className={`px - 4 py - 2 rounded - xl text - [10px] font - black uppercase tracking - widest transition - all ${!selectedAgent ? 'bg-slate-900 text-white' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'} `}
-                            >
-                                Todos ({liveAlerts.length})
-                            </button>
-                            {agents.map(a => {
-                                const count = agentStats[a.id].total;
-                                return (
-                                    <button
-                                        key={a.id}
-                                        onClick={() => setSelectedAgent(a.id)}
-                                        className={`px - 4 py - 2 rounded - xl text - [10px] font - black uppercase tracking - widest transition - all ${selectedAgent === a.id ? 'bg-slate-900 text-white' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'} `}
-                                    >
-                                        {a.icon} {a.name} ({count})
-                                    </button>
-                                );
-                            })}
-                        </div>
-
-                        {/* LIST */}
-                        <div className="space-y-3">
-                            {filteredAlerts.map(alert => {
-                                const sev = severityConfig[alert.severity];
-                                const agentData = agents.find(a => a.id === alert.agent);
-                                return (
-                                    <div key={alert.id} className={`bg - white rounded - 2xl border ${sev.border} p - 6 transition - all hover: shadow - lg`}>
-                                        <div className="flex items-start gap-4">
-                                            <div className={`w - 10 h - 10 rounded - xl ${sev.bg} ${sev.color} flex items - center justify - center shrink - 0 text - lg`}>
-                                                {sev.icon}
-                                            </div>
-                                            <div className="flex-1">
-                                                <div className="flex items-center gap-2 mb-2">
-                                                    <span className="text-[9px] font-black text-slate-300 uppercase">{agentData?.icon} {agentData?.name}</span>
-                                                    <span className={`px - 2 py - 0.5 rounded - full ${sev.bg} ${sev.color} text - [8px] font - black uppercase`}>{alert.severity}</span>
-                                                    <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-400 text-[8px] font-black uppercase">{alert.module}</span>
-                                                </div>
-                                                <h4 className="font-bold text-slate-900 mb-1">{alert.title}</h4>
-                                                <p className="text-sm text-slate-500">{alert.message}</p>
-                                                {alert.data?.valor && (
-                                                    <p className="mt-2 text-sm font-black text-rose-600">💰 Impacto: R${alert.data.valor.toFixed(2)}</p>
-                                                )}
-                                                {(alert.agent === 'COMERCIAL' || alert.agent === 'SATISFACAO' || alert.agent === 'MARKETING' || alert.data?.whatsapp) && (
-                                                    <button
-                                                        onClick={() => handleWhatsAppAction(alert.message, alert.data?.whatsapp)}
-                                                        className="mt-4 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-600 text-[10px] font-black uppercase hover:bg-emerald-100 transition-colors border border-emerald-100"
-                                                    >
-                                                        <MessageCircle size={12} /> Acionar via WhatsApp
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                            {filteredAlerts.length === 0 && (
-                                <div className="bg-white rounded-2xl border border-emerald-100 p-12 text-center">
-                                    <CheckCircle size={40} className="text-emerald-500 mx-auto mb-3" />
-                                    <p className="text-sm font-bold text-slate-400">Nenhum alerta para este agente</p>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* ═══ GEMINI AGENT BUTTON (CONTEXT-AWARE) ═══ */}
-                        <div className="mt-8">
-                            <button
-                                onClick={() => runAgentConsult(selectedAgent || 'ADMINISTRATIVO')}
-                                disabled={agentLoading}
-                                className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white py-5 px-6 rounded-2xl font-black text-xs uppercase tracking-[0.2em] flex items-center justify-center gap-3 shadow-xl shadow-purple-200/50 transition-all disabled:opacity-50"
-                            >
-                                {agentLoading ? (
-                                    <><Loader2 size={18} className="animate-spin" /> Analisando com Gemini...</>
-                                ) : (
-                                    <><Sparkles size={18} /> Consultar {selectedAgent ? agents.find(a => a.id === selectedAgent)?.name : 'Agente IA'}</>
-                                )}
-                            </button>
-                            {agentError && (
-                                <div className="mt-3 p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-600 text-xs font-bold">
-                                    ⚠️ {agentError}
-                                </div>
-                            )}
-                            {agentResponse && (
-                                <div ref={agentResultRef} className="mt-6 bg-slate-900 rounded-3xl p-8 shadow-2xl animate-reveal">
-                                    <div className="flex items-center gap-3 mb-6">
-                                        <div className="bg-purple-500/20 p-2 rounded-xl">
-                                            <Sparkles size={20} className="text-purple-400" />
-                                        </div>
-                                        <div>
-                                            <h4 className="text-sm font-black text-white uppercase tracking-widest">
-                                                {consultingAgent ? `${agents.find(a => a.id === consultingAgent)?.icon} Parecer: ${agents.find(a => a.id === consultingAgent)?.name} ` : 'Parecer IA'}
-                                            </h4>
-                                            <p className="text-[10px] text-slate-500 font-bold">Gemini 1.5 Flash · Análise em tempo real</p>
-                                        </div>
-                                    </div>
-                                    <div className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap font-medium">
-                                        {agentResponse}
-                                    </div>
-
-                                    {/* ⚡ AÇÕES AUTÔNOMAS — Botões detectádos pela IA */}
-                                    {detectedActions.length > 0 && (
-                                        <div className="mt-6 p-5 bg-white/5 rounded-2xl border border-white/10">
-                                            <div className="flex items-center gap-2 mb-4">
-                                                <Zap size={16} className="text-yellow-400" />
-                                                <span className="text-[10px] font-black text-yellow-400 uppercase tracking-widest">
-                                                    ⚡ {detectedActions.length} Ações Detectádas — Clique para Executar
-                                                </span>
-                                            </div>
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                {detectedActions.map(action => (
-                                                    <button
-                                                        key={action.id}
-                                                        onClick={() => {
-                                                            if (action.type === 'WHATSAPP' || action.type === 'REATIVAR' || action.type === 'COBRAR') {
-                                                                if (action.clientPhone) {
-                                                                    const msg = action.type === 'COBRAR'
-                                                                        ? `Olá ${action.clientName || ''} !Tudo bem ? Passando para lembrar sobre o pagamento pendente.Podemos resolver hoje ? 🙏`
-                                                                        : `Olá ${action.clientName || ''} !Temos novidades incríveis para você! 🔥 Quer saber das ofertas exclusivas desta semana ? `;
-                                                                    window.open(generateWhatsAppLink(action.clientPhone, msg), '_blank');
-                                                                    setActionLog(prev => [...prev, { action: `${action.icon} ${action.label} `, time: new Date() }]);
-                                                                } else {
-                                                                    navigator.clipboard.writeText(action.description);
-                                                                    alert(`📋 Script copiado! Cole no WhatsApp de ${action.clientName || 'seu cliente'}.`);
-                                                                    setActionLog(prev => [...prev, { action: `📋 Copiou: ${action.label} `, time: new Date() }]);
-                                                                }
-                                                            } else if (action.type === 'PROMO') {
-                                                                navigator.clipboard.writeText(action.description);
-                                                                alert(`📢 Campanha copiada!\n\n"${action.description}"\n\nCole no WhatsApp ou redes sociais.`);
-                                                                setActionLog(prev => [...prev, { action: `📢 Campanha criada`, time: new Date() }]);
-                                                            } else if (action.type === 'RELATORIO') {
-                                                                navigator.clipboard.writeText(agentResponse || '');
-                                                                alert('📊 Relatório copiado para área de transferência!');
-                                                                setActionLog(prev => [...prev, { action: `📊 Relatório exportado`, time: new Date() }]);
-                                                            } else {
-                                                                navigator.clipboard.writeText(action.description);
-                                                                alert(`✅ Ação registrada: ${action.label} `);
-                                                                setActionLog(prev => [...prev, { action: action.label, time: new Date() }]);
-                                                            }
-                                                        }}
-                                                        className={`px - 4 py - 3 rounded - xl bg - gradient - to - r ${action.color} text - white text - [10px] font - black uppercase tracking - widest flex items - center gap - 2 hover: scale - [1.02] transition - all shadow - lg`}
-                                                    >
-                                                        <span>{action.icon}</span>
-                                                        <span className="flex-1 text-left">{action.label}</span>
-                                                        {action.urgency === 'ALTA' && <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-[8px]">URGENTE</span>}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                            {actionLog.length > 0 && (
-                                                <div className="mt-3 pt-3 border-t border-white/5">
-                                                    <p className="text-[9px] text-slate-500 font-bold">Histórico: {actionLog.slice(-3).map(l => `${l.action} (às ${l.time.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})`).join(' • ')}</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-
-                                    {/* 🎨 CONTENT STUDIO — botão aparece quando Isabela detecta oportunidade de conteúdo */}
-                                    {studioRequest && consultingAgent === 'MARKETING' && (
-                                        <div className="mt-4 p-5 bg-gradient-to-br from-fuchsia-900/20 to-purple-900/20 rounded-2xl border border-fuchsia-500/20">
-                                            <div className="flex items-center gap-2 mb-3">
-                                                <span className="text-fuchsia-400">✨</span>
-                                                <span className="text-[10px] font-black text-fuchsia-400 uppercase tracking-widest">
-                                                    Isabela identificou oportunidade de conteúdo visual
-                                                </span>
-                                            </div>
-                                            <p className="text-[11px] text-slate-400 mb-4">
-                                                Gerar imagem + copy + hashtags prontos com os dados reais do seu estoque/clientes.
-                                                <span className="text-amber-400"> Nada é enviado sem sua aprovação.</span>
-                                            </p>
-                                            <button
-                                                onClick={async () => {
-                                                    setStudioLoading(true);
-                                                    try {
-                                                        const content = await generateContent(studioRequest);
-                                                        setStudioContent(content);
-                                                    } catch (e) {
-                                                        console.error('[ContentStudio] Erro:', e);
-                                                    } finally {
-                                                        setStudioLoading(false);
-                                                    }
-                                                }}
-                                                disabled={studioLoading}
-                                                className="w-full px-5 py-4 rounded-xl bg-gradient-to-r from-fuchsia-500 to-purple-600 text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:from-fuchsia-600 hover:to-purple-700 transition-all shadow-lg shadow-purple-900/30 disabled:opacity-60"
-                                            >
-                                                {studioLoading ? (
-                                                    <>
-                                                        <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-                                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                                                        </svg>
-                                                        Gerando imagem + copy...
-                                                    </>
-                                                ) : (
-                                                    <>✨ Criar Conteúdo Visual (Imagem + Copy + Hashtags)</>
-                                                )}
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    <div className="mt-8 flex flex-col sm:flex-row gap-3">
-                                        <button
-                                            onClick={() => handleWhatsAppAction(agentResponse)}
-                                            className="px-6 py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:from-emerald-600 hover:to-teal-600 transition-all shadow-xl shadow-emerald-900/20"
-                                        >
-                                            <MessageCircle size={16} /> Enviar / Copiar via WhatsApp
-                                        </button>
-                                        <button
-                                            onClick={() => { navigator.clipboard.writeText(agentResponse); alert('📋 Análise copiada!'); }}
-                                            className="px-6 py-4 rounded-2xl bg-white/5 text-slate-400 text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-white/10 transition-all border border-white/10"
-                                        >
-                                            <Activity size={16} /> Copiar Texto
-                                        </button>
-                                    </div>
-                                    <div className="mt-6 pt-4 border-t border-slate-700/50 flex justify-between items-center">
-                                        <span className="text-[9px] text-slate-600 font-black uppercase tracking-widest">
-                                            {new Date().toLocaleString('pt-BR')}
-                                        </span>
-                                        <button onClick={() => runAgentConsult(consultingAgent || 'ADMINISTRATIVO')} className="text-[10px] font-black text-purple-400 uppercase tracking-widest hover:text-purple-300 flex items-center gap-1">
-                                            <Zap size={12} /> Atualizar
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
-
-                {/* ═══ CONFIG TAB ═══ */}
-                {activeTab === 'config' && (
-                    <div className="animate-reveal space-y-6">
-                        {agents.map(agent => {
-                            const colors = colorMap[agent.color];
-                            const stats = agentStats[agent.id];
-                            return (
-                                <div key={agent.id} className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-                                    <div className={`p - 6 ${colors.bg} border - b ${colors.border} flex flex - col md: flex - row justify - between items - start md: items - center gap - 4`}>
-                                        <div className="flex items-center gap-4">
-                                            <span className="text-3xl">{agent.icon}</span>
-                                            <div>
-                                                <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">{agent.name}</h3>
-                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{agent.modules.join(' • ')}</p>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                            <span className={`px - 3 py - 1 rounded - full ${stats.total > 0 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'} text - [9px] font - black uppercase`}>
-                                                {stats.total} alertas
-                                            </span>
-                                            <div className={`w - 12 h - 7 rounded - full relative cursor - pointer transition - all ${agent.enabled ? 'bg-emerald-500' : 'bg-slate-300'} `}>
-                                                <div className={`absolute top - 0.5 w - 6 h - 6 bg - white rounded - full shadow transition - all ${agent.enabled ? 'right-0.5' : 'left-0.5'} `} />
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="p-6">
-                                        <p className="text-sm text-slate-500 mb-4">{agent.description}</p>
-                                        <div className="grid grid-cols-3 gap-4">
-                                            <div className="bg-slate-50 rounded-xl p-4 text-center">
-                                                <p className="text-2xl font-black text-slate-900">{agent.modules.length}</p>
-                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Módulos</p>
-                                            </div>
-                                            <div className="bg-slate-50 rounded-xl p-4 text-center">
-                                                <p className="text-2xl font-black text-slate-900">{agent.triggerCount}</p>
-                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Gatilhos</p>
-                                            </div>
-                                            <div className="bg-slate-50 rounded-xl p-4 text-center">
-                                                <p className="text-2xl font-black text-slate-900">{68}</p>
-                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Regras</p>
-                                            </div>
-                                        </div>
-                                        <div className="mt-4">
-                                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-2">System Prompt</label>
-                                            <div className="bg-slate-900 rounded-xl p-4 text-xs font-mono text-blue-300 leading-relaxed">
-                                                {agent.systemPrompt}
-                                            </div>
-                                        </div>
-                                        <p className="mt-4 text-[10px] text-emerald-400 font-bold text-center flex items-center justify-center gap-1">
-                                            <Sparkles size={12} /> Auditor Financeiro conectado ao Gemini 1.5 Flash
+                                    <div>
+                                        <h3 className="text-white font-black text-sm uppercase tracking-widest">Automação IA</h3>
+                                        <p className="text-purple-200 text-[10px] font-bold uppercase tracking-wider">
+                                            {bulkRunning
+                                                ? `Analisando ${bulkProgress.currentAgent}... (${bulkProgress.current}/${bulkProgress.total})`
+                                                : autoRunDone
+                                                    ? `✅ ${Object.keys(agentDiagnostics).length} agentes analisados — ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} `
+                                                    : '⏳ Aguardando dados para iniciar...'}
                                         </p>
                                     </div>
                                 </div>
-                            );
-                        })}
-                    </div>
-                )}
-            </div>
-        </div>
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={runAllAgents}
+                                        disabled={bulkRunning}
+                                        className="bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all disabled:opacity-50 border border-white/10"
+                                    >
+                                        {bulkRunning ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                                        {bulkRunning ? 'Analisando...' : '🔄 Diagnosticar Tudo'}
+                                    </button>
+                                    <button
+                                        onClick={() => { runOrchestratedReport(); }}
+                                        disabled={agentLoading || bulkRunning}
+                                        className="bg-yellow-400 hover:bg-yellow-300 text-slate-900 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all disabled:opacity-50 shadow-lg"
+                                    >
+                                        <Brain size={14} /> 📋 Briefing Geral
+                                    </button>
+                                </div>
+                            </div>
 
-        {/* 🎨 CONTENT STUDIO MODAL — aprovação obrigatória antes de qualquer envio */}
-        {studioContent && (
-            <ContentStudioModal
-                content={studioContent}
-                onClose={() => setStudioContent(null)}
-                onRegenerate={async () => {
-                    if (!studioRequest) return;
-                    setStudioLoading(true);
-                    try {
-                        const fresh = await generateContent(studioRequest);
-                        setStudioContent(fresh);
-                    } catch (e) {
-                        console.error('[ContentStudio] Regenerar erro:', e);
-                    } finally {
-                        setStudioLoading(false);
-                    }
-                }}
-                isRegenerating={studioLoading}
-            />
-        )}
+                            {/* BARRA DE PROGRESSO */}
+                            {bulkRunning && (
+                                <div className="bg-white rounded-2xl border border-purple-100 p-4 shadow-sm">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-[10px] font-black text-purple-600 uppercase tracking-widest">Progresso</span>
+                                        <span className="text-[10px] font-black text-slate-400">{bulkProgress.current}/{bulkProgress.total}</span>
+                                    </div>
+                                    <div className="w-full bg-purple-100 rounded-full h-3 overflow-hidden">
+                                        <div
+                                            className="bg-gradient-to-r from-purple-500 to-indigo-500 h-3 rounded-full transition-all duration-500"
+                                            style={{ width: `${(bulkProgress.current / bulkProgress.total) * 100}% ` }}
+                                        />
+                                    </div>
+                                    <p className="text-xs text-slate-500 mt-2 text-center font-bold">
+                                        ⏳ {bulkProgress.currentAgent} está analisando...
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* ═══ 💲 PRECIFICAÇÃO INTELIGENTE (FASE 7) ═══ */}
+                            {precificacao.length > 0 && (
+                                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                                    <div className="p-6 border-b border-slate-50">
+                                        <div className="flex items-center gap-3 mb-4">
+                                            <div className="bg-emerald-500/10 p-2 rounded-xl">
+                                                <TrendingUp size={20} className="text-emerald-500" />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">💲 Precificação Inteligente</h3>
+                                                <p className="text-[9px] font-bold text-slate-400">Preço automático por idade • FIFO • Margem protegida</p>
+                                            </div>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-[9px]">
+                                                <thead>
+                                                    <tr className="text-left text-slate-400 font-black uppercase tracking-widest border-b border-slate-100">
+                                                        <th className="pb-2">Peça</th>
+                                                        <th className="pb-2">Tipo</th>
+                                                        <th className="pb-2">Peso</th>
+                                                        <th className="pb-2">Dias</th>
+                                                        <th className="pb-2">Custo/kg</th>
+                                                        <th className="pb-2">Preço Sugerido</th>
+                                                        <th className="pb-2">Desc.</th>
+                                                        <th className="pb-2">Margem</th>
+                                                        <th className="pb-2">Status</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-50">
+                                                    {precificacao.slice(0, 10).map(item => (
+                                                        <tr key={item.id_completo} className={item.diasNaCamara >= 7 ? 'bg-rose-50' : item.diasNaCamara >= 5 ? 'bg-amber-50' : ''}>
+                                                            <td className="py-2 font-mono font-bold text-slate-600">{item.id_completo}</td>
+                                                            <td className="py-2 text-slate-500">{item.tipoNome}</td>
+                                                            <td className="py-2 font-bold">{item.pesoKg.toFixed(1)}kg</td>
+                                                            <td className="py-2 font-black">{item.emoji} {item.diasNaCamara}d</td>
+                                                            <td className="py-2 text-slate-400">R${item.custoRealKg.toFixed(2)}</td>
+                                                            <td className="py-2 font-black text-emerald-600">R${item.precoSugerido.toFixed(2)}</td>
+                                                            <td className="py-2">{item.descontoAplicado > 0 ? <span className="text-rose-500 font-black">-{item.descontoAplicado}%</span> : '—'}</td>
+                                                            <td className={`py - 2 font - black ${item.margemEstimada >= 25 ? 'text-emerald-600' : item.margemEstimada >= 10 ? 'text-amber-500' : 'text-rose-500'} `}>{item.margemEstimada}%</td>
+                                                            <td className="py-2 text-[8px] font-black">{item.label}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ═══ 👥 SCORING CLIENTES RFM (FASE 8) ═══ */}
+                            {clientScores.length > 0 && (
+                                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                                    <div className="p-6 border-b border-slate-50">
+                                        <div className="flex items-center gap-3 mb-4">
+                                            <div className="bg-purple-500/10 p-2 rounded-xl">
+                                                <Users size={20} className="text-purple-500" />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">👥 Scoring de Clientes (RFM)</h3>
+                                                <p className="text-[9px] font-bold text-slate-400">Classificação automática • Recency × Frequency × Monetary</p>
+                                            </div>
+                                        </div>
+                                        {/* Tier Distribution */}
+                                        <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-4">
+                                            {([
+                                                { tier: 'OURO', emoji: '🥇', color: 'from-amber-400 to-yellow-500' },
+                                                { tier: 'PRATA', emoji: '🥈', color: 'from-slate-300 to-slate-400' },
+                                                { tier: 'BRONZE', emoji: '🥉', color: 'from-orange-400 to-amber-500' },
+                                                { tier: 'RISCO', emoji: '⚠️', color: 'from-rose-400 to-red-500' },
+                                                { tier: 'NOVO', emoji: '🆕', color: 'from-blue-400 to-cyan-500' },
+                                                { tier: 'INATIVO', emoji: '💤', color: 'from-gray-300 to-gray-400' },
+                                            ] as const).map(t => (
+                                                <div key={t.tier} className={`bg - gradient - to - r ${t.color} rounded - xl p - 3 text - center text - white`}>
+                                                    <p className="text-lg font-black">{tierSummary[t.tier]}</p>
+                                                    <p className="text-[8px] font-bold opacity-80">{t.emoji} {t.tier}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {/* Top clients */}
+                                        <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                                            {clientScores.slice(0, 8).map(c => (
+                                                <div key={c.id_ferro} className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 transition-colors">
+                                                    <span className="text-lg">{c.tierEmoji}</span>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-[10px] font-black text-slate-700 truncate">{c.nome}</p>
+                                                        <p className="text-[8px] text-slate-400">{c.recomendacao.substring(0, 60)}...</p>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <p className="text-[9px] font-black text-slate-600">R${c.monetary.toFixed(0)}</p>
+                                                        <p className="text-[7px] text-slate-400">{c.frequency}x em 90d</p>
+                                                    </div>
+                                                    <span className={`text - [7px] font - black px - 2 py - 0.5 rounded - full ${c.tier === 'OURO' ? 'bg-amber-100 text-amber-700' : c.tier === 'RISCO' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'} `}>
+                                                        {c.totalScore}/15
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ═══ 📋 DRE + ESG + COMPLIANCE (FASE 6) ═══ */}
+                            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                                <div className="p-6 border-b border-slate-50">
+                                    <div className="flex items-center justify-between mb-5">
+                                        <div className="flex items-center gap-3">
+                                            <div className="bg-indigo-500/10 p-2 rounded-xl">
+                                                <Activity size={20} className="text-indigo-500" />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">📋 Compliance & Relatórios</h3>
+                                                <p className="text-[9px] font-bold text-slate-400">DRE automática • ESG Score • Checklist regulatório</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-1">
+                                            {(['SEMANA', 'MES', 'TOTAL'] as const).map(p => (
+                                                <button key={p} onClick={() => setDrePeriodo(p)}
+                                                    className={`px - 3 py - 1.5 rounded - lg text - [8px] font - black uppercase tracking - widest transition - all ${drePeriodo === p ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                                                        } `}>
+                                                    {p === 'SEMANA' ? '7d' : p === 'MES' ? '30d' : 'Total'}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* DRE Resumida */}
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                                        {[
+                                            { label: 'Receita Líquida', value: `R$${dreReport.receitaLiquida.toFixed(0)} `, color: 'text-emerald-600' },
+                                            { label: 'CMV', value: `R$${dreReport.cmv.toFixed(0)} `, color: 'text-rose-500' },
+                                            { label: 'Lucro Bruto', value: `R$${dreReport.lucroBruto.toFixed(0)} `, color: dreReport.lucroBruto > 0 ? 'text-emerald-600' : 'text-rose-500' },
+                                            { label: 'Margem Bruta', value: `${dreReport.margemBruta.toFixed(1)}% `, color: dreReport.margemBruta >= 25 ? 'text-emerald-600' : dreReport.margemBruta >= 15 ? 'text-amber-500' : 'text-rose-500' },
+                                        ].map((k, i) => (
+                                            <div key={i} className="bg-slate-50 rounded-xl p-3">
+                                                <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">{k.label}</p>
+                                                <p className={`text - lg font - black ${k.color} `}>{k.value}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* DRE Detalhada */}
+                                    <div className="bg-slate-900 rounded-xl p-4 mb-5 overflow-x-auto">
+                                        <pre className="text-[10px] text-emerald-400 font-mono leading-relaxed whitespace-pre-wrap">
+                                            {formatDREText(dreReport)}
+                                        </pre>
+                                        <button onClick={() => { navigator.clipboard.writeText(formatDREText(dreReport)); alert('📋 DRE copiada!'); }}
+                                            className="mt-3 px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 text-[8px] font-black uppercase tracking-widest hover:bg-emerald-500/30 transition-all">
+                                            📋 Copiar DRE
+                                        </button>
+                                    </div>
+
+                                    {/* ESG + Compliance lado a lado */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {/* ESG Score */}
+                                        <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-2xl p-5 border border-emerald-100">
+                                            <div className="flex items-center justify-between mb-4">
+                                                <h4 className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">🌱 ESG Score</h4>
+                                                <div className={`text - 3xl font - black ${esgScore.nota >= 70 ? 'text-emerald-600' : esgScore.nota >= 40 ? 'text-amber-500' : 'text-rose-500'} `}>
+                                                    {esgScore.nota}/100
+                                                </div>
+                                            </div>
+                                            <div className="space-y-2">
+                                                {esgScore.detalhes.map((d, i) => (
+                                                    <div key={i} className="flex items-center justify-between">
+                                                        <span className="text-[9px] text-slate-600 font-bold">{d.status} {d.item}</span>
+                                                        <span className="text-[9px] font-black text-slate-500">{d.nota}%</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* Compliance Checklist */}
+                                        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-5 border border-blue-100">
+                                            <h4 className="text-[10px] font-black text-blue-700 uppercase tracking-widest mb-3">🏛️ Checklist Compliance ({COMPLIANCE_CHECKLIST.length} itens)</h4>
+                                            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                                                {COMPLIANCE_CHECKLIST.map(item => (
+                                                    <div key={item.id} className="flex items-center gap-2 text-[9px]">
+                                                        <span>{item.icon}</span>
+                                                        <span className="font-bold text-slate-700 flex-1">{item.item}</span>
+                                                        <span className={`text - [7px] font - black px - 2 py - 0.5 rounded - full ${item.obrigatorio ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'
+                                                            } `}>{item.obrigatorio ? 'OBRIG.' : 'REC.'}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* ═══ 📱 WHATSAPP COMMERCE (FASE 5) ═══ */}
+                            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                                <div className="p-6 border-b border-slate-50">
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <div className="bg-green-500/10 p-2 rounded-xl">
+                                            <MessageCircle size={20} className="text-green-500" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">📱 WhatsApp Commerce</h3>
+                                            <p className="text-[9px] font-bold text-slate-400">8 templates prontos • Catálogo digital • FIFO automático</p>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+                                        {WHATSAPP_TEMPLATES.map(t => (
+                                            <button
+                                                key={t.id}
+                                                onClick={() => {
+                                                    setSelectedWaTemplate(t.id);
+                                                    setWaPreview('');
+                                                }}
+                                                className={`px - 3 py - 2.5 rounded - xl text - [9px] font - black uppercase tracking - widest flex items - center gap - 1.5 transition - all ${selectedWaTemplate === t.id
+                                                    ? `bg-gradient-to-r ${t.color} text-white shadow-lg scale-[1.02]`
+                                                    : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
+                                                    } `}
+                                            >
+                                                <span>{t.icon}</span> {t.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {selectedWaTemplate && (
+                                        <div className="bg-slate-50 rounded-2xl p-4 space-y-3">
+                                            <div className="flex gap-3">
+                                                <select
+                                                    value={selectedWaClient}
+                                                    onChange={(e) => {
+                                                        setSelectedWaClient(e.target.value);
+                                                        const cli = clients.find(c => c.id_ferro === e.target.value);
+                                                        if (cli) {
+                                                            const tmpl = WHATSAPP_TEMPLATES.find(t => t.id === selectedWaTemplate);
+                                                            const catalog = generateCatalogFromStock(stock, sales);
+                                                            const diasInativo = sales.filter(s => s.id_cliente === cli.id_ferro && s.status_pagamento !== 'ESTORNADO')
+                                                                .sort((a, b) => new Date(b.data_venda).getTime() - new Date(a.data_venda).getTime())[0];
+                                                            const msg = tmpl?.generate(cli, {
+                                                                diasInativo: diasInativo ? Math.floor((Date.now() - new Date(diasInativo.data_venda).getTime()) / 86400000) : 30,
+                                                                valorDevido: cli.saldo_devedor,
+                                                                produtosEstoque: catalog.slice(0, 5)
+                                                            }) || '';
+                                                            setWaPreview(msg);
+                                                        }
+                                                    }}
+                                                    className="flex-1 px-4 py-3 rounded-xl bg-white border border-slate-200 text-sm text-slate-900 font-bold"
+                                                >
+                                                    <option value="">Selecionar cliente...</option>
+                                                    {clients.filter(c => c.whatsapp).map(c => {
+                                                        const suggested = suggestTemplateForClient(c, sales);
+                                                        return (
+                                                            <option key={c.id_ferro} value={c.id_ferro}>
+                                                                {c.nome_social} {c.saldo_devedor > 0 ? `(💰 R$${c.saldo_devedor.toFixed(0)})` : ''} {suggested === selectedWaTemplate ? '✅ Recomendado' : ''}
+                                                            </option>
+                                                        );
+                                                    })}
+                                                </select>
+                                            </div>
+                                            {waPreview && (
+                                                <>
+                                                    <div className="bg-white rounded-xl p-4 border border-green-200 shadow-sm">
+                                                        <p className="text-[9px] font-black text-green-600 uppercase tracking-widest mb-2">👁️ Pré-visualização</p>
+                                                        <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">{waPreview}</p>
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            onClick={() => {
+                                                                const cli = clients.find(c => c.id_ferro === selectedWaClient);
+                                                                if (cli?.whatsapp) {
+                                                                    window.open(generateWhatsAppLinkFromTemplate(cli.whatsapp, waPreview), '_blank');
+                                                                }
+                                                            }}
+                                                            className="flex-1 px-4 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:from-green-600 hover:to-emerald-600 transition-all shadow-lg"
+                                                        >
+                                                            <MessageCircle size={14} /> Enviar via WhatsApp
+                                                        </button>
+                                                        <button
+                                                            onClick={() => { navigator.clipboard.writeText(waPreview); alert('📋 Mensagem copiada!'); }}
+                                                            className="px-4 py-3 rounded-xl bg-white text-slate-500 text-[10px] font-black uppercase tracking-widest border border-slate-200 hover:bg-slate-50 transition-all"
+                                                        >
+                                                            📋 Copiar
+                                                        </button>
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* ═══ 🤝 SÍNTESE EXECUTIVA — MULTI-AGENT DEBATE (FASE 4) ═══ */}
+                            {debateRunning && (
+                                <div className="bg-gradient-to-r from-amber-50 to-yellow-50 rounded-3xl border border-amber-200 p-6 shadow-sm">
+                                    <div className="flex items-center gap-3">
+                                        <Loader2 size={20} className="animate-spin text-amber-500" />
+                                        <span className="text-sm font-black text-amber-700 uppercase tracking-widest">🤝 Dona Clara está sintetizando os relatórios de todos os diretores...</span>
+                                    </div>
+                                </div>
+                            )}
+                            {debateSynthesis && !bulkRunning && !debateRunning && (
+                                <div className="bg-gradient-to-br from-amber-900 via-yellow-900 to-orange-900 rounded-3xl shadow-2xl overflow-hidden border border-amber-700/30">
+                                    <div className="p-6 border-b border-amber-700/30 flex justify-between items-center">
+                                        <div className="flex items-center gap-3">
+                                            <div className="bg-yellow-500/20 p-2.5 rounded-xl">
+                                                <Users size={20} className="text-yellow-400" />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-sm font-black text-yellow-300 uppercase tracking-widest">🤝 Síntese Executiva — Multi-Agent Debate</h3>
+                                                <p className="text-[9px] font-bold text-amber-500">
+                                                    Dona Clara analisou {Object.keys(agentDiagnostics).length} relatórios • via {debateSynthesis.provider} • {debateSynthesis.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => { navigator.clipboard.writeText(debateSynthesis.text); alert('📋 Síntese copiada!'); }}
+                                            className="px-4 py-2 rounded-xl bg-yellow-500/20 text-yellow-300 text-[9px] font-black uppercase tracking-widest hover:bg-yellow-500/30 transition-all"
+                                        >
+                                            📋 Copiar
+                                        </button>
+                                    </div>
+                                    <div className="p-6">
+                                        <div className="text-sm text-amber-100 leading-relaxed whitespace-pre-wrap font-medium">
+                                            {debateSynthesis.text}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ═══ DIAGNÓSTICOS DOS AGENTES ═══ */}
+                            {Object.keys(agentDiagnostics).length > 0 && !bulkRunning && (
+                                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                                    <div className="p-6 border-b border-slate-50 flex justify-between items-center">
+                                        <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                            <Brain size={14} className="text-purple-500" /> Diagnóstico Automático — {Object.keys(agentDiagnostics).length} Agentes
+                                        </h3>
+                                        <span className="text-[9px] font-bold text-slate-300">
+                                            {Object.values(agentDiagnostics)[0]?.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                    </div>
+                                    <div className="divide-y divide-slate-50">
+                                        {agents.map(agent => {
+                                            const diag = agentDiagnostics[agent.id];
+                                            if (!diag) return null;
+                                            const colors = colorMap[agent.color];
+                                            const isExpanded = expandedDiagnostic === agent.id;
+                                            return (
+                                                <div key={agent.id} className="transition-all">
+                                                    <button
+                                                        onClick={() => setExpandedDiagnostic(isExpanded ? null : agent.id)}
+                                                        className="w-full p-5 flex items-start gap-4 hover:bg-slate-50/50 transition-colors text-left"
+                                                    >
+                                                        <span className="text-2xl">{agent.icon}</span>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                                <span className={`text - xs font - black ${colors.text} `}>{agent.name}</span>
+                                                                <span className="text-[9px] text-slate-300">•</span>
+                                                                <span className="text-[9px] text-slate-400 font-mono">via {diag.provider}</span>
+                                                            </div>
+                                                            <p className="text-xs text-slate-500 truncate">{diag.text.substring(0, 120)}...</p>
+                                                        </div>
+                                                        <ChevronRight size={16} className={`text - slate - 300 transition - transform ${isExpanded ? 'rotate-90' : ''} `} />
+                                                    </button>
+                                                    {isExpanded && (
+                                                        <div className={`px - 5 pb - 5 pt - 0 ml - 14 mr - 5 animate - reveal`}>
+                                                            <div className={`${colors.bg} border ${colors.border} rounded - 2xl p - 5 shadow - sm relative group / diag`}>
+                                                                <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{diag.text}</p>
+                                                                <div className="mt-4 flex gap-2">
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); handleWhatsAppAction(diag.text); }}
+                                                                        className={`flex items - center gap - 2 px - 4 py - 2 rounded - xl text - [10px] font - black uppercase tracking - widest bg - emerald - 500 text - white hover: bg - emerald - 600 transition - all shadow - md`}
+                                                                    >
+                                                                        <MessageCircle size={14} /> Enviar / Copiar Script
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(diag.text); alert('📋 Copiado!'); }}
+                                                                        className={`flex items - center gap - 2 px - 4 py - 2 rounded - xl text - [10px] font - black uppercase tracking - widest bg - white text - slate - 500 border border - slate - 200 hover: bg - slate - 50 transition - all`}
+                                                                    >
+                                                                        <Activity size={14} /> Copiar Texto
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ═══ NOTÍCIAS DO MERCADO ═══ */}
+                            {marketNews.length > 0 && (
+                                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                                    <div className="p-6 border-b border-slate-50 flex justify-between items-center">
+                                        <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                            📰 Notícias do Mercado — {marketNews.filter(n => n.isRecent).length > 0 ? `${marketNews.filter(n => n.isRecent).length} recentes` : `${marketNews.length} disponíveis`}
+                                        </h3>
+                                        {newsLoading && <Loader2 size={14} className="animate-spin text-blue-400" />}
+                                    </div>
+                                    <div className="divide-y divide-slate-50 max-h-64 overflow-y-auto">
+                                        {marketNews.slice(0, 8).map((news, i) => (
+                                            <a key={i} href={news.link} target="_blank" rel="noopener noreferrer"
+                                                className="block p-4 hover:bg-blue-50/30 transition-colors">
+                                                <div className="flex items-start gap-3">
+                                                    <span className="text-lg">{news.icon}</span>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <span className="text-[9px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">{news.category}</span>
+                                                            {news.isRecent && <span className="text-[9px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">🟢 RECENTE</span>}
+                                                        </div>
+                                                        <p className="text-xs font-semibold text-slate-700 leading-tight">{news.title}</p>
+                                                        {news.description && <p className="text-[10px] text-slate-400 mt-1 truncate">{news.description}</p>}
+                                                        <div className="flex items-center gap-2 mt-1">
+                                                            <span className="text-[9px] text-slate-300">{news.source}</span>
+                                                            {news.pubDate && <span className="text-[9px] text-slate-300">• {new Date(news.pubDate).toLocaleDateString('pt-BR')}</span>}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </a>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* AGENT CARDS WITH CONSULT BUTTONS */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                {agents.map(agent => {
+                                    const stats = agentStats[agent.id] ?? { total: 0, criticos: 0, bloqueios: 0 };
+                                    const colors = colorMap[agent.color] ?? COLOR_FALLBACK;
+                                    const isThisLoading = agentLoading && consultingAgent === agent.id;
+                                    return (
+                                        <div key={agent.id} className={`premium - card p - 6 bg - white group hover:${colors.border} transition - all hover: shadow - xl ${colors.glow} `}>
+                                            <button
+                                                onClick={() => { setSelectedAgent(agent.id); setActiveTab('alerts'); }}
+                                                className="w-full text-left"
+                                            >
+                                                <div className="flex items-start justify-between mb-5">
+                                                    <div className={`text - 4xl`}>{agent.icon}</div>
+                                                    <div className="flex items-center gap-1">
+                                                        {stats.bloqueios > 0 && (
+                                                            <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[9px] font-black">{stats.bloqueios} BLOQ</span>
+                                                        )}
+                                                        {stats.criticos > 0 && (
+                                                            <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-600 text-[9px] font-black">{stats.criticos} CRIT</span>
+                                                        )}
+                                                        {stats.total > 0 && stats.criticos === 0 && stats.bloqueios === 0 && (
+                                                            <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-600 text-[9px] font-black">{stats.total}</span>
+                                                        )}
+                                                        {stats.total === 0 && (
+                                                            <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-600 text-[9px] font-black">OK</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight mb-1">
+                                                    {agent.name}
+                                                    {(memoryCounts[agent.id] || 0) > 0 && (
+                                                        <span className="ml-2 px-2 py-0.5 rounded-full bg-purple-100 text-purple-600 text-[8px] font-black align-middle" title={`${memoryCounts[agent.id]} memórias persistentes`}>
+                                                            🧠 {memoryCounts[agent.id]}
+                                                        </span>
+                                                    )}
+                                                </h3>
+                                                <p className="text-[11px] text-slate-400 leading-relaxed mb-4">{agent.description}</p>
+                                                <div className="flex flex-wrap gap-1.5">
+                                                    {agent.modules.slice(0, 4).map(m => (
+                                                        <span key={m} className={`px - 2 py - 0.5 rounded - md ${colors.bg} ${colors.text} text - [8px] font - black uppercase`}>{m}</span>
+                                                    ))}
+                                                    {agent.modules.length > 4 && (
+                                                        <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-400 text-[8px] font-black">+{agent.modules.length - 4}</span>
+                                                    )}
+                                                </div>
+                                            </button>
+                                            <div className="mt-4 pt-4 border-t border-slate-50 space-y-2">
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); runAgentConsult(agent.id); setActiveTab('alerts'); setSelectedAgent(agent.id); }}
+                                                    disabled={agentLoading}
+                                                    className={`w - full py - 3 rounded - xl text - [10px] font - black uppercase tracking - widest flex items - center justify - center gap - 2 transition - all ${isThisLoading ? 'bg-purple-100 text-purple-600' : 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700 shadow-lg shadow-purple-200/30'} `}
+                                                >
+                                                    {isThisLoading ? (
+                                                        <><Loader2 size={14} className="animate-spin" /> Analisando...</>
+                                                    ) : (
+                                                        <><Sparkles size={14} /> Consultar IA</>
+                                                    )}
+                                                </button>
+                                                {agent.id === 'ADMINISTRATIVO' && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); runOrchestratedReport(); }}
+                                                        disabled={agentLoading}
+                                                        className={`w - full py - 3 rounded - xl text - [10px] font - black uppercase tracking - widest flex items - center justify - center gap - 2 transition - all ${isThisLoading ? 'bg-amber-100 text-amber-700' : 'bg-gradient-to-r from-amber-500 to-orange-600 text-white hover:from-amber-600 hover:to-orange-700 shadow-lg shadow-amber-200/30'} `}
+                                                    >
+                                                        {isThisLoading ? (
+                                                            <><Loader2 size={14} className="animate-spin" /> Orquestrando 7 agentes...</>
+                                                        ) : (
+                                                            <><Brain size={14} /> 📋 Relatório Executivo</>
+                                                        )}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            {/* RECENT ALERTS (TOP 6) */}
+                            {liveAlerts.length > 0 && (
+                                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                                    <div className="p-6 border-b border-slate-50 flex justify-between items-center">
+                                        <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                            <Zap size={14} className="text-amber-500" /> Alertas Recentes
+                                        </h3>
+                                        <button onClick={() => setActiveTab('alerts')} className="text-[10px] font-black text-blue-600 uppercase tracking-widest hover:underline">
+                                            Ver todos ({liveAlerts.length})
+                                        </button>
+                                    </div>
+                                    <div className="divide-y divide-slate-50">
+                                        {liveAlerts.slice(0, 6).map(alert => {
+                                            const sev = severityConfig[alert.severity];
+                                            const agentData = agents.find(a => a.id === alert.agent);
+                                            return (
+                                                <div key={alert.id} className="p-5 flex items-start gap-4 hover:bg-slate-50/50 transition-colors">
+                                                    <div className={`w - 8 h - 8 rounded - xl ${sev.bg} ${sev.color} flex items - center justify - center shrink - 0`}>
+                                                        {sev.icon}
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <span className="text-[9px] font-black text-slate-300 uppercase">{agentData?.icon} {agentData?.name}</span>
+                                                            <span className={`px - 1.5 py - 0.5 rounded ${sev.bg} ${sev.color} text - [8px] font - black uppercase`}>{alert.severity}</span>
+                                                            <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-400 text-[8px] font-black uppercase">{alert.module}</span>
+                                                        </div>
+                                                        <h4 className="font-bold text-sm text-slate-900 truncate">{alert.title}</h4>
+                                                        <p className="text-xs text-slate-400 mt-0.5 truncate">{alert.message}</p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {liveAlerts.length === 0 && (
+                                <div className="bg-white rounded-3xl border border-emerald-100 p-16 text-center">
+                                    <CheckCircle size={60} className="text-emerald-500 mx-auto mb-4" />
+                                    <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Tudo Limpo!</h3>
+                                    <p className="text-sm text-slate-400 mt-2">Nenhum alerta detectado. Todos os sistemas operando normalmente.</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* ═══ ALERTS TAB ═══ */}
+                    {activeTab === 'alerts' && (
+                        <div className="animate-reveal space-y-6">
+                            {/* FILTER BAR */}
+                            <div className="flex flex-wrap gap-2 items-center">
+                                <button
+                                    onClick={() => setSelectedAgent(null)}
+                                    className={`px - 4 py - 2 rounded - xl text - [10px] font - black uppercase tracking - widest transition - all ${!selectedAgent ? 'bg-slate-900 text-white' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'} `}
+                                >
+                                    Todos ({liveAlerts.length})
+                                </button>
+                                {agents.map(a => {
+                                    const count = agentStats[a.id].total;
+                                    return (
+                                        <button
+                                            key={a.id}
+                                            onClick={() => setSelectedAgent(a.id)}
+                                            className={`px - 4 py - 2 rounded - xl text - [10px] font - black uppercase tracking - widest transition - all ${selectedAgent === a.id ? 'bg-slate-900 text-white' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'} `}
+                                        >
+                                            {a.icon} {a.name} ({count})
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {/* LIST */}
+                            <div className="space-y-3">
+                                {filteredAlerts.map(alert => {
+                                    const sev = severityConfig[alert.severity];
+                                    const agentData = agents.find(a => a.id === alert.agent);
+                                    return (
+                                        <div key={alert.id} className={`bg - white rounded - 2xl border ${sev.border} p - 6 transition - all hover: shadow - lg`}>
+                                            <div className="flex items-start gap-4">
+                                                <div className={`w - 10 h - 10 rounded - xl ${sev.bg} ${sev.color} flex items - center justify - center shrink - 0 text - lg`}>
+                                                    {sev.icon}
+                                                </div>
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <span className="text-[9px] font-black text-slate-300 uppercase">{agentData?.icon} {agentData?.name}</span>
+                                                        <span className={`px - 2 py - 0.5 rounded - full ${sev.bg} ${sev.color} text - [8px] font - black uppercase`}>{alert.severity}</span>
+                                                        <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-400 text-[8px] font-black uppercase">{alert.module}</span>
+                                                    </div>
+                                                    <h4 className="font-bold text-slate-900 mb-1">{alert.title}</h4>
+                                                    <p className="text-sm text-slate-500">{alert.message}</p>
+                                                    {alert.data?.valor && (
+                                                        <p className="mt-2 text-sm font-black text-rose-600">💰 Impacto: R${alert.data.valor.toFixed(2)}</p>
+                                                    )}
+                                                    {(alert.agent === 'COMERCIAL' || alert.agent === 'SATISFACAO' || alert.agent === 'MARKETING' || alert.data?.whatsapp) && (
+                                                        <button
+                                                            onClick={() => handleWhatsAppAction(alert.message, alert.data?.whatsapp)}
+                                                            className="mt-4 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-600 text-[10px] font-black uppercase hover:bg-emerald-100 transition-colors border border-emerald-100"
+                                                        >
+                                                            <MessageCircle size={12} /> Acionar via WhatsApp
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                                {filteredAlerts.length === 0 && (
+                                    <div className="bg-white rounded-2xl border border-emerald-100 p-12 text-center">
+                                        <CheckCircle size={40} className="text-emerald-500 mx-auto mb-3" />
+                                        <p className="text-sm font-bold text-slate-400">Nenhum alerta para este agente</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* ═══ GEMINI AGENT BUTTON (CONTEXT-AWARE) ═══ */}
+                            <div className="mt-8">
+                                <button
+                                    onClick={() => runAgentConsult(selectedAgent || 'ADMINISTRATIVO')}
+                                    disabled={agentLoading}
+                                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white py-5 px-6 rounded-2xl font-black text-xs uppercase tracking-[0.2em] flex items-center justify-center gap-3 shadow-xl shadow-purple-200/50 transition-all disabled:opacity-50"
+                                >
+                                    {agentLoading ? (
+                                        <><Loader2 size={18} className="animate-spin" /> Analisando com Gemini...</>
+                                    ) : (
+                                        <><Sparkles size={18} /> Consultar {selectedAgent ? agents.find(a => a.id === selectedAgent)?.name : 'Agente IA'}</>
+                                    )}
+                                </button>
+                                {agentError && (
+                                    <div className="mt-3 p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-600 text-xs font-bold">
+                                        ⚠️ {agentError}
+                                    </div>
+                                )}
+                                {agentResponse && (
+                                    <div ref={agentResultRef} className="mt-6 bg-slate-900 rounded-3xl p-8 shadow-2xl animate-reveal">
+                                        <div className="flex items-center gap-3 mb-6">
+                                            <div className="bg-purple-500/20 p-2 rounded-xl">
+                                                <Sparkles size={20} className="text-purple-400" />
+                                            </div>
+                                            <div>
+                                                <h4 className="text-sm font-black text-white uppercase tracking-widest">
+                                                    {consultingAgent ? `${agents.find(a => a.id === consultingAgent)?.icon} Parecer: ${agents.find(a => a.id === consultingAgent)?.name} ` : 'Parecer IA'}
+                                                </h4>
+                                                <p className="text-[10px] text-slate-500 font-bold">Gemini 1.5 Flash · Análise em tempo real</p>
+                                            </div>
+                                        </div>
+                                        <div className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap font-medium">
+                                            {agentResponse}
+                                        </div>
+
+                                        {/* ⚡ AÇÕES AUTÔNOMAS — Botões detectádos pela IA */}
+                                        {detectedActions.length > 0 && (
+                                            <div className="mt-6 p-5 bg-white/5 rounded-2xl border border-white/10">
+                                                <div className="flex items-center gap-2 mb-4">
+                                                    <Zap size={16} className="text-yellow-400" />
+                                                    <span className="text-[10px] font-black text-yellow-400 uppercase tracking-widest">
+                                                        ⚡ {detectedActions.length} Ações Detectádas — Clique para Executar
+                                                    </span>
+                                                </div>
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                    {detectedActions.map(action => (
+                                                        <button
+                                                            key={action.id}
+                                                            onClick={() => {
+                                                                if (action.type === 'WHATSAPP' || action.type === 'REATIVAR' || action.type === 'COBRAR') {
+                                                                    if (action.clientPhone) {
+                                                                        const msg = action.type === 'COBRAR'
+                                                                            ? `Olá ${action.clientName || ''} !Tudo bem ? Passando para lembrar sobre o pagamento pendente.Podemos resolver hoje ? 🙏`
+                                                                            : `Olá ${action.clientName || ''} !Temos novidades incríveis para você! 🔥 Quer saber das ofertas exclusivas desta semana ? `;
+                                                                        window.open(generateWhatsAppLink(action.clientPhone, msg), '_blank');
+                                                                        setActionLog(prev => [...prev, { action: `${action.icon} ${action.label} `, time: new Date() }]);
+                                                                    } else {
+                                                                        navigator.clipboard.writeText(action.description);
+                                                                        alert(`📋 Script copiado! Cole no WhatsApp de ${action.clientName || 'seu cliente'}.`);
+                                                                        setActionLog(prev => [...prev, { action: `📋 Copiou: ${action.label} `, time: new Date() }]);
+                                                                    }
+                                                                } else if (action.type === 'PROMO') {
+                                                                    navigator.clipboard.writeText(action.description);
+                                                                    alert(`📢 Campanha copiada!\n\n"${action.description}"\n\nCole no WhatsApp ou redes sociais.`);
+                                                                    setActionLog(prev => [...prev, { action: `📢 Campanha criada`, time: new Date() }]);
+                                                                } else if (action.type === 'RELATORIO') {
+                                                                    navigator.clipboard.writeText(agentResponse || '');
+                                                                    alert('📊 Relatório copiado para área de transferência!');
+                                                                    setActionLog(prev => [...prev, { action: `📊 Relatório exportado`, time: new Date() }]);
+                                                                } else {
+                                                                    navigator.clipboard.writeText(action.description);
+                                                                    alert(`✅ Ação registrada: ${action.label} `);
+                                                                    setActionLog(prev => [...prev, { action: action.label, time: new Date() }]);
+                                                                }
+                                                            }}
+                                                            className={`px - 4 py - 3 rounded - xl bg - gradient - to - r ${action.color} text - white text - [10px] font - black uppercase tracking - widest flex items - center gap - 2 hover: scale - [1.02] transition - all shadow - lg`}
+                                                        >
+                                                            <span>{action.icon}</span>
+                                                            <span className="flex-1 text-left">{action.label}</span>
+                                                            {action.urgency === 'ALTA' && <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-[8px]">URGENTE</span>}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                                {actionLog.length > 0 && (
+                                                    <div className="mt-3 pt-3 border-t border-white/5">
+                                                        <p className="text-[9px] text-slate-500 font-bold">Histórico: {actionLog.slice(-3).map(l => `${l.action} (às ${l.time.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})`).join(' • ')}</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* 🎨 CONTENT STUDIO — botão aparece quando Isabela detecta oportunidade de conteúdo */}
+                                        {studioRequest && consultingAgent === 'MARKETING' && (
+                                            <div className="mt-4 p-5 bg-gradient-to-br from-fuchsia-900/20 to-purple-900/20 rounded-2xl border border-fuchsia-500/20">
+                                                <div className="flex items-center gap-2 mb-3">
+                                                    <span className="text-fuchsia-400">✨</span>
+                                                    <span className="text-[10px] font-black text-fuchsia-400 uppercase tracking-widest">
+                                                        Isabela identificou oportunidade de conteúdo visual
+                                                    </span>
+                                                </div>
+                                                <p className="text-[11px] text-slate-400 mb-4">
+                                                    Gerar imagem + copy + hashtags prontos com os dados reais do seu estoque/clientes.
+                                                    <span className="text-amber-400"> Nada é enviado sem sua aprovação.</span>
+                                                </p>
+                                                <button
+                                                    onClick={async () => {
+                                                        setStudioLoading(true);
+                                                        try {
+                                                            const content = await generateContent(studioRequest);
+                                                            setStudioContent(content);
+                                                        } catch (e) {
+                                                            console.error('[ContentStudio] Erro:', e);
+                                                        } finally {
+                                                            setStudioLoading(false);
+                                                        }
+                                                    }}
+                                                    disabled={studioLoading}
+                                                    className="w-full px-5 py-4 rounded-xl bg-gradient-to-r from-fuchsia-500 to-purple-600 text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:from-fuchsia-600 hover:to-purple-700 transition-all shadow-lg shadow-purple-900/30 disabled:opacity-60"
+                                                >
+                                                    {studioLoading ? (
+                                                        <>
+                                                            <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                                                            </svg>
+                                                            Gerando imagem + copy...
+                                                        </>
+                                                    ) : (
+                                                        <>✨ Criar Conteúdo Visual (Imagem + Copy + Hashtags)</>
+                                                    )}
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        <div className="mt-8 flex flex-col sm:flex-row gap-3">
+                                            <button
+                                                onClick={() => handleWhatsAppAction(agentResponse)}
+                                                className="px-6 py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:from-emerald-600 hover:to-teal-600 transition-all shadow-xl shadow-emerald-900/20"
+                                            >
+                                                <MessageCircle size={16} /> Enviar / Copiar via WhatsApp
+                                            </button>
+                                            <button
+                                                onClick={() => { navigator.clipboard.writeText(agentResponse); alert('📋 Análise copiada!'); }}
+                                                className="px-6 py-4 rounded-2xl bg-white/5 text-slate-400 text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-white/10 transition-all border border-white/10"
+                                            >
+                                                <Activity size={16} /> Copiar Texto
+                                            </button>
+                                        </div>
+                                        <div className="mt-6 pt-4 border-t border-slate-700/50 flex justify-between items-center">
+                                            <span className="text-[9px] text-slate-600 font-black uppercase tracking-widest">
+                                                {new Date().toLocaleString('pt-BR')}
+                                            </span>
+                                            <button onClick={() => runAgentConsult(consultingAgent || 'ADMINISTRATIVO')} className="text-[10px] font-black text-purple-400 uppercase tracking-widest hover:text-purple-300 flex items-center gap-1">
+                                                <Zap size={12} /> Atualizar
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ═══ CONFIG TAB ═══ */}
+                    {activeTab === 'config' && (
+                        <div className="animate-reveal space-y-6">
+                            {agents.map(agent => {
+                                const colors = colorMap[agent.color];
+                                const stats = agentStats[agent.id];
+                                return (
+                                    <div key={agent.id} className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                                        <div className={`p - 6 ${colors.bg} border - b ${colors.border} flex flex - col md: flex - row justify - between items - start md: items - center gap - 4`}>
+                                            <div className="flex items-center gap-4">
+                                                <span className="text-3xl">{agent.icon}</span>
+                                                <div>
+                                                    <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">{agent.name}</h3>
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{agent.modules.join(' • ')}</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <span className={`px - 3 py - 1 rounded - full ${stats.total > 0 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'} text - [9px] font - black uppercase`}>
+                                                    {stats.total} alertas
+                                                </span>
+                                                <div className={`w - 12 h - 7 rounded - full relative cursor - pointer transition - all ${agent.enabled ? 'bg-emerald-500' : 'bg-slate-300'} `}>
+                                                    <div className={`absolute top - 0.5 w - 6 h - 6 bg - white rounded - full shadow transition - all ${agent.enabled ? 'right-0.5' : 'left-0.5'} `} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="p-6">
+                                            <p className="text-sm text-slate-500 mb-4">{agent.description}</p>
+                                            <div className="grid grid-cols-3 gap-4">
+                                                <div className="bg-slate-50 rounded-xl p-4 text-center">
+                                                    <p className="text-2xl font-black text-slate-900">{agent.modules.length}</p>
+                                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Módulos</p>
+                                                </div>
+                                                <div className="bg-slate-50 rounded-xl p-4 text-center">
+                                                    <p className="text-2xl font-black text-slate-900">{agent.triggerCount}</p>
+                                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Gatilhos</p>
+                                                </div>
+                                                <div className="bg-slate-50 rounded-xl p-4 text-center">
+                                                    <p className="text-2xl font-black text-slate-900">{68}</p>
+                                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Regras</p>
+                                                </div>
+                                            </div>
+                                            <div className="mt-4">
+                                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-2">System Prompt</label>
+                                                <div className="bg-slate-900 rounded-xl p-4 text-xs font-mono text-blue-300 leading-relaxed">
+                                                    {agent.systemPrompt}
+                                                </div>
+                                            </div>
+                                            <p className="mt-4 text-[10px] text-emerald-400 font-bold text-center flex items-center justify-center gap-1">
+                                                <Sparkles size={12} /> Auditor Financeiro conectado ao Gemini 1.5 Flash
+                                            </p>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* 🎨 CONTENT STUDIO MODAL — aprovação obrigatória antes de qualquer envio */}
+            {studioContent && (
+                <ContentStudioModal
+                    content={studioContent}
+                    onClose={() => setStudioContent(null)}
+                    onRegenerate={async () => {
+                        if (!studioRequest) return;
+                        setStudioLoading(true);
+                        try {
+                            const fresh = await generateContent(studioRequest);
+                            setStudioContent(fresh);
+                        } catch (e) {
+                            console.error('[ContentStudio] Regenerar erro:', e);
+                        } finally {
+                            setStudioLoading(false);
+                        }
+                    }}
+                    isRegenerating={studioLoading}
+                />
+            )}
         </>
     );
 };

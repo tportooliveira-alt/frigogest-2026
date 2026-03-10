@@ -9,7 +9,7 @@
 import {
     CEPEA_CONTEXT, EMBRAPA_BREEDS_CONTEXT, MARGINS_CONTEXT,
     SALES_TRIGGERS_CONTEXT, COLD_CHAIN_CONTEXT, LOGISTICS_CONTEXT,
-    PRICING_CONTEXT, SNAPSHOT_INSTRUCTIONS
+    PRICING_CONTEXT, SNAPSHOT_INSTRUCTIONS, MACRO_EXPORT_CONTEXT
 } from './sharedContext';
 
 // ═══ 1. DONA CLARA — MESTRA (Administrativa / Estratégica) ═══
@@ -118,7 +118,8 @@ Para isso, responda a pergunta com esse exato e ÚNICO código:
 E aguarde o sistema injetar os valores reais, para só então você montar o seu parecer financeiro consolidado.
 
 ${CEPEA_CONTEXT}
-Analise a competitividade do FrigoGest vs a média do mercado local.`;
+${MACRO_EXPORT_CONTEXT}
+Analise a competitividade do FrigoGest vs a média do mercado local e as projeções futuras de Exportação, Dólar e B3.`;
 
 // ═══ 8. ISABELA — GERENTE (Marketing / Copywriting / Branding) ═══
 export const PROMPT_MARKETING = `Você é Isabela, Chief Marketing Officer (CMO) do FrigoGest. 
@@ -215,4 +216,6 @@ Se precisares consultar o MUNDO EXTERNO (Preço de Arroba, Tendências e Clima) 
 E você receberá os dados externos na rodada seguinte para formular sua mentoria com precisão cirúrgica baseada em fatos de hoje.
 
 Sua Atuação (O "Invisible Whisper"):
-Sempre que for chamado a dar uma dica para outro agente, não seja burocrático e NÃO USE SAUDAÇÕES. Forneça 1 ou 2 frases curtas com um INSIGHT PODEROSO, INOVADOR E APLICÁVEL, focado em elevar o lucro, a segurança (crédito) e o volume de clientes reais (marketing).`;
+Sempre que for chamado a dar uma dica para outro agente, não seja burocrático e NÃO USE SAUDAÇÕES. Forneça 1 ou 2 frases curtas com um INSIGHT PODEROSO, INOVADOR E APLICÁVEL, focado em elevar o lucro, a segurança (crédito) e o volume de clientes reais (marketing).
+
+${MACRO_EXPORT_CONTEXT}`;

@@ -1,0 +1,33 @@
+STATUS:
+On branch main
+Your branch and 'origin/main' have diverged,
+and have 1 and 7 different commits each, respectively.
+  (use "git pull" if you want to integrate the remote branch with yours)
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   agentPrompts.ts
+	modified:   components/AIChat.tsx
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	git_info.txt
+	tmp_git_diff.txt
+	tmp_git_log.txt
+
+no changes added to commit (use "git add" and/or "git commit -a")
+
+LOCAL:
+28c1116 fix(ai-agents): centraliza imports runCascade dentro de AIChat e ajusta mocks para build no supabase
+d6195fc fix: Revisão extrema e tratamento de falhas silenciosas e NaN em cálculos de lote e vendas. Resolvido erros de Any Type e Alerts
+41a3a10 fix(agents): Isabela e Wellington — limites claros de IA
+6c55987 feat(agents): prompts data-driven + orquestração paralela
+29d5a1c refactor(agents): remover código duplicado do AIAgents.tsx
+
+REMOTE:
+7468217 feat(vdc): cotação regional VDC/Sudoeste BA como praça principal
+afb8e9e feat(arroba): preço da @ em tempo real com fallback Supabase + widget de atualização manual
+96881ed feat(fase2): campaign learning + NPS inteligente por entrega confirmada
+a2dcb61 feat(fase1): migration SQL — entrega_confirmada_em + resultado_campanha + preco_negociado_kg
+64a4ef2 fix(bugs+dados): corrigir bugs críticos e enforçar dados reais nos agentes

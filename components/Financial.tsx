@@ -266,15 +266,13 @@ const Financial: React.FC<FinancialProps> = ({
 
   const totalBalanceGlobal = validTransactions.reduce((acc, t) => acc + (t.tipo === 'ENTRADA' ? t.valor : -t.valor), 0);
 
-  // CORREÇÃO: Filtrar apenas sales de lotes válidos (verifica se o id_completo corresponde a um lote existente)
+  // CORREÇÃO: As contas a receber independem de um Lote local. Se a venda foi registrada e não está paga, a dívida existe orgulhosamente.
   const pendingSales = useMemo(() => {
-    const validSales = sales.filter(s => {
-      // Usar 'includes' ao invés de split() ingênuo para suportar qualquer formato de nome do Lote (ex: Lote X, ou Lote-123)
-      return Array.from(validLoteIds).some(loteId => s.id_completo.includes(loteId));
-    });
-    // Filtrar vendas ESTORNADAS da lista de contas a receber
-    return validSales.filter(s => s.status_pagamento !== 'ESTORNADO' && getSaleBalance(s).saldoDevedor > 0.01).sort((a, b) => a.data_vencimento.localeCompare(b.data_vencimento));
-  }, [sales, validLoteIds]);
+    // Filtrar apenas considerando status de pagamento diferente de estornado e que possua saldo
+    return sales
+      .filter(s => s.status_pagamento !== 'ESTORNADO' && getSaleBalance(s).saldoDevedor > 0.01)
+      .sort((a, b) => a.data_vencimento.localeCompare(b.data_vencimento));
+  }, [sales]);
 
   const totalReceivable = useMemo(() => pendingSales.reduce((acc, s) => acc + getSaleBalance(s).saldoDevedor, 0), [pendingSales]);
 
@@ -294,34 +292,15 @@ const Financial: React.FC<FinancialProps> = ({
   );
 
   const totalPayable = useMemo(() => {
-    if (!hasValidBatches) return 0; // SE NÃO HÁ LOTES FECHADOS, RETORNA ZERO
-
-    // SIMPLIFICADO: Usa APENAS os payables para calcular Total a Pagar
-    // Isso evita duplicação, já que lotes a prazo criam payables automaticamente
+    // Calculo real do Total a Pagar
     return payables
-      .filter(p => {
-        // Excluir ESTORNADOS e CANCELADOS
-        if (p.status === 'ESTORNADO' || p.status === 'CANCELADO') return false;
-        // Se tem id_lote, verifica se é de um lote válido (fechado)
-        if (p.id_lote) return validLoteIds.has(p.id_lote);
-        // Se é COMPRA_GADO, extrai id_lote da descrição
-        if (p.categoria === 'COMPRA_GADO' && p.descricao) {
-          const match = p.descricao.match(/Lote ([A-Z0-9]+-\d{4}-\d+)/);
-          if (match) return validLoteIds.has(match[1]);
-          return false; // Payable de lote mas lote não existe = ignorar
-        }
-        // Payable manual (operacional, etc) = incluir
-        return true;
-      })
+      .filter(p => p.status !== 'ESTORNADO' && p.status !== 'CANCELADO')
       .reduce((acc, p) => acc + (p.valor - (p.valor_pago || 0)), 0);
-  }, [payables, validLoteIds, hasValidBatches]);
+  }, [payables]);
 
   const profitTotals = useMemo(() => {
-    // CORREÇÃO: Usar apenas sales de lotes válidos e excluir ESTORNADOS
-    const validSales = sales.filter(s => {
-      if (s.status_pagamento === 'ESTORNADO') return false;
-      return Array.from(validLoteIds).some(loteId => s.id_completo.includes(loteId));
-    });
+    // CORREÇÃO: Usar sales independete do lote estar ativo localmente, desde que não estornado
+    const validSales = sales.filter(s => s.status_pagamento !== 'ESTORNADO');
 
     return validSales.reduce((acc, sale) => {
       const details = getSaleDetails(sale);
@@ -332,7 +311,7 @@ const Financial: React.FC<FinancialProps> = ({
         profit: acc.profit + details.netProfit
       };
     }, { revenue: 0, cgs: 0, ops: 0, profit: 0 });
-  }, [sales, stock, closedBatches, validLoteIds]);
+  }, [sales, stock, closedBatches]);
 
 
 

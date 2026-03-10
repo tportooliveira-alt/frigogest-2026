@@ -107,6 +107,8 @@ export interface Sale {
   forma_pagamento: PaymentMethod;
   status_pagamento: 'PENDENTE' | 'PAGO' | 'ESTORNADO';
   valor_pago?: number; // Valor já recebido (pagamentos parciais)
+  resultado_campanha?: string; // Para métricas de Marketing/CRM
+  entrega_confirmada_em?: string; // ISO date de quando foi entregue
 }
 
 export interface ScheduledOrder {
@@ -201,7 +203,7 @@ export type AgentType =
   // Orquestração
   | 'FLUXO_CAIXA'
   // Opcionais (ativar sob demanda)
-  | 'RH_GESTOR' | 'FISCAL_CONTABIL' | 'QUALIDADE';
+  | 'RH_GESTOR' | 'FISCAL_CONTABIL' | 'QUALIDADE' | 'PROFESSOR';
 export type AlertSeverity = 'INFO' | 'ALERTA' | 'CRITICO' | 'BLOQUEIO';
 export type AlertStatus = 'NOVO' | 'VISTO' | 'RESOLVIDO' | 'IGNORADO';
 

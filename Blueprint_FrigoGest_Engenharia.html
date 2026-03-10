@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blueprint 2026: Arquitetura de Dados FrigoGest</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            background-color: #0f172a;
+            color: #fff;
+            font-family: -apple-system, system-ui, sans-serif;
+            overflow: hidden;
+        }
+
+        #blueprint-container {
+            width: 100vw;
+            height: 100vh;
+            overflow: auto;
+            cursor: grab;
+            position: relative;
+        }
+
+        #blueprint-container:active {
+            cursor: grabbing;
+        }
+
+        .mermaid {
+            display: flex;
+            justify-content: center;
+            transform-origin: top left;
+            padding: 40px;
+        }
+
+        /* Grid de Fundo Engenharia */
+        .engineering-grid {
+            background-size: 50px 50px;
+            background-image:
+                linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+        }
+
+        /* Controles de Zoom */
+        .controls {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 10px;
+            border-radius: 8px;
+            display: flex;
+            gap: 10px;
+            z-index: 1000;
+        }
+
+        button {
+            background: #1e293b;
+            color: white;
+            border: 1px solid #334155;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #334155;
+        }
+    </style>
+</head>
+
+<body class="engineering-grid">
+
+    <div
+        class="fixed top-0 left-0 w-full p-4 bg-slate-900/80 backdrop-blur border-b border-slate-800 z-50 flex justify-between items-center">
+        <div>
+            <h1 class="text-2xl font-bold font-mono tracking-tight text-sky-400">FRIGOGEST :: MASTER BLUEPRINT</h1>
+            <p class="text-xs text-slate-400">Diagrama de Fluxo de Dados e Machine Learning (Nível de Engenharia)</p>
+        </div>
+        <div class="text-right font-mono text-[10px] text-slate-500">
+            [V4.5.0 SOTA] <br> Escala Real do Código Fonte
+        </div>
+    </div>
+
+    <div class="controls">
+        <button onclick="zoom(0.1)">+</button>
+        <button onclick="resetZoom()">Reset</button>
+        <button onclick="zoom(-0.1)">-</button>
+    </div>
+
+    <div id="blueprint-container">
+        <div class="mermaid" id="graph">
+            %%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#1e293b', 'primaryTextColor': '#e2e8f0',
+            'primaryBorderColor': '#334155', 'lineColor': '#64748b', 'secondaryColor': '#0ea5e9', 'tertiaryColor':
+            '#8b5cf6', 'edgeLabelBackground':'#0f172a'}}}%%
+            flowchart TD
+
+            %% Estilos Estritos
+            classDef trigger fill:#1e293b,stroke:#0ea5e9,stroke-width:2px,color:#38bdf8,stroke-dasharray: 5 5
+            classDef db fill:#020617,stroke:#f59e0b,stroke-width:3px,color:#fcd34d,rx:10,ry:10
+            classDef financial fill:#064e3b,stroke:#22c55e,stroke-width:2px,color:#86efac
+            classDef action fill:#1e1b4b,stroke:#a855f7,stroke-width:2px,color:#d8b4fe
+            classDef agent fill:#312e81,stroke:#c084fc,stroke-width:3px,color:#f3e8ff,rx:50,ry:50
+            classDef error fill:#7f1d1d,stroke:#ef4444,stroke-width:2px,color:#fca5a5
+            classDef core fill:#0f172a,stroke:#e2e8f0,stroke-width:2px,color:#ffffff
+
+            %% -------------------------------------------------------------------------
+            %% CAMADA 1: A QUÍMICA DO LOTE E DO GADO
+            %% -------------------------------------------------------------------------
+            subgraph COMPRAS [Camada 1: Aquisição e Originação]
+            L1(FRONTEND: App.tsx<br>Add Novo Lote) ::: core
+            L2{{API: supabase.from_lotes}} ::: db
+            L3(STATE: qtde_cabecas, peso_kg, valor_arroba) ::: core
+            L4(STATE: valor_frete, frete_pago_no_ato) ::: core
+
+            IA_ROB((🛡️ AGENTE ROBERTO<br>Compras)) ::: agent
+            API_CEP[[Tool: FETCH_CEPEA<br>Preço Base Brasil]] ::: trigger
+
+            L1 -->|Submete Formulário| L2
+            L2 -->|Grava PK| L3
+            L2 -->|Grava Custos Extra| L4
+
+            IA_ROB -.->|Analisa valor_arroba| L3
+            API_CEP -.->|Injeta Cotação Real| IA_ROB
+            end
+
+            %% -------------------------------------------------------------------------
+            %% CAMADA 2: ROUTING FINANCEIRO
+            %% -------------------------------------------------------------------------
+            subgraph ROOT_FIN [Camada 2: Split Financeiro Passivo]
+            F1(ROUTER: registerBatchFinancial) ::: action
+            F2_G(DB: payables_Fornecedor<br>pago: false) ::: db
+            F2_F(DB: payables_Transportadora<br>pago: false) ::: db
+            F3(DB: cash_flow<br>tipo: SAIDA) ::: db
+
+            L3 -->|Gatilho Financeiro| F1
+            L4 -->|Gatilho Financeiro| F1
+
+            F1 -->|Se PRAZO (Gado)| F2_G
+            F1 -->|Se PRAZO (Frete)| F2_F
+            F1 -->|Se A VISTA (Total)| F3
+            end
+
+            %% -------------------------------------------------------------------------
+            %% CAMADA 3: O ABATE E A CÂMARA FRIA
+            %% -------------------------------------------------------------------------
+            subgraph OPERACAO [Camada 3: Abate e Inventário FIFO]
+            A1(Modulo: Abate) ::: core
+            A2(Cálculo Drip Loss:<br>pesoVivo - (pesoQuenteA + B)) ::: trigger
+            A3[(DB: stock_items<br>id_completo: UUID)] ::: db
+            A4(Status Fixo:<br>'DISPONIVEL') ::: financial
+
+            IA_JOA((🧊 AGENTE JOAQUIM<br>Logística Fria)) ::: agent
+
+            L2 -->|Permite Abater Lote| A1
+            A1 -->|Insere| A2
+            A1 -->|Gera Metades (A e B)| A3
+            A3 -->|Seta na Nuvem| A4
+
+            IA_JOA -.->|Vigia created_at| A3
+            IA_JOA -.->|Alerta > 6 Dias| A4
+            end
+
+            %% -------------------------------------------------------------------------
+            %% CAMADA 4: FATURAMENTO E RECEBIMENTOS
+            %% -------------------------------------------------------------------------
+            subgraph FATURAMENTO [Camada 4: Expedição Automática]
+            E1(Modulo: Expedição) ::: core
+            E2{Query: Buscar Peças<br>status === 'DISPONIVEL'} ::: trigger
+            E3(Checkout: onConfirmSale) ::: action
+            E4(STATE: pagoNoAto = true/false) ::: core
+
+            R1(DB: sales<br>status: 'PENDENTE' ou 'PAGO') ::: db
+            R2(DB: receivables<br>Lançamento de Dívida) ::: db
+            R3(Update: stock_items<br>status -> 'VENDIDO') ::: db
+
+            IA_MAR((💼 AGENTE MARCOS<br>Comercial LTV)) ::: agent
+            IA_WPP[[Tool: SEND_WHATSAPP]] ::: trigger
+
+            A4 -->|Visível Para| E2
+            E2 -->|Seleciona Peças| E1
+            E1 -->|Valida Peso| E3
+            E3 -->|Detecta Flag| E4
+
+            E4 -->|Insere no BD| R1
+            E4 -->|Se A PRAZO| R2
+            E4 -->|Se À VISTA| F3
+
+            R1 -->|Aciona Baixa| R3
+
+            IA_MAR -.->|Analisa Cliente Frequência| R1
+            IA_MAR -.->|Aciona| IA_WPP
+            end
+
+            %% -------------------------------------------------------------------------
+            %% CAMADA 5: NUCLEAR - O ESTORNO REVERSO
+            %% -------------------------------------------------------------------------
+            subgraph NUCLEAR [Camada 5: Operação Reversa (Estorno)]
+            X1((🚨 APP: estornoSale)) ::: error
+            X2{Match id_completo} ::: trigger
+            X3(DB cascade: Update stock<br>status -> 'DISPONIVEL') ::: action
+            X4(DB: Deleta Dívida /<br>Cria Saída no Caixa) ::: action
+
+            IA_ANA((👁️ AGENTE ANA<br>Auditora Forensic)) ::: agent
+
+            R1 -->|Usuário Clica| X1
+            X1 -->|Trava ID| X2
+            X2 -->|Restaura Carne| X3
+            X2 -->|Desfaz Finança| X4
+
+            X3 -->|Volta pra Câmara Fria| A4
+            X4 -->|Neutraliza| F3
+            X4 -->|Neutraliza| R2
+
+            IA_ANA -.->|Vigia Contagem de| X1
+            IA_ANA -.->|Busca Fraude Custo vs Venda| R1
+            end
+
+            %% -------------------------------------------------------------------------
+            %% CAMADA 6: A MESTRA E O PAINEL DE CONTROLE
+            %% -------------------------------------------------------------------------
+            subgraph CEO [Camada Master: Supervisão Orchestrator]
+            C1(Memória Central RAG<br>agentMemoryService.ts) ::: db
+            C2(Service: autoTriggerService<br>ID Baseado em ToDateString) ::: action
+
+            IA_CLA((👑 DONA CLARA<br>CEO Estratégica)) ::: agent
+
+            C1 -->|Puxa Contexto Diário| IA_CLA
+            F3 -->|Lê Caixa| IA_CLA
+            R2 -->|Lê Calotes| IA_CLA
+            F2_G -->|Lê Dívidas| IA_CLA
+
+            IA_CLA -->|Determina Popup UI| C2
+            end
+
+        </div>
+    </div>
+
+    <script>
+        mermaid.initialize({ startOnLoad: true, htmlLabels: true, securityLevel: 'loose' });
+
+        // Panning e Zoom Lógico
+        const container = document.getElementById('blueprint-container');
+        const graph = document.getElementById('graph');
+        let scale = 1;
+        let isPanning = false;
+        let startX, startY, scrollX, scrollY;
+
+        function zoom(amount) {
+            scale += amount;
+            if (scale < 0.3) scale = 0.3;
+            if (scale > 2) scale = 2;
+            graph.style.transform = `scale(${scale})`;
+        }
+        function resetZoom() {
+            scale = 1;
+            graph.style.transform = `scale(1)`;
+            container.scrollLeft = (graph.scrollWidth - container.clientWidth) / 2;
+            container.scrollTop = 0;
+        }
+
+        container.addEventListener('mousedown', (e) => {
+            isPanning = true;
+            startX = e.pageX - container.offsetLeft;
+            startY = e.pageY - container.offsetTop;
+            scrollX = container.scrollLeft;
+            scrollY = container.scrollTop;
+        });
+
+        container.addEventListener('mouseleave', () => { isPanning = false; });
+        container.addEventListener('mouseup', () => { isPanning = false; });
+
+        container.addEventListener('mousemove', (e) => {
+            if (!isPanning) return;
+            e.preventDefault();
+            const x = e.pageX - container.offsetLeft;
+            const y = e.pageY - container.offsetTop;
+            const walkX = (x - startX) * 1.5;
+            const walkY = (y - startY) * 1.5;
+            container.scrollLeft = scrollX - walkX;
+            container.scrollTop = scrollY - walkY;
+        });
+
+        setTimeout(resetZoom, 500); // Centraliza inicial
+    </script>
+</body>
+
+</html>
