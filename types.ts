@@ -50,8 +50,13 @@ export interface Batch {
   gastos_extras: number;
   custo_real_kg: number;
   url_romaneio?: string; // Novo campo para imagem/PDF do romaneio original
-  status?: 'ABERTO' | 'FECHADO' | 'ESTORNADO';
-  valor_entrada?: number; // Valor de entrada/adiantamento para compras a prazo
+  data_recebimento: string;
+  forma_pagamento: 'VISTA' | 'PRAZO' | 'OUTROS';
+  valor_entrada?: number; // Valor dado de entrada na compra do gado a prazo
+  prazo_dias?: number;
+  forma_pagamento_frete?: 'VISTA' | 'PRAZO' | 'OUTROS';
+  prazo_dias_frete?: number;
+  status: 'ATIVO' | 'ABATIDO' | 'ESTORNADO';
   // ═══ CAMPOS ESTÁGIO 1 — PRODUÇÃO & RAÇA ═══
   raca?: string; // Raça do lote (Nelore, Angus×Nelore, etc.)
   qtd_cabecas?: number; // Quantidade de cabeças no lote

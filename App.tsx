@@ -744,11 +744,11 @@ const App: React.FC = () => {
       }
       console.log(`✅ ${salesCount} vendas atualizadas`);
 
-      // 5. Estornar transações de compra do lote — filtrado no banco
+      // 5. Estornar transações de compra/frete do lote — filtrado no banco
       const { data: loteTx } = await supabase.from('transactions').select('*')
-        .eq('referencia_id', id).eq('categoria', 'COMPRA_GADO');
+        .eq('referencia_id', id).in('categoria', ['COMPRA_GADO', 'FRETE']);
       const { data: descTx } = await supabase.from('transactions').select('*')
-        .like('descricao', `%${id}%`).eq('categoria', 'COMPRA_GADO');
+        .like('descricao', `%${id}%`).in('categoria', ['COMPRA_GADO', 'FRETE']);
       const seenTxIds = new Set<string>();
       const allComprasTx = [...(loteTx || []), ...(descTx || [])]
         .filter(t => {
@@ -770,7 +770,7 @@ const App: React.FC = () => {
         }));
         txCount++;
       }
-      console.log(`✅ ${txCount} transações de compra estornadas`);
+      console.log(`✅ ${txCount} transações (compra/frete) estornadas`);
 
       console.log(`🎯 LOTE ${id} COMPLETAMENTE ESTORNADO (Transação Atômica)!`);
 
@@ -912,21 +912,28 @@ const App: React.FC = () => {
   };
 
   const registerBatchFinancial = async (batch: Batch) => {
+<<<<<<< HEAD
     // 1. Separar custos de aquisição e frete
+=======
+>>>>>>> c2aa47f (feat: separation of freight and cattle payment logic including batch reversal safety)
     const valorCompra = parseFloat(batch.valor_compra_total as any) || 0;
     const frete = parseFloat(batch.frete as any) || 0;
     const extras = parseFloat(batch.gastos_extras as any) || 0;
 
+<<<<<<< HEAD
     // Gado + Extras compõem o valor do lote. Frete é isolado.
     const valorGadoTotal = valorCompra + extras;
 
     // Se o custo total for zero (lote vazio), não tem o que registrar
     if (valorGadoTotal + frete === 0) return;
+=======
+    // Gado + Extras no pacote principal
+    const costGado = valorCompra + extras;
+>>>>>>> c2aa47f (feat: separation of freight and cattle payment logic including batch reversal safety)
 
-    const formaPagamento = (batch as any).forma_pagamento || 'OUTROS';
-    const valorEntrada = parseFloat((batch as any).valor_entrada) || 0;
     const dataRecebimento = batch.data_recebimento || todayBR();
 
+<<<<<<< HEAD
     console.log(`🏦 registerBatchFinancial Lote: ${batch.id_lote} | Gado+Extras: R$ ${valorGadoTotal.toFixed(2)} | Frete: R$ ${frete.toFixed(2)} | Form: ${formaPagamento}`);
 
     if (formaPagamento === 'VISTA') {
@@ -979,19 +986,77 @@ const App: React.FC = () => {
         const { data: existingEntrada } = await supabase!.from('transactions').select('id').eq('id', txEntradaId).limit(1);
 
         if (!existingEntrada || existingEntrada.length === 0) {
+=======
+    console.log(`🏦 registerBatchFinancial Lote: ${batch.id_lote} | Gado+Extras: R$ ${costGado} | Frete: R$ ${frete}`);
+
+    if (costGado > 0) {
+      const formaPagamentoGado = (batch as any).forma_pagamento || 'OUTROS';
+      const valorEntrada = parseFloat((batch as any).valor_entrada) || 0;
+
+      if (formaPagamentoGado === 'VISTA') {
+        const txId = `TR-LOTE-${batch.id_lote}`;
+        const { data: existingTx } = await supabase!.from('transactions').select('id').eq('id', txId).limit(1);
+        if (!existingTx || existingTx.length === 0) {
+>>>>>>> c2aa47f (feat: separation of freight and cattle payment logic including batch reversal safety)
           await addTransaction({
-            id: txEntradaId,
+            id: txId,
             data: dataRecebimento,
-            descricao: `Entrada/Adiantamento Lote ${batch.id_lote} - ${batch.fornecedor}`,
+            descricao: `Compra Lote ${batch.id_lote} - ${batch.fornecedor}`,
             tipo: 'SAIDA',
             categoria: 'COMPRA_GADO',
+<<<<<<< HEAD
             valor: Math.min(valorEntrada, valorGadoTotal + frete),
             metodo_pagamento: 'OUTROS',
+=======
+            valor: costGado,
+            metodo_pagamento: formaPagamentoGado,
+>>>>>>> c2aa47f (feat: separation of freight and cattle payment logic including batch reversal safety)
             referencia_id: batch.id_lote
           } as any);
         }
+      } else if (formaPagamentoGado === 'PRAZO') {
+        if (valorEntrada > 0) {
+          const txEntradaId = `TR-LOTE-ENTRADA-${batch.id_lote}`;
+          const { data: existingEntrada } = await supabase!.from('transactions').select('id').eq('id', txEntradaId).limit(1);
+          if (!existingEntrada || existingEntrada.length === 0) {
+            await addTransaction({
+              id: txEntradaId,
+              data: dataRecebimento,
+              descricao: `Entrada/Adiantamento Lote ${batch.id_lote} - ${batch.fornecedor}`,
+              tipo: 'SAIDA',
+              categoria: 'COMPRA_GADO',
+              valor: valorEntrada,
+              metodo_pagamento: 'OUTROS',
+              referencia_id: batch.id_lote
+            } as any);
+          }
+        }
+        const valorRestante = costGado - valorEntrada;
+        if (valorRestante > 0) {
+          const payableId = `PAY-LOTE-${batch.id_lote}`;
+          const { data: existingPay } = await supabase!.from('payables').select('id').eq('id', payableId).limit(1);
+          if (!existingPay || existingPay.length === 0) {
+            await handleAddPayable({
+              id: payableId,
+              id_lote: batch.id_lote,
+              descricao: `Pagamento Lote ${batch.id_lote} - ${batch.fornecedor} (Gado)`,
+              beneficiario: batch.fornecedor,
+              valor: valorRestante,
+              valor_pago: 0,
+              data_vencimento: (() => {
+                const d = new Date(dataRecebimento);
+                d.setDate(d.getDate() + ((batch as any).prazo_dias || 30));
+                return d.toISOString().split('T')[0];
+              })(),
+              status: 'PENDENTE',
+              categoria: 'COMPRA_GADO'
+            } as any);
+          }
+        }
       }
+    }
 
+<<<<<<< HEAD
       const vencimentoBase = (() => {
         const d = new Date(dataRecebimento);
         d.setDate(d.getDate() + ((batch as any).prazo_dias || 30));
@@ -1017,9 +1082,47 @@ const App: React.FC = () => {
             valor: valorRestanteGado,
             valor_pago: 0,
             data_vencimento: vencimentoBase,
-            status: 'PENDENTE',
-            categoria: 'COMPRA_GADO'
+=======
+    // 2. TRATAMENTO SEPARADO DO FRETE
+    if (frete > 0) {
+      const formaPagamentoFrete = (batch as any).forma_pagamento_frete || 'VISTA';
+
+      if (formaPagamentoFrete === 'VISTA') {
+        const txFreteId = `TR-FRETE-${batch.id_lote}`;
+        const { data: existingFreteTx } = await supabase!.from('transactions').select('id').eq('id', txFreteId).limit(1);
+        if (!existingFreteTx || existingFreteTx.length === 0) {
+          await addTransaction({
+            id: txFreteId,
+            data: dataRecebimento,
+            descricao: `Frete Lote ${batch.id_lote} - ${batch.fornecedor}`,
+            tipo: 'SAIDA',
+            categoria: 'FRETE',
+            valor: frete,
+            metodo_pagamento: 'VISTA',
+            referencia_id: batch.id_lote
           } as any);
+        }
+      } else if (formaPagamentoFrete === 'PRAZO') {
+        const payFreteId = `PAY-LOTE-FRETE-${batch.id_lote}`;
+        const { data: existingFretePay } = await supabase!.from('payables').select('id').eq('id', payFreteId).limit(1);
+        if (!existingFretePay || existingFretePay.length === 0) {
+          await handleAddPayable({
+            id: payFreteId,
+            id_lote: batch.id_lote,
+            descricao: `Frete Lote ${batch.id_lote} - ${batch.fornecedor}`,
+            beneficiario: 'Transportadora (A definir)',
+            valor: frete,
+            valor_pago: 0,
+            data_vencimento: (() => {
+              const d = new Date(dataRecebimento);
+              d.setDate(d.getDate() + ((batch as any).prazo_dias_frete || 30));
+              return d.toISOString().split('T')[0];
+            })(),
+>>>>>>> c2aa47f (feat: separation of freight and cattle payment logic including batch reversal safety)
+            status: 'PENDENTE',
+            categoria: 'FRETE'
+          } as any);
+<<<<<<< HEAD
         }
       }
 
@@ -1041,6 +1144,8 @@ const App: React.FC = () => {
             status: 'PENDENTE',
             categoria: 'FRETE'
           } as any);
+=======
+>>>>>>> c2aa47f (feat: separation of freight and cattle payment logic including batch reversal safety)
         }
       }
     }

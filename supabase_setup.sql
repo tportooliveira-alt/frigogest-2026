@@ -67,7 +67,9 @@ CREATE TABLE IF NOT EXISTS batches (
   vision_audit_status TEXT DEFAULT 'PENDENTE',
   esg_score NUMERIC DEFAULT 0,
   forma_pagamento TEXT DEFAULT 'OUTROS',
-  prazo_dias INTEGER DEFAULT 30
+  prazo_dias INTEGER DEFAULT 30,
+  forma_pagamento_frete TEXT DEFAULT 'VISTA',
+  prazo_dias_frete INTEGER DEFAULT 30
 );
 
 CREATE TABLE IF NOT EXISTS stock_items (
