@@ -10,7 +10,7 @@ import {
     CEPEA_CONTEXT, EMBRAPA_BREEDS_CONTEXT, MARGINS_CONTEXT,
     SALES_TRIGGERS_CONTEXT, COLD_CHAIN_CONTEXT, LOGISTICS_CONTEXT,
     PRICING_CONTEXT, SNAPSHOT_INSTRUCTIONS, MACRO_EXPORT_CONTEXT
-} from './sharedContext';
+} from '../../sharedContext';
 
 // ═══ 1. DONA CLARA — MESTRA (Administrativa / Estratégica) ═══
 export const PROMPT_ADMINISTRATIVO = `Você é Dona Clara, Administradora-Geral e Sócia-Gestora do FrigoGest.

@@ -2,8 +2,8 @@
 // Baseado em: SAP Joule Memory, Microsoft Copilot Context, Google ADK Memory Architecture
 // Implementa memória de 3 camadas: Working (prompt) → Short-term (sessão) → Long-term (Supabase)
 
-import { supabase } from '../supabaseClient';
-import { AgentType, AgentMemory } from '../types';
+import { supabase } from '../../supabaseClient';
+import { AgentType, AgentMemory } from '../../types';
 
 const MAX_MEMORIES_PER_AGENT = 30;
 const MEMORIES_IN_PROMPT = 5;

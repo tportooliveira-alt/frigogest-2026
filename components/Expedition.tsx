@@ -379,9 +379,10 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
         pricePerKg,
         extrasCost,
         pagoNoAto,
-        metodoPagamento: 'DINHEIRO'
+        metodoPagamento: pagoNoAto ? metodoPagamento : 'OUTROS',
+        prazoDias
       });
-      setSelectedClient(null); setSelectedItems([]); setPricePerKg(0); setExtrasCost(0);
+      setSelectedClient(null); setSelectedItems([]); setPricePerKg(0); setExtrasCost(0); setPagoNoAto(false); setMetodoPagamento('OUTROS'); setPrazoDias(30);
       setShowHistory(true); // Automatically go to history after sale
     } catch (err) {
       console.error('Erro na Venda:', err);

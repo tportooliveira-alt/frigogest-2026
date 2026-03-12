@@ -1011,49 +1011,41 @@ Se algum item tiver discrepância que você não conseguiu resolver, marque vali
                       </div>
                     </div>
 
-                    {/* FREIGHT PAYMENT MODE */}
-                    <div className="mt-2 p-3 bg-blue-50 border border-blue-100 rounded-2xl">
-                      <label className="text-[9px] font-black text-blue-700 uppercase tracking-widest block mb-2">Pagamento do Frete</label>
-                      <div className="grid grid-cols-2 gap-2 mb-2">
-                        <button onClick={() => setNewBatch({ ...newBatch, forma_pagamento_frete: 'VISTA' })} className={`py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${newBatch.forma_pagamento_frete === 'VISTA' || !newBatch.forma_pagamento_frete ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-blue-600 border border-blue-200'}`}>À Vista</button>
-                        <button onClick={() => setNewBatch({ ...newBatch, forma_pagamento_frete: 'PRAZO' })} className={`py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${newBatch.forma_pagamento_frete === 'PRAZO' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-blue-600 border border-blue-200'}`}>À Prazo</button>
+                    <div className="space-y-3 bg-slate-50 border border-slate-100 p-4 rounded-3xl">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">🐂 Pagamento do Gado</label>
+                      <div className="grid grid-cols-2 p-1 bg-slate-200/50 rounded-2xl">
+                        <button onClick={() => setNewBatch({ ...newBatch, forma_pagamento: 'VISTA' })} className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${newBatch.forma_pagamento === 'VISTA' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>À Vista</button>
+                        <button onClick={() => setNewBatch({ ...newBatch, forma_pagamento: 'PRAZO' })} className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${newBatch.forma_pagamento === 'PRAZO' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>A Prazo</button>
                       </div>
-                      {newBatch.forma_pagamento_frete === 'PRAZO' && (
-                        <div>
-                          <label className="text-[9px] font-black text-blue-500 uppercase tracking-widest block mb-1">Prazo do Frete (Dias)</label>
-                          <input type="number" className="w-full bg-white border border-blue-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:border-blue-500 transition-all" placeholder="Ex: 15" value={newBatch.prazo_dias_frete || ''} onChange={e => setNewBatch({ ...newBatch, prazo_dias_frete: parseInt(e.target.value) || 0 })} />
+
+                      {newBatch.forma_pagamento === 'PRAZO' && (
+                        <div className="grid grid-cols-2 gap-4 pt-2">
+                          <div>
+                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Entrada (R$)</label>
+                            <DecimalInput className="modern-input h-11 text-xs" placeholder="0,00" value={newBatch.valor_entrada || 0} onValueChange={v => setNewBatch({ ...newBatch, valor_entrada: v })} />
+                          </div>
+                          <div>
+                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Prazo (Dias)</label>
+                            <input type="number" className="modern-input h-11 text-xs" placeholder="Ex: 30" value={newBatch.prazo_dias || ''} onChange={e => setNewBatch({ ...newBatch, prazo_dias: parseInt(e.target.value) || 0 })} />
+                          </div>
                         </div>
                       )}
                     </div>
 
-                    <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-2xl">
-                      <button onClick={() => setNewBatch({ ...newBatch, forma_pagamento: 'VISTA' })} className={`py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${newBatch.forma_pagamento === 'VISTA' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>À Vista</button>
-                      <button onClick={() => setNewBatch({ ...newBatch, forma_pagamento: 'PRAZO' })} className={`py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${newBatch.forma_pagamento === 'PRAZO' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>À Prazo</button>
-                    </div>
-
-                    {newBatch.forma_pagamento === 'PRAZO' && (
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Entrada / Adiant. (R$)</label>
-                          <DecimalInput
-                            className="modern-input"
-                            placeholder="R$ 0,00"
-                            value={newBatch.valor_entrada || 0}
-                            onValueChange={v => setNewBatch({ ...newBatch, valor_entrada: v })}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Prazo (Dias)</label>
-                          <input
-                            type="number"
-                            className="modern-input h-14"
-                            placeholder="Ex: 30"
-                            value={newBatch.prazo_dias || ''}
-                            onChange={e => setNewBatch({ ...newBatch, prazo_dias: parseInt(e.target.value) || 0 })}
-                          />
-                        </div>
+                    <div className="space-y-3 bg-slate-50 border border-slate-100 p-4 rounded-3xl mt-4">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">🚛 Pagamento do Frete</label>
+                      <div className="grid grid-cols-2 p-1 bg-slate-200/50 rounded-2xl">
+                        <button onClick={() => setNewBatch({ ...newBatch, forma_pagamento_frete: 'VISTA' })} className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${newBatch.forma_pagamento_frete === 'VISTA' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>À Vista</button>
+                        <button onClick={() => setNewBatch({ ...newBatch, forma_pagamento_frete: 'PRAZO' })} className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${newBatch.forma_pagamento_frete === 'PRAZO' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>A Prazo</button>
                       </div>
-                    )}
+
+                      {newBatch.forma_pagamento_frete === 'PRAZO' && (
+                        <div className="pt-2">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Prazo Frete (Dias)</label>
+                          <input type="number" className="modern-input h-11 text-xs w-full" placeholder="Ex: 15" value={newBatch.prazo_dias_frete || ''} onChange={e => setNewBatch({ ...newBatch, prazo_dias_frete: parseInt(e.target.value) || 0 })} />
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="bg-slate-900 rounded-3xl p-6 flex justify-between items-center text-white">
@@ -1615,25 +1607,39 @@ Se algum item tiver discrepância que você não conseguiu resolver, marque vali
                 </div>
 
                 {/* FORMA DE PAGAMENTO */}
-                <div className="bg-slate-50 rounded-2xl p-5 space-y-2">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pagamento</p>
-                  <div className="flex items-center gap-2">
-                    <span className={`text-xs font-black px-3 py-1 rounded-full uppercase ${formaPag === 'VISTA' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                      }`}>
-                      {formaPag === 'VISTA' ? '💰 À Vista' : '📋 A Prazo'}
-                    </span>
-                  </div>
-                  {formaPag !== 'VISTA' && (
-                    <div className="space-y-1 pt-2">
-                      {valorEntrada > 0 && (
+                <div className="bg-slate-50 rounded-2xl p-5 space-y-4">
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Pagamento do Gado</p>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-black px-3 py-1 rounded-full uppercase ${formaPag === 'VISTA' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                        }`}>
+                        {formaPag === 'VISTA' ? '💰 À Vista' : '📋 A Prazo'}
+                      </span>
+                    </div>
+                    {formaPag !== 'VISTA' && (
+                      <div className="space-y-1 pt-2">
+                        {valorEntrada > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-slate-500">Entrada</span>
+                            <span className="font-bold text-emerald-600">{formatCurrency(valorEntrada)}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between text-xs">
-                          <span className="text-slate-500">Entrada</span>
-                          <span className="font-bold text-emerald-600">{formatCurrency(valorEntrada)}</span>
+                          <span className="text-slate-500">Restante (A Pagar)</span>
+                          <span className="font-bold text-rose-600">{formatCurrency(((selectedBatch.valor_compra_total || 0) + (selectedBatch.gastos_extras || 0)) - valorEntrada)}</span>
                         </div>
-                      )}
-                      <div className="flex justify-between text-xs">
-                        <span className="text-slate-500">Restante (A Pagar)</span>
-                        <span className="font-bold text-rose-600">{formatCurrency(totalCost - valorEntrada)}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {selectedBatch.frete > 0 && (
+                    <div className="pt-3 border-t border-slate-200">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Pagamento do Frete</p>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs font-black px-3 py-1 rounded-full uppercase ${(selectedBatch as any).forma_pagamento_frete === 'VISTA' ? 'bg-slate-200 text-slate-700' : 'bg-blue-100 text-blue-700'
+                          }`}>
+                          {(selectedBatch as any).forma_pagamento_frete === 'VISTA' ? '💰 À Vista' : '📋 A Prazo'}
+                        </span>
                       </div>
                     </div>
                   )}

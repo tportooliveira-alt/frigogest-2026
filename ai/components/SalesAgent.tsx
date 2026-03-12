@@ -42,8 +42,8 @@ import {
     TrendingUp,
     ShoppingCart
 } from 'lucide-react';
-import { Client, Sale, StockItem, Batch } from '../types';
-import { sendWhatsAppMessage, sendWhatsAppMedia, checkWhatsAppAPIStatus, sendBulkMessages } from '../utils/whatsappAPI';
+import { Client, Sale, StockItem, Batch } from '../../types';
+import { sendWhatsAppMessage, sendWhatsAppMedia, checkWhatsAppAPIStatus, sendBulkMessages } from '../../utils/whatsappAPI';
 
 interface SalesAgentProps {
     onBack?: () => void;

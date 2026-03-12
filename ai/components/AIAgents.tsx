@@ -8,22 +8,22 @@ import {
     Loader2, Send, Sparkles
 } from 'lucide-react';
 import { runCascade } from '../services/llmCascade';
-import { fetchAllNews, formatNewsForAgent, NewsItem } from '../services/newsService';
-import { sendWhatsAppMessage } from '../utils/whatsappAPI';
-import { OPERATION_CONTEXT, OPERATION_SUMMARY } from '../operationConfig';
-import { INDUSTRY_BENCHMARKS_2026 } from '../constants';
+import { fetchAllNews, formatNewsForAgent, NewsItem } from '../../services/newsService';
+import { sendWhatsAppMessage } from '../../utils/whatsappAPI';
+import { OPERATION_CONTEXT, OPERATION_SUMMARY } from '../../operationConfig';
+import { INDUSTRY_BENCHMARKS_2026 } from '../../constants';
 import { getAgentMemories, saveAgentMemory, formatMemoriesForPrompt, extractInsightsFromResponse, countAgentMemories } from '../services/agentMemoryService';
-import { AgentMemory } from '../types';
-import { parseActionsFromResponse, DetectedAction, generateWhatsAppLink } from '../services/actionParserService';
-import { calculatePredictions, formatPredictionsForPrompt, PredictiveSnapshot } from '../utils/predictions';
-import { WHATSAPP_TEMPLATES, generateCatalogFromStock, suggestTemplateForClient, generateWhatsAppLinkFromTemplate, TemplateType } from '../services/whatsappCommerceService';
-import { generateContent, detectContentRequest, GeneratedContent, ContentStudioRequest } from '../services/contentStudioService';
+import { AgentMemory } from '../../types';
+import { parseActionsFromResponse, DetectedAction, generateWhatsAppLink } from '../../services/actionParserService';
+import { calculatePredictions, formatPredictionsForPrompt, PredictiveSnapshot } from '../../utils/predictions';
+import { WHATSAPP_TEMPLATES, generateCatalogFromStock, suggestTemplateForClient, generateWhatsAppLinkFromTemplate, TemplateType } from '../../services/whatsappCommerceService';
+import { generateContent, detectContentRequest, GeneratedContent, ContentStudioRequest } from '../../services/contentStudioService';
 import ContentStudioModal from './ContentStudioModal';
-import { generateDRE, formatDREText, calculateESGScore, COMPLIANCE_CHECKLIST, DREReport } from '../services/complianceService';
-import { calcularPrecificacao, formatPrecificacaoForPrompt, PrecificacaoItem } from '../services/pricingEngine';
-import { calculateClientScores, formatRFMForPrompt, getClientTierSummary, ClientScore } from '../services/clientScoringService';
+import { generateDRE, formatDREText, calculateESGScore, COMPLIANCE_CHECKLIST, DREReport } from '../../services/complianceService';
+import { calcularPrecificacao, formatPrecificacaoForPrompt, PrecificacaoItem } from '../../services/pricingEngine';
+import { calculateClientScores, formatRFMForPrompt, getClientTierSummary, ClientScore } from '../../services/clientScoringService';
 import { analyzeCampaignResults, formatCampaignLearningForAgent, detectNPSPendente, formatNPSPendenteForAgent } from '../services/campaignLearningService';
-import { fetchMarketPrices, formatMarketPricesForAgent, MarketPrices } from '../services/marketPricesService';
+import { fetchMarketPrices, formatMarketPricesForAgent, MarketPrices } from '../../services/marketPricesService';
 import {
     PROMPT_ADMINISTRATIVO, PROMPT_PRODUCAO, PROMPT_COMERCIAL, PROMPT_AUDITOR,
     PROMPT_ESTOQUE, PROMPT_COMPRAS, PROMPT_MERCADO, PROMPT_MARKETING,
@@ -38,7 +38,7 @@ import {
     AgentType, AgentConfig, AgentAlert, AlertSeverity,
     Batch, StockItem, Sale, Client, Transaction, Supplier, Payable, ScheduledOrder,
     BREED_REFERENCE_DATA
-} from '../types';
+} from '../../types';
 
 interface AIAgentsProps {
     onBack: () => void;

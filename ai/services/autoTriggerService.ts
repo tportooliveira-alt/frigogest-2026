@@ -11,7 +11,7 @@
 import {
     Batch, StockItem, Sale, Client, Transaction,
     Payable, ScheduledOrder, AgentAlert, AlertSeverity
-} from '../types';
+} from '../../types';
 
 export interface AutoTriggerResult {
     triggerId: string;

@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { ArrowLeft, Send, Users, TrendingUp, AlertCircle, Bot, Zap, Search, ShieldCheck, Mic, MicOff } from 'lucide-react';
 
 import { GoogleGenAI } from '@google/genai';
-import { Batch, StockItem, Sale, Client, Transaction, Supplier, Payable, ScheduledOrder } from '../types';
+import { Batch, StockItem, Sale, Client, Transaction, Supplier, Payable, ScheduledOrder } from '../../types';
 
 interface AIMeetingRoomProps {
     onBack: () => void;

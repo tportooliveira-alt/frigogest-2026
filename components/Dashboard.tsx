@@ -279,7 +279,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, stock, transactions, batch
                 <div className="flex justify-between items-center mb-8">
                   <div>
                     <h3 className="text-sm font-bold text-gray-800">Monitoramento de Vendas</h3>
-                    <p className="text-[10px] text-gray-400 font-medium">Fluxo de caixa das últimas 12 operações</p>
+                    <p className="text-[10px] text-gray-400 font-medium">Receita das últimas 12 operações</p>
                   </div>
                   <div className="bg-blue-50 px-3 py-1 rounded-full text-blue-600 font-bold text-[9px] uppercase tracking-widest">Tempo Real</div>
                 </div>

@@ -11,9 +11,9 @@ import { GoogleGenAI } from '@google/genai';
 import {
     AgentType, Batch, StockItem, Sale, Client,
     Transaction, Supplier, Payable, ScheduledOrder
-} from '../types';
-import { OrchestrationResult } from '../services/orchestratorService';
-import { fetchAllMarketData } from '../services/marketDataService';
+} from '../../types';
+import { OrchestrationResult } from '../../services/orchestratorService';
+import { fetchAllMarketData } from '../../services/marketDataService';
 import { OrchestratorView } from './OrchestratorView';
 import {
     PROMPT_SATISFACAO, PROMPT_COBRANCA, PROMPT_WHATSAPP_BOT, PROMPT_JURIDICO,
@@ -24,7 +24,7 @@ import {
 
 import { runCascade } from '../services/llmCascade';
 import { getAgentMemories, formatMemoriesForPrompt } from '../services/agentMemoryService';
-import { executeInterceptedMCPs } from '../services/mcpToolService';
+import { executeInterceptedMCPs } from '../../services/mcpToolService';
 
 // ═══ AGENT DEFS ═══
 interface AgentDef {

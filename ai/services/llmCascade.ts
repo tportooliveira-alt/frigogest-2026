@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { AgentType } from '../types';
+import { AgentType } from '../../types';
 
 // ═══ AI HIERARCHY — 4 Tiers ═══
 export type AITier = 'PEAO' | 'ESTAGIARIO' | 'FUNCIONARIO' | 'GERENTE' | 'MESTRA';

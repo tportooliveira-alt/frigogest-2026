@@ -9,7 +9,7 @@
  * CONSUMIDORES: dataPackets MARKETING, COMERCIAL, SATISFACAO
  */
 
-import { Sale, Client } from '../types';
+import { Client, Sale } from '../../types';
 
 export type ResultadoCampanha = 'COMPROU' | 'RESPONDEU' | 'IGNOROU' | 'NUMERO_ERRADO';
 
@@ -41,8 +41,8 @@ export interface ConversionPattern {
     // Por período do mês
     porPeriodoMes: {
         inicio: { total: number; comprou: number; taxa: number };  // dias 1-10
-        meio:   { total: number; comprou: number; taxa: number };  // dias 11-20
-        fim:    { total: number; comprou: number; taxa: number };  // dias 21-31
+        meio: { total: number; comprou: number; taxa: number };  // dias 11-20
+        fim: { total: number; comprou: number; taxa: number };  // dias 21-31
     };
 
     // Melhores horários (se data_venda tiver hora)
