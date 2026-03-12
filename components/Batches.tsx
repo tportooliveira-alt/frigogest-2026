@@ -169,6 +169,8 @@ const Batches: React.FC<BatchesProps> = ({
     forma_pagamento: 'PRAZO',
     valor_entrada: 0,
     prazo_dias: 30,
+    forma_pagamento_frete: 'VISTA',
+    prazo_dias_frete: 30,
     status: 'ABERTO',
     id_sequencia: 1,
     // Estágio 1 — Produção & Raça
@@ -1000,13 +1002,28 @@ Se algum item tiver discrepância que você não conseguiu resolver, marque vali
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Frete (R$)</label>
-                        <DecimalInput className="modern-input" placeholder="Frete" value={newBatch.frete || 0} onValueChange={v => setNewBatch({ ...newBatch, frete: v })} />
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1 text-blue-600">Frete Logística (R$)</label>
+                        <DecimalInput className="modern-input !border-blue-200 focus:!border-blue-500" placeholder="Frete" value={newBatch.frete || 0} onValueChange={v => setNewBatch({ ...newBatch, frete: v })} />
                       </div>
                       <div>
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2 px-1">Extras (R$)</label>
                         <DecimalInput className="modern-input" placeholder="Extras" value={newBatch.gastos_extras || 0} onValueChange={v => setNewBatch({ ...newBatch, gastos_extras: v })} />
                       </div>
+                    </div>
+
+                    {/* FREIGHT PAYMENT MODE */}
+                    <div className="mt-2 p-3 bg-blue-50 border border-blue-100 rounded-2xl">
+                      <label className="text-[9px] font-black text-blue-700 uppercase tracking-widest block mb-2">Pagamento do Frete</label>
+                      <div className="grid grid-cols-2 gap-2 mb-2">
+                        <button onClick={() => setNewBatch({ ...newBatch, forma_pagamento_frete: 'VISTA' })} className={`py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${newBatch.forma_pagamento_frete === 'VISTA' || !newBatch.forma_pagamento_frete ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-blue-600 border border-blue-200'}`}>À Vista</button>
+                        <button onClick={() => setNewBatch({ ...newBatch, forma_pagamento_frete: 'PRAZO' })} className={`py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${newBatch.forma_pagamento_frete === 'PRAZO' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-blue-600 border border-blue-200'}`}>À Prazo</button>
+                      </div>
+                      {newBatch.forma_pagamento_frete === 'PRAZO' && (
+                        <div>
+                          <label className="text-[9px] font-black text-blue-500 uppercase tracking-widest block mb-1">Prazo do Frete (Dias)</label>
+                          <input type="number" className="w-full bg-white border border-blue-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:border-blue-500 transition-all" placeholder="Ex: 15" value={newBatch.prazo_dias_frete || ''} onChange={e => setNewBatch({ ...newBatch, prazo_dias_frete: parseInt(e.target.value) || 0 })} />
+                        </div>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-2xl">

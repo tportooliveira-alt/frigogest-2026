@@ -98,6 +98,7 @@ const DataIntegrityWatchdog: React.FC<WatchdogProps> = ({ stock, sales, transact
                     );
 
                     // Verificação 3: Transação de compra geral que já inclui o frete no total
+                    // Verificação 3: Transação de compra geral que já inclui o frete no total
                     // (formato antigo: gado+frete+extras tudo numa transação TR-LOTE-xxx)
                     const hasCompraGeralComFrete = transactions.some(t =>
                         t.referencia_id === batch.id_lote &&
@@ -106,13 +107,27 @@ const DataIntegrityWatchdog: React.FC<WatchdogProps> = ({ stock, sales, transact
                         t.valor >= ((batch.valor_compra_total || 0) + (batch.frete || 0))
                     );
 
-                    if (!hasFretePayable && !hasFreteTx && !hasCompraGeralComFrete) {
+                    // Verificação 4: Novo padrão separado (App.tsx > registerBatchFinancial)
+                    const freteNovoTx = transactions.some(t =>
+                        (t.referencia_id === batch.id_lote || t.id.includes(`FRETE-${batch.id_lote}`)) &&
+                        t.categoria === 'FRETE' &&
+                        t.tipo === 'SAIDA' &&
+                        t.valor >= (batch.frete || 0)
+                    );
+
+                    const freteNovoPayable = payables.some(p =>
+                        p.id === `PAY-LOTE-FRETE-${batch.id_lote}` &&
+                        p.categoria === 'FRETE' &&
+                        p.valor >= (batch.frete || 0)
+                    );
+
+                    if (!hasFretePayable && !hasFreteTx && !hasCompraGeralComFrete && !freteNovoTx && !freteNovoPayable) {
                         const id = `MISSING-FREIGHT-${batch.id_lote}`;
                         if (!dismissedIds.has(id)) {
                             newViolations.push({
                                 id,
                                 type: 'WARNING',
-                                message: `Lote ${batch.id_lote} possui frete de R$${batch.frete?.toFixed(2)}, mas não foi lançado no Contas a Pagar/Caixa. Verifique se comprou com a versão antiga.`,
+                                message: `Lote ${batch.id_lote} possui frete de R$${batch.frete?.toFixed(2)}, mas não foi lançado no Contas a Pagar/Caixa de forma isolada nem na compra.`,
                                 timestamp: new Date().toLocaleTimeString()
                             });
                         }
