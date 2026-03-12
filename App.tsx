@@ -469,6 +469,33 @@ const App: React.FC = () => {
   const closedBatchIds = useMemo(() => new Set(closedBatches.map(b => b.id_lote)), [closedBatches]);
   const closedStock = useMemo(() => data.stock.filter(s => closedBatchIds.has(s.id_lote)), [data.stock, closedBatchIds]);
 
+  // KPIs para o home (Sidebar)
+  const homeKpis = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const firstOfMonth = today.substring(0, 7) + '-01';
+    const saldoCaixa = data.transactions.reduce((acc, t) => acc + (t.tipo === 'ENTRADA' ? t.valor : -t.valor), 0);
+    const aReceber = data.sales
+      .filter(s => s.status_pagamento !== 'ESTORNADO')
+      .reduce((acc, s) => acc + Math.max(0, (s.peso_real_saida * s.preco_venda_kg) - ((s as any).valor_pago || 0)), 0);
+    const aPagar = data.payables
+      .filter(p => p.status !== 'ESTORNADO' && p.status !== 'CANCELADO')
+      .reduce((acc, p) => acc + (p.valor - (p.valor_pago || 0)), 0);
+    const closedBatchMap = new Map(closedBatches.map(b => [b.id_lote, b]));
+    const stockValue = data.stock
+      .filter(s => s.status === 'DISPONIVEL')
+      .reduce((acc, s) => acc + (s.peso_entrada * (closedBatchMap.get(s.id_lote)?.custo_real_kg || 0)), 0);
+    const receitaMes = data.transactions
+      .filter(t => t.tipo === 'ENTRADA' && t.data >= firstOfMonth && t.data <= today)
+      .reduce((a, t) => a + t.valor, 0);
+    const despesasMes = data.transactions
+      .filter(t => t.tipo === 'SAIDA' && t.data >= firstOfMonth && t.data <= today)
+      .reduce((a, t) => a + t.valor, 0);
+    const margemMes = receitaMes > 0 ? ((receitaMes - despesasMes) / receitaMes) * 100 : 0;
+    const vencidas = data.payables
+      .filter(p => p.status !== 'PAGO' && p.status !== 'ESTORNADO' && p.status !== 'CANCELADO' && p.data_vencimento < today).length;
+    return { saldoCaixa, aReceber, aPagar, stockValue, receitaMes, despesasMes, margemMes, vencidas };
+  }, [data.transactions, data.sales, data.payables, data.stock, closedBatches]);
+
   const addBatch = async (batch: any): Promise<{ success: boolean; error?: string }> => {
     // 1. Preservar dados originais ANTES da sanitização
     const rawFormaPagamento = batch.forma_pagamento || 'OUTROS';
@@ -1224,7 +1251,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-sans overflow-x-hidden selection:bg-blue-200" >
-      {currentView === 'menu' && <Sidebar setView={setCurrentView} onLogout={handleLogout} onSyncSheets={isSheetsConfigured() ? async () => {
+      {currentView === 'menu' && <Sidebar setView={setCurrentView} kpis={homeKpis} onLogout={handleLogout} onSyncSheets={isSheetsConfigured() ? async () => {
         setSheetsSyncStatus('syncing');
         const r = await forceSyncToSheets(data);
         setSheetsSyncStatus(r.success ? 'ok' : 'error');

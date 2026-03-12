@@ -1,15 +1,29 @@
 import React from 'react';
-import { LayoutDashboard, Users, Package, Truck, Scale, Beef, DollarSign, LogOut, FileText, Zap, Calendar, Bot, Database, ShieldCheck, Sheet, Brain, MessageCircle, Megaphone, PlayCircle, ClipboardCheck, BarChart3, Target, Bell } from 'lucide-react';
+import { LayoutDashboard, Users, Package, Truck, Scale, Beef, DollarSign, LogOut, FileText, Zap, Calendar, Bot, Database, ShieldCheck, Sheet, Brain, MessageCircle, Megaphone, PlayCircle, ClipboardCheck, BarChart3, Target, Bell, TrendingUp, TrendingDown, Wallet, AlertTriangle } from 'lucide-react';
 import { APP_VERSION_SHORT, APP_BUILD_DATE } from '../constants';
+
+interface HomeKpis {
+  saldoCaixa: number;
+  aReceber: number;
+  aPagar: number;
+  stockValue: number;
+  receitaMes: number;
+  despesasMes: number;
+  margemMes: number;
+  vencidas: number;
+}
 
 interface SidebarProps {
   setView: (view: string) => void;
   onLogout: () => void;
   onSyncSheets?: () => void;
   sheetsSyncStatus?: 'idle' | 'syncing' | 'ok' | 'error';
+  kpis?: HomeKpis;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ setView, onLogout, onSyncSheets, sheetsSyncStatus }) => {
+const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+
+const Sidebar: React.FC<SidebarProps> = ({ setView, onLogout, onSyncSheets, sheetsSyncStatus, kpis }) => {
   const menuItems = [
     { id: 'dashboard', label: 'Painel Geral', description: 'Visão Macro & KPIs', icon: LayoutDashboard, color: 'text-blue-600', bg: 'bg-blue-50', glow: 'group-hover:shadow-lg' },
     { id: 'clients', label: 'Clientes', description: 'Agenda & Contatos', icon: Users, color: 'text-indigo-600', bg: 'bg-indigo-50', glow: 'group-hover:shadow-lg' },
@@ -68,6 +82,34 @@ const Sidebar: React.FC<SidebarProps> = ({ setView, onLogout, onSyncSheets, shee
             <div className="h-[1px] w-12 bg-gradient-to-l from-transparent to-white/30" />
           </div>
         </div>
+
+        {/* KPI Bar */}
+        {kpis && (
+          <div className="w-full grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {[
+              { label: 'Saldo Caixa', value: fmt(kpis.saldoCaixa), icon: Wallet, color: kpis.saldoCaixa >= 0 ? 'text-blue-200' : 'text-rose-300', sub: null },
+              { label: 'A Receber', value: fmt(kpis.aReceber), icon: TrendingUp, color: 'text-emerald-300', sub: null },
+              { label: 'A Pagar', value: fmt(kpis.aPagar), icon: TrendingDown, color: kpis.vencidas > 0 ? 'text-rose-300' : 'text-orange-300', sub: kpis.vencidas > 0 ? `${kpis.vencidas} vencida${kpis.vencidas > 1 ? 's' : ''}` : null },
+              { label: 'Estoque', value: fmt(kpis.stockValue), icon: Beef, color: 'text-amber-300', sub: null },
+              { label: 'Receita Mês', value: fmt(kpis.receitaMes), icon: BarChart3, color: 'text-cyan-300', sub: null },
+              { label: 'Margem Mês', value: `${kpis.margemMes.toFixed(1)}%`, icon: kpis.margemMes >= 0 ? TrendingUp : TrendingDown, color: kpis.margemMes >= 10 ? 'text-emerald-300' : kpis.margemMes >= 0 ? 'text-amber-300' : 'text-rose-300', sub: null },
+            ].map((kpi) => {
+              const Icon = kpi.icon;
+              return (
+                <div key={kpi.label} className="bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl px-4 py-3 flex flex-col gap-1 hover:bg-white/15 transition-all">
+                  <div className="flex items-center gap-1.5">
+                    <Icon size={11} className={`${kpi.color} shrink-0`} />
+                    <span className="text-[9px] font-black text-white/50 uppercase tracking-widest truncate">{kpi.label}</span>
+                  </div>
+                  <span className={`text-sm font-black tracking-tight ${kpi.color}`}>{kpi.value}</span>
+                  {kpi.sub && (
+                    <span className="text-[8px] font-black text-rose-300 uppercase animate-pulse">{kpi.sub}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Menu Grid Modern */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5 w-full">
