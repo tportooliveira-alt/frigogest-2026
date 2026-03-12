@@ -498,8 +498,16 @@ const App: React.FC = () => {
     if (!supabase) return { success: false, error: 'Supabase não configurado' };
 
     try {
-      // Salvar o lote
-      const { error: batchError } = await supabase.from('batches').upsert(cleanBatch);
+      // Salvar o lote — com fallback para bancos sem migration frete
+      let { error: batchError } = await supabase.from('batches').upsert(cleanBatch);
+      if (batchError?.code === 'PGRST204') {
+        // Coluna forma_pagamento_frete/prazo_dias_frete ainda não existe — salva sem elas
+        // registerBatchFinancial usa o objeto em memória, não o Supabase, então o financeiro funciona
+        const { forma_pagamento_frete: _fpf, prazo_dias_frete: _pdf, ...batchSemFrete } = cleanBatch as any;
+        const retry = await supabase.from('batches').upsert(batchSemFrete);
+        batchError = retry.error;
+        if (!batchError) console.warn('⚠️ Lote salvo sem campos de frete — rode a migration SQL no Supabase');
+      }
       if (batchError) throw batchError;
 
       // FINANCEIRO: Toda lógica de transação é responsabilidade exclusiva de
@@ -1290,8 +1298,13 @@ const App: React.FC = () => {
           addBatch={addBatch}
           updateBatch={async (id, updates) => {
             if (!supabase) return;
-            await supabase.from('batches').update(sanitize(updates)).eq('id_lote', id);
-            if (session?.user) logAction(session.user, 'UPDATE', 'BATCH', `Lote atualizado: ${id}`);
+            let { error } = await supabase.from('batches').update(sanitize(updates)).eq('id_lote', id);
+            if (error?.code === 'PGRST204') {
+              const { forma_pagamento_frete: _fpf, prazo_dias_frete: _pdf, ...updatesSemFrete } = updates as any;
+              const retry = await supabase.from('batches').update(sanitize(updatesSemFrete)).eq('id_lote', id);
+              error = retry.error;
+            }
+            if (!error && session?.user) logAction(session.user, 'UPDATE', 'BATCH', `Lote atualizado: ${id}`);
             fetchData();
           }}
           deleteBatch={estornoBatch}
