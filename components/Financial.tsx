@@ -298,6 +298,15 @@ const Financial: React.FC<FinancialProps> = ({
       .reduce((acc, p) => acc + (p.valor - (p.valor_pago || 0)), 0);
   }, [payables]);
 
+  const latePayablesCount = useMemo(() =>
+    payables.filter(p => p.status !== 'PAGO' && p.status !== 'ESTORNADO' && p.status !== 'CANCELADO' && p.data_vencimento < today).length,
+    [payables, today]
+  );
+  const todayPayablesCount = useMemo(() =>
+    payables.filter(p => p.status !== 'PAGO' && p.status !== 'ESTORNADO' && p.status !== 'CANCELADO' && p.data_vencimento === today).length,
+    [payables, today]
+  );
+
   const profitTotals = useMemo(() => {
     // CORREÇÃO: Usar sales independete do lote estar ativo localmente, desde que não estornado
     const validSales = sales.filter(s => s.status_pagamento !== 'ESTORNADO');
@@ -378,9 +387,14 @@ const Financial: React.FC<FinancialProps> = ({
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-4 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === tab ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'}`}
+                className={`relative px-4 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === tab ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'}`}
               >
                 {tab === 'overview' ? 'Visão Geral' : tab === 'cashflow' ? 'Fluxo Caixa' : tab === 'receivables' ? 'A Receber' : tab === 'payables' ? 'A Pagar' : tab === 'suppliers' ? 'Fornecedores' : 'DRE'}
+                {tab === 'payables' && latePayablesCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 bg-rose-500 rounded-full text-[8px] font-black text-white flex items-center justify-center animate-pulse shadow-sm">
+                    {latePayablesCount}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -532,6 +546,19 @@ const Financial: React.FC<FinancialProps> = ({
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Período Final</label>
                   <input type="date" className="modern-input h-14" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} />
                 </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Atalhos</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: 'Este Mês', fn: () => { const n = new Date(); setFilterStartDate(new Date(n.getFullYear(), n.getMonth(), 1).toISOString().split('T')[0]); setFilterEndDate(new Date(n.getFullYear(), n.getMonth() + 1, 0).toISOString().split('T')[0]); } },
+                      { label: 'Mês Ant.', fn: () => { const n = new Date(); setFilterStartDate(new Date(n.getFullYear(), n.getMonth() - 1, 1).toISOString().split('T')[0]); setFilterEndDate(new Date(n.getFullYear(), n.getMonth(), 0).toISOString().split('T')[0]); } },
+                      { label: 'Este Ano', fn: () => { const y = new Date().getFullYear(); setFilterStartDate(`${y}-01-01`); setFilterEndDate(`${y}-12-31`); } },
+                      { label: 'Tudo', fn: () => { setFilterStartDate('2020-01-01'); setFilterEndDate('2099-12-31'); } },
+                    ].map(s => (
+                      <button key={s.label} onClick={s.fn} className="py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider bg-slate-800 text-white hover:bg-blue-600 transition-all">{s.label}</button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -540,9 +567,15 @@ const Financial: React.FC<FinancialProps> = ({
             <div className="premium-card overflow-hidden">
               <div className="p-8 bg-slate-50/50 border-b border-slate-50 flex flex-wrap justify-between items-center gap-4">
                 <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Buffer de Movimentações</h4>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2">
                   <div className="px-4 py-1.5 bg-white rounded-full border border-slate-100 text-[10px] font-black text-slate-900 shadow-sm">
                     {filteredTransactions.length} Registros
+                  </div>
+                  <div className="px-3 py-1.5 bg-emerald-50 rounded-full border border-emerald-100 text-[10px] font-black text-emerald-700 shadow-sm">
+                    +{formatCurrency(filteredTransactions.filter(t => t.tipo === 'ENTRADA').reduce((a, t) => a + t.valor, 0))}
+                  </div>
+                  <div className="px-3 py-1.5 bg-rose-50 rounded-full border border-rose-100 text-[10px] font-black text-rose-700 shadow-sm">
+                    -{formatCurrency(filteredTransactions.filter(t => t.tipo === 'SAIDA').reduce((a, t) => a + t.valor, 0))}
                   </div>
                   <button
                     onClick={() => {
@@ -628,7 +661,23 @@ const Financial: React.FC<FinancialProps> = ({
                     }}
                     className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-sm"
                   >
-                    <Printer size={14} /> Exportar PDF
+                    <Printer size={14} /> PDF
+                  </button>
+                  <button
+                    onClick={() => {
+                      const header = 'Data,Descricao,Categoria,Tipo,Valor\n';
+                      const rows = filteredTransactions.map(t =>
+                        `${t.data},"${(t.descricao || '').replace(/"/g, '""')}",${t.categoria},${t.tipo},${t.tipo === 'ENTRADA' ? t.valor : -t.valor}`
+                      ).join('\n');
+                      const blob = new Blob(['\ufeff' + header + rows], { type: 'text/csv;charset=utf-8;' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url; a.download = `FLUXO_CAIXA_${filterStartDate}_${filterEndDate}.csv`;
+                      a.click(); URL.revokeObjectURL(url);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-sm"
+                  >
+                    <FileText size={14} /> CSV
                   </button>
                 </div>
               </div>
@@ -817,6 +866,31 @@ const Financial: React.FC<FinancialProps> = ({
 
       {activeTab === 'payables' && (
         <div className="max-w-7xl mx-auto space-y-10 animate-reveal">
+          {(latePayablesCount > 0 || todayPayablesCount > 0) && (
+            <div className={`rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border ${latePayablesCount > 0 ? 'bg-rose-50 border-rose-200' : 'bg-orange-50 border-orange-200'}`}>
+              <div className="flex items-center gap-3">
+                <AlertCircle size={20} className={latePayablesCount > 0 ? 'text-rose-600' : 'text-orange-500'} />
+                <div>
+                  {latePayablesCount > 0 && (
+                    <p className="text-xs font-black text-rose-700 uppercase tracking-wider">
+                      {latePayablesCount} conta{latePayablesCount > 1 ? 's' : ''} vencida{latePayablesCount > 1 ? 's' : ''} — pagamento em atraso
+                    </p>
+                  )}
+                  {todayPayablesCount > 0 && (
+                    <p className="text-xs font-black text-orange-600 uppercase tracking-wider">
+                      {todayPayablesCount} conta{todayPayablesCount > 1 ? 's' : ''} vence{todayPayablesCount > 1 ? 'm' : ''} hoje
+                    </p>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => setPayableFilterStatus('LATE')}
+                className={`text-[10px] font-black uppercase px-4 py-2 rounded-xl transition-all ${latePayablesCount > 0 ? 'bg-rose-600 text-white hover:bg-rose-700' : 'bg-orange-500 text-white hover:bg-orange-600'}`}
+              >
+                Ver Críticas
+              </button>
+            </div>
+          )}
           <div className="flex flex-col md:flex-row justify-between items-center gap-8">
             <div className="flex p-1.5 bg-white rounded-2xl border border-slate-100 shadow-sm">
               {(['ALL', 'PENDING', 'LATE', 'PAID'] as const).map(tab => (
