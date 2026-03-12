@@ -52,6 +52,10 @@ export interface Batch {
   url_romaneio?: string; // Novo campo para imagem/PDF do romaneio original
   status?: 'ABERTO' | 'FECHADO' | 'ESTORNADO';
   valor_entrada?: number; // Valor de entrada/adiantamento para compras a prazo
+  forma_pagamento?: 'VISTA' | 'PRAZO' | 'OUTROS';
+  prazo_dias?: number;
+  forma_pagamento_frete?: 'VISTA' | 'PRAZO' | 'OUTROS';
+  prazo_dias_frete?: number;
   // ═══ CAMPOS ESTÁGIO 1 — PRODUÇÃO & RAÇA ═══
   raca?: string; // Raça do lote (Nelore, Angus×Nelore, etc.)
   qtd_cabecas?: number; // Quantidade de cabeças no lote
@@ -128,7 +132,7 @@ export interface Transaction {
   data: string;
   descricao: string;
   tipo: 'ENTRADA' | 'SAIDA';
-  categoria: 'VENDA' | 'COMPRA_GADO' | 'OPERACIONAL' | 'ADMINISTRATIVO' | 'OUTROS' | 'ESTRUTURA' | 'FUNCIONARIOS' | 'INSUMOS' | 'MANUTENCAO' | 'IMPOSTOS' | 'DESCONTO' | 'ESTORNO';
+  categoria: 'VENDA' | 'COMPRA_GADO' | 'FRETE' | 'OPERACIONAL' | 'ADMINISTRATIVO' | 'OUTROS' | 'ESTRUTURA' | 'FUNCIONARIOS' | 'INSUMOS' | 'MANUTENCAO' | 'IMPOSTOS' | 'DESCONTO' | 'ESTORNO';
   valor: number;
   referencia_id?: string;
   metodo_pagamento?: PaymentMethod;
@@ -178,7 +182,7 @@ export interface AppState {
 export interface Payable {
   id: string;
   descricao: string;
-  categoria: 'OPERACIONAL' | 'ESTRUTURA' | 'FUNCIONARIOS' | 'INSUMOS' | 'MANUTENCAO' | 'IMPOSTOS' | 'OUTROS' | 'COMPRA_GADO';
+  categoria: 'OPERACIONAL' | 'ESTRUTURA' | 'FUNCIONARIOS' | 'INSUMOS' | 'MANUTENCAO' | 'IMPOSTOS' | 'OUTROS' | 'COMPRA_GADO' | 'FRETE';
 
   valor: number;
   valor_pago?: number;

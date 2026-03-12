@@ -45,8 +45,8 @@ import { runCascade } from './ai/services/llmCascade';
 
 
 const App: React.FC = () => {
-  // MODO OFFLINE: mude para true para testar sem internet
-  const OFFLINE_MODE = false;
+  // MODO OFFLINE: controlado pela variável VITE_OFFLINE_MODE no .env
+  const OFFLINE_MODE = (import.meta as any).env?.VITE_OFFLINE_MODE === 'true';
 
   const [session, setSession] = useState<any>(OFFLINE_MODE ? { user: { email: 'offline@local' } } : null);
   const [currentView, setCurrentView] = useState('menu');
@@ -744,11 +744,11 @@ const App: React.FC = () => {
       }
       console.log(`✅ ${salesCount} vendas atualizadas`);
 
-      // 5. Estornar transações de compra do lote — filtrado no banco
+      // 5. Estornar transações de compra do lote (Gado e Frete) — filtrado no banco
       const { data: loteTx } = await supabase.from('transactions').select('*')
-        .eq('referencia_id', id).eq('categoria', 'COMPRA_GADO');
+        .eq('referencia_id', id).in('categoria', ['COMPRA_GADO', 'FRETE']);
       const { data: descTx } = await supabase.from('transactions').select('*')
-        .like('descricao', `%${id}%`).eq('categoria', 'COMPRA_GADO');
+        .like('descricao', `%${id}%`).in('categoria', ['COMPRA_GADO', 'FRETE']);
       const seenTxIds = new Set<string>();
       const allComprasTx = [...(loteTx || []), ...(descTx || [])]
         .filter(t => {
@@ -841,7 +841,7 @@ const App: React.FC = () => {
     try {
       const [{ data: batchesData }, { data: payablesData }] = await Promise.all([
         supabase.from('batches').select('id_lote'),
-        supabase.from('payables').select('*').eq('categoria', 'COMPRA_GADO')
+        supabase.from('payables').select('*').in('categoria', ['COMPRA_GADO', 'FRETE'])
       ]);
 
       const existingLoteIds = new Set((batchesData || []).map((b: any) => b.id_lote));
@@ -904,6 +904,10 @@ const App: React.FC = () => {
   };
 
   const addTransaction = async (transaction: any) => {
+    if (OFFLINE_MODE) {
+      setData(prev => ({ ...prev, transactions: [...prev.transactions, transaction] }));
+      return;
+    }
     if (!supabase) return;
     const { error } = await supabase.from('transactions').upsert(sanitize(transaction));
     if (error) throw error;
@@ -912,28 +916,22 @@ const App: React.FC = () => {
   };
 
   const registerBatchFinancial = async (batch: Batch) => {
-    // 1. Separar custos de aquisição e frete
     const valorCompra = parseFloat(batch.valor_compra_total as any) || 0;
-    const frete = parseFloat(batch.frete as any) || 0;
     const extras = parseFloat(batch.gastos_extras as any) || 0;
-
-    // Gado + Extras compõem o valor do lote. Frete é isolado.
     const valorGadoTotal = valorCompra + extras;
 
-    // Se o custo total for zero (lote vazio), não tem o que registrar
+    const frete = parseFloat(batch.frete as any) || 0;
+
     if (valorGadoTotal + frete === 0) return;
 
-    const formaPagamento = (batch as any).forma_pagamento || 'OUTROS';
-    const valorEntrada = parseFloat((batch as any).valor_entrada) || 0;
     const dataRecebimento = batch.data_recebimento || todayBR();
 
-    console.log(`🏦 registerBatchFinancial Lote: ${batch.id_lote} | Gado+Extras: R$ ${valorGadoTotal.toFixed(2)} | Frete: R$ ${frete.toFixed(2)} | Form: ${formaPagamento}`);
+    console.log(`🏦 registerBatchFinancial Lote: ${batch.id_lote} | Gado+Extras: R$ ${valorGadoTotal.toFixed(2)} | Frete: R$ ${frete.toFixed(2)}`);
 
-    if (formaPagamento === 'VISTA') {
-      // PAGAMENTO TOTAL À VISTA (Caixa Imediato)
-
-      // 1. CAIXA: GADO
-      if (valorGadoTotal > 0) {
+    // -- 1. FINANCEIRO DO GADO --
+    const formaPagGado = (batch as any).forma_pagamento || 'VISTA';
+    if (valorGadoTotal > 0) {
+      if (formaPagGado === 'VISTA') {
         const txIdGado = `TR-LOTE-GADO-${batch.id_lote}`;
         const { data: existingTx } = await supabase!.from('transactions').select('id').eq('id', txIdGado).limit(1);
 
@@ -945,14 +943,64 @@ const App: React.FC = () => {
             tipo: 'SAIDA',
             categoria: 'COMPRA_GADO',
             valor: valorGadoTotal,
-            metodo_pagamento: formaPagamento,
+            metodo_pagamento: 'OUTROS',
             referencia_id: batch.id_lote
           } as any);
         }
-      }
+      } else {
+        const valorEntrada = parseFloat((batch as any).valor_entrada) || 0;
 
-      // 2. CAIXA: FRETE
-      if (frete > 0) {
+        if (valorEntrada > 0) {
+          const txEntradaId = `TR-LOTE-ENTRADA-${batch.id_lote}`;
+          const { data: existingEntrada } = await supabase!.from('transactions').select('id').eq('id', txEntradaId).limit(1);
+
+          if (!existingEntrada || existingEntrada.length === 0) {
+            await addTransaction({
+              id: txEntradaId,
+              data: dataRecebimento,
+              descricao: `Entrada/Adiantamento Lote ${batch.id_lote} - ${batch.fornecedor}`,
+              tipo: 'SAIDA',
+              categoria: 'COMPRA_GADO',
+              valor: Math.min(valorEntrada, valorGadoTotal),
+              metodo_pagamento: 'OUTROS',
+              referencia_id: batch.id_lote
+            } as any);
+          }
+        }
+
+        const valorRestanteGado = parseFloat((valorGadoTotal - valorEntrada).toFixed(2));
+        if (valorRestanteGado > 0) {
+          const vencimentoGado = (() => {
+            const d = new Date(dataRecebimento);
+            d.setDate(d.getDate() + ((batch as any).prazo_dias || 30));
+            return d.toISOString().split('T')[0];
+          })();
+
+          const payableGadoId = `PAY-LOTE-GADO-${batch.id_lote}`;
+          const { data: existingPayGado } = await supabase!.from('payables').select('id').eq('id', payableGadoId).limit(1);
+
+          if (!existingPayGado || existingPayGado.length === 0) {
+            await handleAddPayable({
+              id: payableGadoId,
+              id_lote: batch.id_lote,
+              descricao: `Pagamento Gado Lote ${batch.id_lote} - ${batch.fornecedor}`,
+              beneficiario: batch.fornecedor,
+              valor: valorRestanteGado,
+              valor_pago: 0,
+              data_vencimento: vencimentoGado,
+              status: 'PENDENTE',
+              categoria: 'COMPRA_GADO'
+            } as any);
+          }
+        }
+      }
+    }
+
+    // -- 2. FINANCEIRO DO FRETE --
+    if (frete > 0) {
+      const formaPagFrete = (batch as any).forma_pagamento_frete || 'VISTA';
+
+      if (formaPagFrete === 'VISTA') {
         const txIdFrete = `TR-LOTE-FRETE-${batch.id_lote}`;
         const { data: existingTxFrete } = await supabase!.from('transactions').select('id').eq('id', txIdFrete).limit(1);
 
@@ -964,68 +1012,17 @@ const App: React.FC = () => {
             tipo: 'SAIDA',
             categoria: 'FRETE',
             valor: frete,
-            metodo_pagamento: formaPagamento,
-            referencia_id: batch.id_lote
-          } as any);
-        }
-      }
-
-    } else if (formaPagamento === 'PRAZO') {
-      // COMPRA A PRAZO (A Pagar)
-
-      // 1. ENTRADA (vai abater prioritariamente do Gado)
-      if (valorEntrada > 0) {
-        const txEntradaId = `TR-LOTE-ENTRADA-${batch.id_lote}`;
-        const { data: existingEntrada } = await supabase!.from('transactions').select('id').eq('id', txEntradaId).limit(1);
-
-        if (!existingEntrada || existingEntrada.length === 0) {
-          await addTransaction({
-            id: txEntradaId,
-            data: dataRecebimento,
-            descricao: `Entrada/Adiantamento Lote ${batch.id_lote} - ${batch.fornecedor}`,
-            tipo: 'SAIDA',
-            categoria: 'COMPRA_GADO',
-            valor: Math.min(valorEntrada, valorGadoTotal + frete),
             metodo_pagamento: 'OUTROS',
             referencia_id: batch.id_lote
           } as any);
         }
-      }
+      } else {
+        const vencimentoFrete = (() => {
+          const d = new Date(dataRecebimento);
+          d.setDate(d.getDate() + ((batch as any).prazo_dias_frete || 15));
+          return d.toISOString().split('T')[0];
+        })();
 
-      const vencimentoBase = (() => {
-        const d = new Date(dataRecebimento);
-        d.setDate(d.getDate() + ((batch as any).prazo_dias || 30));
-        return d.toISOString().split('T')[0];
-      })();
-
-      // Distribuição da entrada para calcular o A Pagar pendente:
-      const entradaNoGado = Math.min(valorEntrada, valorGadoTotal);
-      const entradaNoFrete = Math.max(0, valorEntrada - valorGadoTotal);
-
-      // 2. PAYABLE DO GADO (Se restou valor após a entrada)
-      const valorRestanteGado = parseFloat((valorGadoTotal - entradaNoGado).toFixed(2));
-      if (valorRestanteGado > 0) {
-        const payableGadoId = `PAY-LOTE-GADO-${batch.id_lote}`;
-        const { data: existingPayGado } = await supabase!.from('payables').select('id').eq('id', payableGadoId).limit(1);
-
-        if (!existingPayGado || existingPayGado.length === 0) {
-          await handleAddPayable({
-            id: payableGadoId,
-            id_lote: batch.id_lote,
-            descricao: `Pagamento Gado Lote ${batch.id_lote} - ${batch.fornecedor}`,
-            beneficiario: batch.fornecedor,
-            valor: valorRestanteGado,
-            valor_pago: 0,
-            data_vencimento: vencimentoBase,
-            status: 'PENDENTE',
-            categoria: 'COMPRA_GADO'
-          } as any);
-        }
-      }
-
-      // 3. PAYABLE DO FRETE (Separado)
-      const freteRealPendente = parseFloat((frete - entradaNoFrete).toFixed(2));
-      if (freteRealPendente > 0) {
         const payableFreteId = `PAY-LOTE-FRETE-${batch.id_lote}`;
         const { data: existingPayFrete } = await supabase!.from('payables').select('id').eq('id', payableFreteId).limit(1);
 
@@ -1034,10 +1031,10 @@ const App: React.FC = () => {
             id: payableFreteId,
             id_lote: batch.id_lote,
             descricao: `Pagamento Frete Lote ${batch.id_lote} - ${batch.fornecedor}`,
-            beneficiario: batch.fornecedor,
-            valor: freteRealPendente,
+            beneficiario: batch.fornecedor,  // (Futuro: Vincular com tabela de Transportadores)
+            valor: frete,
             valor_pago: 0,
-            data_vencimento: vencimentoBase,
+            data_vencimento: vencimentoFrete,
             status: 'PENDENTE',
             categoria: 'FRETE'
           } as any);

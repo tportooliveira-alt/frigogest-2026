@@ -85,7 +85,7 @@ const DataIntegrityWatchdog: React.FC<WatchdogProps> = ({ stock, sales, transact
                         (p.id_lote === batch.id_lote ||
                             (p.id && p.id.includes(batch.id_lote))) &&
                         (p.descricao?.toLowerCase().includes('frete') ||
-                            (p.id && p.id.startsWith('PAY-FRETE-')))
+                            (p.id && p.id.startsWith('PAY-LOTE-FRETE-')))
                     );
 
                     // Verificação 2: Transação de frete específica (formato novo)
