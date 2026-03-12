@@ -324,6 +324,21 @@ const Financial: React.FC<FinancialProps> = ({
 
 
 
+  // DADOS MENSAIS para o DRE
+  const monthlyChartData = useMemo(() => {
+    const months: Record<string, { mes: string, receita: number, despesas: number, lucro: number }> = {};
+    validTransactions.forEach(t => {
+      const key = t.data.substring(0, 7); // YYYY-MM
+      if (!months[key]) months[key] = { mes: key, receita: 0, despesas: 0, lucro: 0 };
+      if (t.tipo === 'ENTRADA') months[key].receita += t.valor;
+      else months[key].despesas += t.valor;
+    });
+    return Object.values(months)
+      .sort((a, b) => a.mes.localeCompare(b.mes))
+      .slice(-8)
+      .map(m => ({ ...m, lucro: m.receita - m.despesas, mesLabel: m.mes.substring(5) + '/' + m.mes.substring(2, 4) }));
+  }, [validTransactions]);
+
   // CLIENT RANKING (CURVA ABC)
   const clientRanking = useMemo(() => {
     const clientStats = new Map<string, { revenue: number, profit: number, volume: number }>();
@@ -1019,14 +1034,75 @@ const Financial: React.FC<FinancialProps> = ({
             ))}
           </div>
 
-          <div className="premium-card p-24 bg-white flex flex-col items-center justify-center border-dashed border-2 border-slate-100 relative overflow-hidden">
-            <div className="absolute inset-0 bg-slate-50/10 pointer-events-none" />
-            <div className="relative z-10 text-center">
-              <div className="w-24 h-24 bg-slate-50 rounded-[32px] flex items-center justify-center mx-auto mb-8 shadow-inner animate-pulse">
-                <PieChart size={48} className="text-slate-200" />
+          {/* DRE — Demonstrativo de Resultado */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Coluna esquerda: DRE estruturado */}
+            <div className="premium-card p-8 bg-white">
+              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                <FileText size={14} className="text-blue-600" /> DRE — Demonstrativo de Resultado
+              </h4>
+              <div className="space-y-1">
+                {(() => {
+                  const freteTotal = validTransactions.filter(t => t.tipo === 'SAIDA' && t.categoria === 'FRETE').reduce((a, t) => a + t.valor, 0);
+                  const gado = validTransactions.filter(t => t.tipo === 'SAIDA' && t.categoria === 'COMPRA_GADO').reduce((a, t) => a + t.valor, 0);
+                  const operacional = validTransactions.filter(t => t.tipo === 'SAIDA' && !['COMPRA_GADO', 'FRETE', 'ESTORNO'].includes(t.categoria || '')).reduce((a, t) => a + t.valor, 0);
+                  const lucroBruto = profitTotals.revenue - profitTotals.cgs - freteTotal;
+                  const margemBruta = profitTotals.revenue > 0 ? (lucroBruto / profitTotals.revenue) * 100 : 0;
+                  const ebitda = lucroBruto - operacional;
+                  const margemEbitda = profitTotals.revenue > 0 ? (ebitda / profitTotals.revenue) * 100 : 0;
+                  const rows = [
+                    { label: 'Receita Bruta de Vendas', value: profitTotals.revenue, sign: '+', bold: false, color: 'text-slate-900' },
+                    { label: '(-) Custo Matéria-Prima (Gado)', value: -gado, sign: '-', bold: false, color: 'text-rose-600' },
+                    { label: '(-) Frete de Compra', value: -freteTotal, sign: '-', bold: false, color: 'text-rose-600' },
+                    { label: '= Lucro Bruto', value: lucroBruto, sign: '=', bold: true, color: lucroBruto >= 0 ? 'text-emerald-600' : 'text-rose-600', sub: `Margem ${margemBruta.toFixed(1)}%` },
+                    { label: '(-) Despesas Operacionais', value: -operacional, sign: '-', bold: false, color: 'text-orange-600' },
+                    { label: '= EBITDA', value: ebitda, sign: '=', bold: true, color: ebitda >= 0 ? 'text-blue-600' : 'text-rose-600', sub: `Margem ${margemEbitda.toFixed(1)}%` },
+                  ];
+                  return rows.map((r, i) => (
+                    <div key={i} className={`flex justify-between items-center py-2.5 ${r.bold ? 'border-t-2 border-slate-200 mt-2 pt-3' : 'border-b border-slate-50'}`}>
+                      <div>
+                        <span className={`text-xs font-${r.bold ? 'black' : 'bold'} ${r.bold ? r.color : 'text-slate-600'}`}>{r.label}</span>
+                        {r.sub && <span className="ml-2 text-[9px] font-black text-slate-400 bg-slate-50 px-2 py-0.5 rounded">{r.sub}</span>}
+                      </div>
+                      <span className={`text-sm font-black ${r.color}`}>{formatCurrency(Math.abs(r.value))}</span>
+                    </div>
+                  ));
+                })()}
               </div>
-              <h4 className="font-black text-xs uppercase tracking-[0.8em] text-slate-300">Visualização de Gráficos Analíticos</h4>
-              <p className="text-[10px] font-bold text-slate-200 uppercase tracking-widest mt-4">Processando Motor de Inteligência BI...</p>
+            </div>
+
+            {/* Coluna direita: gráfico evolução mensal */}
+            <div className="premium-card p-8 bg-white">
+              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                <Activity size={14} className="text-blue-600" /> Evolução Mensal (Caixa)
+              </h4>
+              {monthlyChartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={260}>
+                  <AreaChart data={monthlyChartData} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
+                    <defs>
+                      <linearGradient id="gradReceita" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="gradDespesas" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.2} />
+                        <stop offset="95%" stopColor="#f43f5e" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="mesLabel" tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }} />
+                    <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                    <Tooltip formatter={(v: number) => formatCurrency(v)} labelStyle={{ fontWeight: 800, fontSize: 11 }} />
+                    <Legend wrapperStyle={{ fontSize: 10, fontWeight: 700 }} />
+                    <Area type="monotone" dataKey="receita" name="Receita" stroke="#3b82f6" fill="url(#gradReceita)" strokeWidth={2} dot={false} />
+                    <Area type="monotone" dataKey="despesas" name="Despesas" stroke="#f43f5e" fill="url(#gradDespesas)" strokeWidth={2} dot={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-64 flex items-center justify-center">
+                  <p className="text-[10px] font-black text-slate-200 uppercase tracking-widest">Sem dados no período</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
