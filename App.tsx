@@ -175,12 +175,12 @@ const App: React.FC = () => {
         });
         setAiosAlerts(triggers);
 
-        // AUTO-ORCHESTRATION: Se houver BLOQUEIO, inicia o conselho de agentes automaticamente
-        const bloqueio = triggers.find(t => t.severity === 'BLOQUEIO');
-        if (bloqueio && !isOrchestrating && !orchestratorResult) {
-          console.log('[AIOS] 🚨 Bloqueio detectado! Iniciando Orquestrador para:', bloqueio.title);
-          executeOrchestration(bloqueio.title + ": " + bloqueio.message);
-        }
+        // // AUTO-ORCHESTRATION: Se houver BLOQUEIO, inicia o conselho de agentes automaticamente
+        // const bloqueio = triggers.find(t => t.severity === 'BLOQUEIO');
+        // if (bloqueio && !isOrchestrating && !orchestratorResult) {
+        //   console.log('[AIOS] 🚨 Bloqueio detectado! Iniciando Orquestrador para:', bloqueio.title);
+        //   executeOrchestration(bloqueio.title + ": " + bloqueio.message);
+        // }
 
         // Marca briefing como mostrado hoje (1x/dia)
         if (triggers.some(t => t.triggerId.startsWith('briefing-'))) {
@@ -218,7 +218,7 @@ const App: React.FC = () => {
   const executeOrchestration = async (topic: string) => {
     if (isOrchestrating) return;
     setIsOrchestrating(true);
-    setCurrentView('orchestrator');
+        // FIX: Orquestrador roda em background; view muda APENAS via botão manual
     try {
       // Snapshot básico para o orquestrador
       const snapshot = `STK: ${data.stock.length} itens | FIN: R$ ${data.transactions.reduce((acc, t) => acc + (t.tipo === 'ENTRADA' ? t.valor : -t.valor), 0).toFixed(2)} | CLT: ${data.clients.length}`;

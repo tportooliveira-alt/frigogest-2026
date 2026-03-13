@@ -1,9 +1,9 @@
 import { AppState, StockType, Transaction } from './types';
 
 // ===== VERSÃO DO SISTEMA — FONTE ÚNICA DE VERDADE =====
-export const APP_BUILD_DATE = '2026-02-26';
-export const APP_VERSION_SHORT = '3.0.0';
-export const APP_VERSION_LABEL = 'FrigoGest v3.0.0';
+export const APP_BUILD_DATE = '2026-03-13';
+export const APP_VERSION_SHORT = '3.1.0';
+export const APP_VERSION_LABEL = 'FrigoGest v3.1.0';
 // ======================================================
 
 export const CURRENT_DATE = new Date().toISOString().split('T')[0];
