@@ -1,0 +1,22 @@
+Navigating to production app https://gestfri.web.app ...
+Waiting for #root or login...
+HTML Dump:
+<!DOCTYPE html><html lang="pt-BR"><head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#3b82f6">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+
+  <title>FrigoGest 2026 - Conectado</title>
+
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  <link rel="icon" type="image/png" sizes="192x192" href="/manifest-icon-192.maskable.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="/manifest-icon-512.maskable.png">
+  <link rel="apple-touch-icon" href="apple-icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+
+  <link rel="apple-touch-startup-image" href="apple-splash-2048-2732.jpg" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+  <link rel="apple-touch-startup-image" href="apple-splash-2732-2048.jpg" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)">
+  <link rel="apple-touch-startup-image" href="apple-splash-1668-2388.jpg" media="(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+  <link rel="apple-touch-startup-image" href="apple-splash-2388-1668.jpg" media="(device-width: 834px) and (device-height: 1194
