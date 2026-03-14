@@ -5,13 +5,13 @@ import Clients from './components/Clients';
 import Batches from './components/Batches';
 import GTAManager from './components/GTAManager';
 import Stock from './components/Stock';
-import Expedition from './components/Expedition';
+import Expedition from './comphonents/Expedition';
 import Financial from './components/Financial';
 import SalesHistory from './components/SalesHistory';
 
 import ScheduledOrders from './components/ScheduledOrders';
 import Login from './components/Login';
-import SystemReset from './components/SystemReset';
+import SystemReset from './components/SystemReseth';h
 import Suppliers from './components/Suppliers';
 import { AppState, Sale, PaymentMethod, StockItem, Batch, Client, Transaction, DailyReport, Supplier, Payable } from './types';
 import { MOCK_DATA, APP_VERSION_LABEL, APP_VERSION_SHORT } from './constants';
@@ -71,13 +71,13 @@ const App: React.FC = () => {
 
     const timeout = setTimeout(() => { setLoading(false); }, 5000);
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    (supabase.auth as any).getSession().then(({ data: { session } }) => {
       setSession(session);
       setLoading(false);
       clearTimeout(timeout);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = (supabase.auth as any).onAuthStateChange((_event, session) => {
       setSession(session);
       setLoading(false);
       clearTimeout(timeout);
@@ -1231,7 +1231,7 @@ const App: React.FC = () => {
   const handleLogout = async () => {
     if (supabase) {
       if (session?.user) logAction(session.user, 'LOGOUT', 'SYSTEM', `Usuário saiu do sistema`);
-      await supabase.auth.signOut();
+      await (supabase.auth as any).signOut();
     }
     setSession(null);
     setCurrentView('menu');
