@@ -14,7 +14,7 @@ import {
 } from '../../types';
 import { OrchestrationResult } from '../../services/orchestratorService';
 import { fetchAllMarketData } from '../../services/marketDataService';
-import { OrchestratorView } from './OrchestratorView';
+import { OrchestratorView } from '../../components/OrchestratorView';
 import {
     PROMPT_SATISFACAO, PROMPT_COBRANCA, PROMPT_WHATSAPP_BOT, PROMPT_JURIDICO,
     PROMPT_FLUXO_CAIXA, PROMPT_RH_GESTOR, PROMPT_FISCAL_CONTABIL, PROMPT_QUALIDADE,
