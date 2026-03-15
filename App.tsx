@@ -5,13 +5,13 @@ import Clients from './components/Clients';
 import Batches from './components/Batches';
 import GTAManager from './components/GTAManager';
 import Stock from './components/Stock';
-import Expedition from './comphonents/Expedition';
+import Expedition from './components/Expedition';
 import Financial from './components/Financial';
 import SalesHistory from './components/SalesHistory';
 
 import ScheduledOrders from './components/ScheduledOrders';
 import Login from './components/Login';
-import SystemReset from './components/SystemReseth';h
+import SystemReset from './components/SystemReset';
 import Suppliers from './components/Suppliers';
 import { AppState, Sale, PaymentMethod, StockItem, Batch, Client, Transaction, DailyReport, Supplier, Payable } from './types';
 import { MOCK_DATA, APP_VERSION_LABEL, APP_VERSION_SHORT } from './constants';
