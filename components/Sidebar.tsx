@@ -7,7 +7,7 @@ interface HomeKpis {
   aReceber: number;
   aPagar: number;
   stockValue: number;
-  receitaMes: number;
+  recebimentosMes: number;
   despesasMes: number;
   margemMes: number;
   vencidas: number;
@@ -91,7 +91,7 @@ const Sidebar: React.FC<SidebarProps> = ({ setView, onLogout, onSyncSheets, shee
               { label: 'A Receber', value: fmt(kpis.aReceber), icon: TrendingUp, color: 'text-emerald-300', sub: null },
               { label: 'A Pagar', value: fmt(kpis.aPagar), icon: TrendingDown, color: kpis.vencidas > 0 ? 'text-rose-300' : 'text-orange-300', sub: kpis.vencidas > 0 ? `${kpis.vencidas} vencida${kpis.vencidas > 1 ? 's' : ''}` : null },
               { label: 'Estoque', value: fmt(kpis.stockValue), icon: Beef, color: 'text-amber-300', sub: null },
-              { label: 'Receita Mês', value: fmt(kpis.receitaMes), icon: BarChart3, color: 'text-cyan-300', sub: null },
+              { label: 'Recebimentos Mês', value: fmt(kpis.recebimentosMes), icon: BarChart3, color: 'text-cyan-300', sub: null },
               { label: 'Margem Mês', value: `${kpis.margemMes.toFixed(1)}%`, icon: kpis.margemMes >= 0 ? TrendingUp : TrendingDown, color: kpis.margemMes >= 10 ? 'text-emerald-300' : kpis.margemMes >= 0 ? 'text-amber-300' : 'text-rose-300', sub: null },
             ].map((kpi) => {
               const Icon = kpi.icon;

@@ -53,7 +53,8 @@ const SalesHistory: React.FC<SalesHistoryProps> = ({ stock, batches, sales, clie
     };
 
     const salesData = useMemo(() => {
-        return sales.map(sale => {
+        // Bug#2: excluir vendas ESTORNADAS dos totais
+        return sales.filter(function(sale) { return sale.status_pagamento !== 'ESTORNADO'; }).map(sale => {
             const item = stock.find(s => s.id_completo === sale.id_completo);
             // CORREÇÃO AUDITORIA #3: Para carcaças inteiras (id_completo = "LOTE-SEQ-INTEIRO"),
             // não existe stock item com esse ID. Extrair id_lote do id_completo como fallback.

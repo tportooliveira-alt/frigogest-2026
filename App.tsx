@@ -484,16 +484,31 @@ const App: React.FC = () => {
     const stockValue = data.stock
       .filter(s => s.status === 'DISPONIVEL')
       .reduce((acc, s) => acc + (s.peso_entrada * (closedBatchMap.get(s.id_lote)?.custo_real_kg || 0)), 0);
-    const receitaMes = data.transactions
+    // RECEBIMENTOS DO MES: regime de caixa (dinheiro que efetivamente entrou no mes)
+    const recebimentosMes = data.transactions
       .filter(t => t.tipo === 'ENTRADA' && t.data >= firstOfMonth && t.data <= today)
       .reduce((a, t) => a + t.valor, 0);
     const despesasMes = data.transactions
       .filter(t => t.tipo === 'SAIDA' && t.data >= firstOfMonth && t.data <= today)
       .reduce((a, t) => a + t.valor, 0);
-    const margemMes = receitaMes > 0 ? ((receitaMes - despesasMes) / receitaMes) * 100 : 0;
+    // FATURAMENTO DO MES: regime de competencia (vendas emitidas no mes, excluindo estornos)
+    const vendasMes = data.sales.filter(function(s) {
+      return s.status_pagamento !== 'ESTORNADO' &&
+        s.data_venda >= firstOfMonth &&
+        s.data_venda <= today;
+    });
+    const faturamentoMes = vendasMes.reduce(function(a, s) { return a + (s.peso_real_saida * s.preco_venda_kg); }, 0);
+    // CMV DO MES: custo medio real (custo_real_kg * kg vendidos + extras)
+    const cmvMes = vendasMes.reduce(function(a, s) {
+      const loteId = s.id_completo.split('-').slice(0, 3).join('-');
+      const custo = closedBatchMap.get(loteId)?.custo_real_kg || 0;
+      return a + (s.peso_real_saida * custo) + (s.custo_extras_total || 0);
+    }, 0);
+    // MARGEM OPERACIONAL CORRETA: (Faturamento - CMV) / Faturamento
+    const margemMes = faturamentoMes > 0 ? ((faturamentoMes - cmvMes) / faturamentoMes) * 100 : 0;
     const vencidas = data.payables
       .filter(p => p.status !== 'PAGO' && p.status !== 'ESTORNADO' && p.status !== 'CANCELADO' && p.data_vencimento < today).length;
-    return { saldoCaixa, aReceber, aPagar, stockValue, receitaMes, despesasMes, margemMes, vencidas };
+    return { saldoCaixa, aReceber, aPagar, stockValue, recebimentosMes, despesasMes, faturamentoMes, cmvMes, margemMes, vencidas };
   }, [data.transactions, data.sales, data.payables, data.stock, closedBatches]);
 
   const addBatch = async (batch: any): Promise<{ success: boolean; error?: string }> => {
