@@ -18,7 +18,7 @@ import { parseActionsFromResponse, DetectedAction, generateWhatsAppLink } from '
 import { calculatePredictions, formatPredictionsForPrompt, PredictiveSnapshot } from '../../utils/predictions';
 import { WHATSAPP_TEMPLATES, generateCatalogFromStock, suggestTemplateForClient, generateWhatsAppLinkFromTemplate, TemplateType } from '../../services/whatsappCommerceService';
 import { generateContent, detectContentRequest, GeneratedContent, ContentStudioRequest } from '../../services/contentStudioService';
-import ContentStudioModal from './ContentStudioModal';
+import ContentStudioModal from '../../components/ContentStudioModal';
 import { generateDRE, formatDREText, calculateESGScore, COMPLIANCE_CHECKLIST, DREReport } from '../../services/complianceService';
 import { calcularPrecificacao, formatPrecificacaoForPrompt, PrecificacaoItem } from '../../services/pricingEngine';
 import { calculateClientScores, formatRFMForPrompt, getClientTierSummary, ClientScore } from '../../services/clientScoringService';
