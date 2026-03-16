@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
     ArrowLeft, Brain, Shield, TrendingUp, BarChart3,
     Bell, CheckCircle, AlertTriangle, XCircle, Eye,

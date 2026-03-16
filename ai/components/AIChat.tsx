@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
     ArrowLeft, Send, MessageCircle, Users, Clock,
     Brain, Shield, TrendingUp, BarChart3, Package,
