@@ -1,7 +1,0 @@
-﻿App.tsx(757,73): error TS2304: Cannot find name 'novoStatus'.
-App.tsx(760,16): error TS2304: Cannot find name 'isPago'.
-App.tsx(760,26): error TS2304: Cannot find name 'isParcial'.
-App.tsx(760,40): error TS2304: Cannot find name 'valorPago'.
-App.tsx(768,22): error TS2304: Cannot find name 'isPago'.
-App.tsx(768,47): error TS2304: Cannot find name 'valorPago'.
-services/marketDataService.ts(148,5): error TS2741: Property 'data' is missing in type '{ valor: number; vencimento: string; fonte: string; }' but required in type '{ valor: number; vencimento: string; data: string; fonte: string; }'.

@@ -1,1 +1,0 @@
-﻿components/AlertCenter.tsx(21,42): error TS2304: Cannot find name 'AlertConfig'.
