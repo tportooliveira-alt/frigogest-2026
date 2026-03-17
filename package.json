@@ -1,52 +1,44 @@
 {
-  "name": "frigogest-2026",
-  "private": true,
-  "version": "3.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "@google/genai": "^1.37.0",
-    "@supabase/supabase-js": "^2.98.0",
-    "firebase": "^11.10.0",
-    "html2canvas": "^1.4.1",
-    "jspdf": "^2.5.2",
-    "lucide-react": "^0.475.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "recharts": "^2.15.1"
-  },
-  "devDependencies": {
-    "@types/html2canvas": "^0.5.35",
-    "@types/react": "^19.0.8",
-    "@types/react-dom": "^19.0.3",
-    "@types/xlsx": "^0.0.35",
-    "@vitejs/plugin-react": "^4.3.4",
-    "autoprefixer": "^10.4.20",
-    "dotenv": "^17.3.1",
-    "firebase-admin": "^13.7.0",
-    "postcss": "^8.5.1",
-    "tailwindcss": "^3.4.17",
-    "ts-node": "^10.9.2",
-    "tsx": "^4.21.0",
-    "typescript": "^5.7.3",
-    "vite": "^6.0.11",
-    "vite-plugin-pwa": "^0.21.1"
-  },
-  "description": "- **Deploy:** Firebase Hosting\r - **Versão:** FG-PRO_v2.7.0\r - **Última atualização:** 24/02/2026\r - **Versão centralizada em:** `constants.ts` → `APP_VERSION`",
-  "main": "analyze_finances.js",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/tportooliveira-alt/frigogest-2026.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/tportooliveira-alt/frigogest-2026/issues"
-  },
-  "homepage": "https://github.com/tportooliveira-alt/frigogest-2026#readme"
+    "name": "frigogest-2026",
+    "private": true,
+    "version": "3.0.0",
+    "description": "Sistema de Gestão de Frigorífico com Biometria - FG-PRO v3.0.0",
+    "type": "module",
+    "scripts": {
+          "dev": "vite",
+          "build": "tsc --noEmit && vite build",
+          "preview": "vite preview"
+    },
+    "dependencies": {
+          "@google/genai": "^1.37.0",
+          "@supabase/supabase-js": "^2.98.0",
+          "html2canvas": "^1.4.1",
+          "jspdf": "^2.5.2",
+          "lucide-react": "^0.475.0",
+          "react": "^19.0.0",
+          "react-dom": "^19.0.0",
+          "recharts": "^2.15.1"
+    },
+    "devDependencies": {
+          "@types/html2canvas": "^0.5.35",
+          "@types/react": "^19.0.8",
+          "@types/react-dom": "^19.0.3",
+          "@types/xlsx": "^0.0.35",
+          "@vitejs/plugin-react": "^4.3.4",
+          "autoprefixer": "^10.4.20",
+          "dotenv": "^17.3.1",
+          "postcss": "^8.5.1",
+          "tailwindcss": "^3.4.17",
+          "ts-node": "^10.9.2",
+          "tsx": "^4.21.0",
+          "typescript": "^5.7.3",
+          "vite": "^6.0.11",
+          "vite-plugin-pwa": "^0.21.1"
+    },
+    "repository": {
+          "type": "git",
+          "url": "git+https://github.com/tportooliveira-alt/frigogest-2026.git"
+    },
+    "author": "tportooliveira-alt",
+    "license": "ISC"
 }
