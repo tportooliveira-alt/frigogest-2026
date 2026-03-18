@@ -332,8 +332,8 @@ Com base nestes dados absolutos de excelência financeira e cenário macro agres
 
             // Salvar memória do agente consultor
             try {
-                const insights = extractInsightsFromResponse(cleanText, agent, 'ORQUESTRAÇÃO', 0, 'REUNIAO');
-                saveAgentMemory(insights);
+                const insights = extractInsightsFromResponse(cleanText);
+                saveAgentMemory(String(agent), 'ORQUESTRAÇÃO', insights);
             } catch (memErr) {
                 console.warn('[Orchestrator] Falha ao salvar memória do consultor:', agent, memErr);
             }
@@ -389,8 +389,8 @@ Responda EXATAMENTE neste formato (sem alterar os rótulos):
 
         // Salvar memória da Dona Clara (Administrativo)
         try {
-            const insights = extractInsightsFromResponse(finalCleanText, 'ADMINISTRATIVO', 'ORQUESTRAÇÃO', 0, 'REUNIAO');
-            saveAgentMemory(insights);
+            const insights = extractInsightsFromResponse(finalCleanText);
+            saveAgentMemory('ADMINISTRATIVO', 'ORQUESTRAÇÃO', insights);
         } catch (memErr) {
             console.warn('[Orchestrator] Falha ao salvar memória da Dona Clara:', memErr);
         }
