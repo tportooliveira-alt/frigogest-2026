@@ -1,6 +1,6 @@
 # 📍 CHECKPOINT — FrigoGest 2026
 **Última sessão:** 18/03/2026
-**Último commit:** 27c3c58
+**Último commit:** 905d84c
 **Branch:** main
 **Deploy:** gestfri.web.app (CI/CD automático via GitHub Actions)
 
@@ -17,47 +17,49 @@
 - S1-06: 11 índices PostgreSQL criados no Supabase
 
 ### Sprint 2 — Entrada de Lote + Vendas (100% ✅)
-- S2-01: Campos frete PRAZO/VISTA já existiam na UI — funcionam após S1-01
-- S2-02: Romaneio IA já importava pesos automaticamente
-- S2-03: Peso real de saída (itemWeights) já existia e funcionava
+- S2-01/02/03: Campos frete, romaneio IA e peso real de saída já existiam
 - S2-05: Painel de lucro estimado em tempo real na expedição
-- S2-06: Campo de observações por venda (corte especial, horário, etc)
-- S2-07: Seleção de transportadora na expedição (suppliers categoria TRANSPORTADORA)
+- S2-06: Campo de observações por venda
+- S2-07: Seleção de transportadora na expedição
 - S2-08: Alerta quando preço de venda está abaixo do custo real
+
+### Sprint 3 — Módulos IA (100% ✅)
+- S3-01: ai/services/llmCascade.ts — cascata Groq → Gemini → Claude Haiku
+- S3-02: ai/components/AIChat.tsx — chat com 17 agentes + contexto real
+- S3-03: ai/services/autoTriggerService.ts — 8 sentinelas AIOS determinísticos
+- S3-04: ai/services/agentMemoryService.ts — memória dos agentes no Supabase
+- S3-05: ai/components/AIAgents.tsx — painel de agentes com consulta individual
+- S3-06: ai/components/AIOSPanel.tsx — painel de alertas com dismiss e navegação
+- S3-07: agentPrompts/index.ts — prompts externalizados dos 17 agentes
+- S3-09: ai/components/AIMeetingRoom.tsx — 5 agentes em paralelo (Promise.allSettled)
+- Extra: ai/components/SalesAgent.tsx — agente Marcos (Comercial)
 
 ---
 
-## 🔜 PRÓXIMO: Sprint 3 — Reconstrução dos Módulos IA
+## 🔜 PRÓXIMO: Sprint 4 — Financeiro Avançado
 
 ### Tarefas em ordem:
 | ID | Tarefa | Arquivo | Horas |
 |----|--------|---------|-------|
-| S3-01 | llmCascade.ts: cascata Groq → Gemini → Haiku | services/llmCascade.ts (novo) | 3h |
-| S3-02 | AIChat.tsx: chat com contexto do sistema | components/AIChat.tsx (novo) | 4h |
-| S3-03 | autoTriggerService.ts: sentinelas AIOS | services/autoTriggerService.ts (novo) | 3h |
-| S3-04 | agentMemoryService.ts: memória no Supabase | services/agentMemoryService.ts (novo) | 2h |
-| S3-05 | AIAgents.tsx: painel de agentes | components/AIAgents.tsx (novo) | 4h |
-| S3-06 | AIOSPanel.tsx: painel de alertas | components/AIOSPanel.tsx (novo) | 2h |
-| S3-07 | Externalizar prompts 17 agentes em agentPrompts/ | pasta nova | 3h |
-| S3-08 | Streaming no AIChat (SSE) | AIChat.tsx | 2h |
-| S3-09 | AIMeetingRoom.tsx: reunião multi-agente paralela | components/AIMeetingRoom.tsx (novo) | 4h |
+| S4-01 | Projeção de fluxo 30/60/90 dias (A Receber + A Pagar futuros) | Financial.tsx | 4h |
+| S4-02 | DRE comparativo mês atual vs mês anterior com variação % | Financial.tsx | 3h |
+| S4-03 | Centro de custo por lote: receita, CMV e lucro de cada lote | Financial.tsx | 4h |
+| S4-04 | Recebimento com múltiplos métodos (PIX + Dinheiro na mesma baixa) | Financial.tsx + App.tsx | 3h |
+| S4-05 | Payable de frete vinculado à transportadora (não fornecedor) | App.tsx + Financial.tsx | 2h |
+| S4-06 | Notificação push de vencimento (service worker) | App.tsx | 3h |
+| S4-07 | Exportação DRE como PDF profissional com logo | Financial.tsx | 2h |
 
-### Contexto crítico para o Sprint 3:
-- App.tsx linhas 25-44: imports apontam para /ai/components/ e /ai/services/ que NÃO existem no repo
-- Todos os módulos precisam ser criados do zero nessa pasta
-- Começar sempre pelo llmCascade.ts (base de tudo) antes de qualquer componente
-- LLMs: VITE_GROQ_API_KEY (Groq), VITE_AI_API_KEY (Gemini), VITE_ANTHROPIC_KEY (Claude)
-- orchestratorService.ts já existe e está correto — só precisa do llmCascade que ele importa
-- agentMemoryService é importado pelo orchestratorService — criar antes do AIAgents
+### Contexto para o Sprint 4:
+- Financial.tsx tem ~1.700 linhas — edições cirúrgicas com Python replace
+- O DRE já usa regime de competência correto (fix de 18/03)
+- profitTotals.cgs já calcula CMV correto via custo_real_kg
+- Para projeção: usar sales.data_vencimento (A Receber) e payables.data_vencimento (A Pagar)
+- Para DRE comparativo: filtrar transactions por mes atual e mes anterior separadamente
+- Centro de custo por lote: agrupar sales por id_lote (3 primeiros segmentos do id_completo)
 
 ---
 
 ## 📋 Sprints Futuros
-
-### Sprint 4 — Financeiro Avançado
-Projeção de fluxo de caixa 30/60/90 dias, DRE comparativo mês a mês,
-centro de custo por lote, recebimento multi-método, frete vinculado
-à transportadora, notificação de vencimento, exportação DRE PDF.
 
 ### Sprint 5 — Operações
 Monitor de temperatura, rendimento real automático, FIFO visual,
@@ -73,3 +75,5 @@ precificação dinâmica, CEPEA vs custo pago, reativação clientes, score forn
 - Supabase Project: fgzbkvgaxnwlufhndoqp
 - GitHub: github.com/tportooliveira-alt/frigogest-2026
 - App: https://gestfri.web.app
+- Chaves API: VITE_GROQ_API_KEY, VITE_AI_API_KEY (Gemini), VITE_ANTHROPIC_KEY (Haiku)
+- agent_memory table: criar no Supabase se quiser memória persistente dos agentes
