@@ -414,18 +414,21 @@ export function verificarIntegridadeDados(
     });
 
     // 5. Vendas À VISTA sem transaction de ENTRADA
+    // FIX #3: Condição corrigida — referencia_id guarda o id_venda (ex: V-123456-0),
+    // não o prefixo TR-REC. A condição anterior era sempre false (falso positivo).
     sales.filter(s => s.status_pagamento === 'PAGO').forEach(s => {
         const hasTransaction = transactions.some(t =>
             t.tipo === 'ENTRADA' && (
                 t.referencia_id === s.id_venda ||
                 t.descricao.includes(s.id_venda) ||
-                (t.referencia_id && t.referencia_id.includes('TR-REC'))
+                t.id?.startsWith(`TR-REC-${s.id_venda}`) ||
+                (t.id?.startsWith('TR-VISTA-') && t.referencia_id === s.id_venda)
             )
         );
         if (!hasTransaction) {
             issues.push({
                 severity: '⚠️ Atenção', module: 'FINANCEIRO',
-                issue: `Venda ${s.id_venda} está PAGA mas pode não ter transaction ENTRADA no caixa.`
+                issue: `Venda ${s.id_venda} está PAGA mas não tem transação de ENTRADA associada no caixa.`
             });
         }
     });

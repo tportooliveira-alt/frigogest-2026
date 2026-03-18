@@ -533,11 +533,23 @@ const Financial: React.FC<FinancialProps> = ({
             <div className="bg-slate-900 rounded-[40px] p-10 text-white shadow-2xl shadow-blue-900/20">
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-2 h-2 bg-blue-500 rounded-full shadow-[0_0_12px_rgba(59,130,246,0.8)]" />
-                <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em]">Saldo Atualizado</p>
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em]">Saldo Atual (Total)</p>
               </div>
-              <h3 className={`text-5xl font-black tracking-tighter mb-12 ${totalBalanceGlobal >= 0 ? 'text-white' : 'text-rose-400'}`}>
+              {/* FIX #4: Exibir saldo global E resultado do período filtrado separadamente */}
+              <h3 className={`text-5xl font-black tracking-tighter ${totalBalanceGlobal >= 0 ? 'text-white' : 'text-rose-400'}`}>
                 {formatCurrency(totalBalanceGlobal)}
               </h3>
+              {(() => {
+                const saldoPeriodo = filteredTransactions.reduce((acc, t) => acc + (t.tipo === 'ENTRADA' ? t.valor : -t.valor), 0);
+                return (
+                  <div className="mt-4 mb-8 p-4 bg-white/5 border border-white/10 rounded-2xl">
+                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Resultado do Período Filtrado</p>
+                    <p className={`text-xl font-black ${saldoPeriodo >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {saldoPeriodo >= 0 ? '+' : ''}{formatCurrency(saldoPeriodo)}
+                    </p>
+                  </div>
+                );
+              })()}
               <div className="space-y-4">
                 <button onClick={() => { setShowTransactionForm(true); setNewTransaction({ ...newTransaction, tipo: 'ENTRADA' }); }} className="w-full btn-modern bg-blue-600 hover:bg-white hover:text-blue-700 text-white py-5 rounded-2xl gap-4 shadow-xl transition-all font-black text-xs uppercase tracking-widest">
                   <PlusIcon size={20} /> Lançar Entrada
@@ -1043,17 +1055,27 @@ const Financial: React.FC<FinancialProps> = ({
               </h4>
               <div className="space-y-1">
                 {(() => {
-                  const freteTotal = validTransactions.filter(t => t.tipo === 'SAIDA' && t.categoria === 'FRETE').reduce((a, t) => a + t.valor, 0);
-                  const gado = validTransactions.filter(t => t.tipo === 'SAIDA' && t.categoria === 'COMPRA_GADO').reduce((a, t) => a + t.valor, 0);
-                  const operacional = validTransactions.filter(t => t.tipo === 'SAIDA' && !['COMPRA_GADO', 'FRETE', 'ESTORNO'].includes(t.categoria || '')).reduce((a, t) => a + t.valor, 0);
-                  const lucroBruto = profitTotals.revenue - profitTotals.cgs - freteTotal;
+                  // FIX #1 + #2: DRE agora usa REGIME DE COMPETÊNCIA consistente.
+                  // profitTotals.cgs já embute gado + frete + extras via custo_real_kg.
+                  // Remover freteTotal do lucroBruto evita dupla contagem do frete.
+                  // Despesas operacionais = transações de caixa que NÃO são compra/frete/estorno/venda.
+                  const operacional = validTransactions.filter(t =>
+                    t.tipo === 'SAIDA' &&
+                    !['COMPRA_GADO', 'FRETE', 'ESTORNO', 'VENDA', 'DESCONTO'].includes(t.categoria || '')
+                  ).reduce((a, t) => a + t.valor, 0);
+
+                  // CMV (Custo da Mercadoria Vendida) = custo accrual de todos os itens vendidos
+                  // já inclui gado + frete + extras proporcionalmente por kg
+                  const cmv = profitTotals.cgs;
+
+                  // Lucro Bruto = Receita - CMV (frete JÁ ESTÁ no CMV via custo_real_kg)
+                  const lucroBruto = profitTotals.revenue - cmv;
                   const margemBruta = profitTotals.revenue > 0 ? (lucroBruto / profitTotals.revenue) * 100 : 0;
                   const ebitda = lucroBruto - operacional;
                   const margemEbitda = profitTotals.revenue > 0 ? (ebitda / profitTotals.revenue) * 100 : 0;
                   const rows = [
                     { label: 'Receita Bruta de Vendas', value: profitTotals.revenue, sign: '+', bold: false, color: 'text-slate-900' },
-                    { label: '(-) Custo Matéria-Prima (Gado)', value: -gado, sign: '-', bold: false, color: 'text-rose-600' },
-                    { label: '(-) Frete de Compra', value: -freteTotal, sign: '-', bold: false, color: 'text-rose-600' },
+                    { label: '(-) CMV — Custo da Mercadoria Vendida', value: -cmv, sign: '-', bold: false, color: 'text-rose-600', tooltip: 'Gado + Frete + Extras rateados por kg vendido (regime de competência)' },
                     { label: '= Lucro Bruto', value: lucroBruto, sign: '=', bold: true, color: lucroBruto >= 0 ? 'text-emerald-600' : 'text-rose-600', sub: `Margem ${margemBruta.toFixed(1)}%` },
                     { label: '(-) Despesas Operacionais', value: -operacional, sign: '-', bold: false, color: 'text-orange-600' },
                     { label: '= EBITDA', value: ebitda, sign: '=', bold: true, color: ebitda >= 0 ? 'text-blue-600' : 'text-rose-600', sub: `Margem ${margemEbitda.toFixed(1)}%` },

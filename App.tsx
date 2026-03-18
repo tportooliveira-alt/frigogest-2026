@@ -1447,21 +1447,26 @@ const App: React.FC = () => {
             throw new Error(res.error);
           }
 
-          // 💰 PAGO NO ATO: criar ENTRADA no fluxo de caixa automaticamente
+          // 💰 PAGO NO ATO: criar ENTRADA individual por venda no fluxo de caixa
+          // FIX #5: Antes havia 1 transação coletiva com referencia_id da primeira venda.
+          // Isso fazia o estorno da 2ª, 3ª venda não encontrar a transação de entrada.
+          // Agora cada venda tem seu próprio TR-VISTA com referencia_id correto.
           if (pagoNoAto && newSales.length > 0) {
-            const totalVenda = newSales.reduce((acc, s) => acc + (s.peso_real_saida * s.preco_venda_kg), 0);
             const metodo = metodoPagamento || 'OUTROS';
-            await addTransaction({
-              id: `TR-VISTA-${Date.now()}`,
-              data: todayBR(),
-              descricao: `Venda à Vista (${metodo}): ${client.nome_social} — ${newSales.length} item(s)`,
-              tipo: 'ENTRADA',
-              categoria: 'VENDA',
-              valor: totalVenda,
-              metodo_pagamento: metodo,
-              referencia_id: newSales[0].id_venda
-            } as any);
-            fetchData(); // Atualiza estado após gravar transação de venda à vista
+            for (const sale of newSales) {
+              const valorSale = sale.peso_real_saida * sale.preco_venda_kg;
+              await addTransaction({
+                id: `TR-VISTA-${sale.id_venda}`,
+                data: todayBR(),
+                descricao: `Venda à Vista (${metodo}): ${client.nome_social} — ${sale.id_completo}`,
+                tipo: 'ENTRADA',
+                categoria: 'VENDA',
+                valor: valorSale,
+                metodo_pagamento: metodo,
+                referencia_id: sale.id_venda
+              } as any);
+            }
+            fetchData(); // Atualiza estado após gravar transações de venda à vista
           }
 
           // Não navega para outra tela — Expedition mostra tela de sucesso internamente
