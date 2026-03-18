@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { jsPDF } from 'jspdf';
 import { Sale, Batch, StockItem, Client, Transaction, PaymentMethod, Payable } from '../types';
-import { formatCurrency, formatWeight } from '../utils/helpers';
+import { formatCurrency, formatWeight, formatDateBR } from '../utils/helpers';
 import {
   Edit2,
   Save,
@@ -663,7 +663,7 @@ const Financial: React.FC<FinancialProps> = ({
                         if (y > 270) { doc.addPage(); y = 25; }
                         doc.setFont('helvetica', 'bold');
                         doc.setTextColor(80, 80, 80);
-                        doc.text(new Date(t.data).toLocaleDateString('pt-BR'), 18, y);
+                        doc.text(formatDateBR(t.data), 18, y);
                         doc.setTextColor(15, 23, 42);
                         doc.text((t.descricao || '').substring(0, 38), 48, y);
                         doc.setFontSize(8);
@@ -722,7 +722,7 @@ const Financial: React.FC<FinancialProps> = ({
                   <tbody>
                     {filteredTransactions.map(t => (
                       <tr key={t.id} className="hover:bg-blue-50/30 transition-colors group">
-                        <td className="text-[10px] font-bold text-slate-400 group-hover:text-slate-900">{new Date(t.data).toLocaleDateString()}</td>
+                        <td className="text-[10px] font-bold text-slate-400 group-hover:text-slate-900">{formatDateBR(t.data)}</td>
                         <td className="font-extrabold text-slate-900 uppercase text-xs truncate max-w-sm italic">"{t.descricao}"</td>
                         <td>
                           <span className={`text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-lg border ${t.categoria === 'ESTORNO' ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>
@@ -854,7 +854,7 @@ const Financial: React.FC<FinancialProps> = ({
                     return (
                       <tr key={sale.id_venda} className={`hover:bg-slate-50 transition-colors group ${isOverdue ? "bg-rose-50/10" : ""}`}>
                         <td>
-                          <span className={`text-[11px] font-extrabold ${isOverdue ? 'text-rose-600' : 'text-slate-400'}`}>{new Date(sale.data_vencimento).toLocaleDateString()}</span>
+                          <span className={`text-[11px] font-extrabold ${isOverdue ? 'text-rose-600' : 'text-slate-400'}`}>{formatDateBR(sale.data_vencimento)}</span>
                         </td>
                         <td>
                           <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest inline-flex border ${isOverdue ? 'bg-rose-50 text-rose-600 border-rose-100 shadow-sm' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
@@ -986,7 +986,7 @@ const Financial: React.FC<FinancialProps> = ({
                         <td className="text-center">
                           <div className={`w-3.5 h-3.5 rounded-full mx-auto transition-all ${p.status === 'PAGO' ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.5)]' : isLate ? 'animate-pulse bg-rose-600 shadow-[0_0_12px_rgba(225,29,72,0.5)]' : 'bg-slate-200 shadow-inner'}`} />
                         </td>
-                        <td className="text-[11px] font-extrabold text-slate-400 group-hover:text-slate-900">{new Date(p.data_vencimento).toLocaleDateString()}</td>
+                        <td className="text-[11px] font-extrabold text-slate-400 group-hover:text-slate-900">{formatDateBR(p.data_vencimento)}</td>
                         <td>
                           <p className="font-extrabold text-slate-800 uppercase text-xs italic transition-all group-hover:translate-x-1">"{p.descricao}"</p>
                           <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest bg-slate-50 px-2 py-0.5 rounded-md mt-1 inline-block border border-slate-100">{p.categoria}</span>
@@ -1308,7 +1308,7 @@ const Financial: React.FC<FinancialProps> = ({
                     items.forEach(item => {
                       if (y > 270) { doc.addPage(); y = 25; }
                       doc.setTextColor(80, 80, 80);
-                      doc.text(item.dataPagamento !== '-' ? new Date(item.dataPagamento).toLocaleDateString('pt-BR') : '-', 22, y);
+                      doc.text(item.dataPagamento !== '-' ? formatDateBR(item.dataPagamento) : '-', 22, y);
                       doc.setTextColor(59, 130, 246);
                       doc.text(item.lote, 52, y);
                       doc.setTextColor(15, 23, 42);
@@ -1378,7 +1378,7 @@ const Financial: React.FC<FinancialProps> = ({
                           {sorted.map((item, idx) => (
                             <tr key={idx} className="border-b border-slate-50 hover:bg-blue-50/40 transition-colors">
                               <td className="px-3 py-1.5 pl-8 text-[10px] text-slate-300">—</td>
-                              <td className="px-3 py-1.5 text-[10px] font-semibold text-slate-500">{item.dataPagamento !== '-' ? new Date(item.dataPagamento).toLocaleDateString() : '-'}</td>
+                              <td className="px-3 py-1.5 text-[10px] font-semibold text-slate-500">{item.dataPagamento !== '-' ? formatDateBR(item.dataPagamento) : '-'}</td>
                               <td className="px-3 py-1.5">
                                 <span className="text-[9px] font-mono font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">{item.lote}</span>
                               </td>
