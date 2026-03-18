@@ -38,12 +38,13 @@ interface ExpeditionProps {
   stock: StockItem[];
   clients: Client[];
   batches?: Batch[];
+  suppliers?: any[]; // S2-07: transportadoras
   onConfirmSale: (saleData: any) => void;
   onBack: () => void;
   salesHistory: Sale[];
 }
 
-const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConfirmSale, onBack, salesHistory }) => {
+const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, suppliers = [], onConfirmSale, onBack, salesHistory }) => {
 
   const getSupplierName = (batchId: string) => {
     if (!batches) return '';
@@ -124,7 +125,19 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
   const [pagoNoAto, setPagoNoAto] = useState(false);
   const [prazoDias, setPrazoDias] = useState<number>(30);
   const [metodoPagamento, setMetodoPagamento] = useState('OUTROS');
+  const [observacoes, setObservacoes] = useState('');
+  const [transportadoraId, setTransportadoraId] = useState(''); // S2-07
   const totalValue = totalWeight * pricePerKg;
+
+  // S2-05: Lucro estimado em tempo real
+  const custoEstimado = selectedItems.reduce((acc, item) => {
+    const batch = batches.find(b => b.id_lote === item.id_lote);
+    const custoKg = batch?.custo_real_kg || 0;
+    const peso = itemWeights[item.id_completo] ?? item.peso_entrada;
+    return acc + (peso * custoKg);
+  }, 0);
+  const lucroEstimado = totalValue - custoEstimado - extrasCost;
+  const margemEstimada = totalValue > 0 ? (lucroEstimado / totalValue) * 100 : 0;
 
   const handleWeightChange = (itemId: string, newWeight: number) => {
     setItemWeights(prev => ({ ...prev, [itemId]: newWeight }));
@@ -362,6 +375,20 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
       alert("⚠️ Preencha todos os dados da venda!");
       return;
     }
+    // S2-08: Alerta se preço de venda abaixo do custo
+    if (custoEstimado > 0 && pricePerKg > 0) {
+      const custoMedioKg = custoEstimado / totalWeight;
+      if (pricePerKg < custoMedioKg) {
+        const ok = window.confirm(
+          `⚠️ ATENÇÃO — VENDA ABAIXO DO CUSTO!\n\n` +
+          `Custo médio: R$ ${custoMedioKg.toFixed(2)}/kg\n` +
+          `Preço de venda: R$ ${pricePerKg.toFixed(2)}/kg\n` +
+          `Prejuízo estimado: ${formatCurrency(Math.abs(lucroEstimado))}\n\n` +
+          `Deseja continuar mesmo assim?`
+        );
+        if (!ok) return;
+      }
+    }
     if (confirm("Deseja gerar o Manifesto de Carga (PDF)?")) {
       generateReceipt();
     }
@@ -380,9 +407,11 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
         extrasCost,
         pagoNoAto,
         metodoPagamento: pagoNoAto ? metodoPagamento : 'OUTROS',
-        prazoDias
+        prazoDias,
+        observacoes, // S2-06
+        transportadoraId // S2-07
       });
-      setSelectedClient(null); setSelectedItems([]); setPricePerKg(0); setExtrasCost(0); setPagoNoAto(false); setMetodoPagamento('OUTROS'); setPrazoDias(30);
+      setSelectedClient(null); setSelectedItems([]); setPricePerKg(0); setExtrasCost(0); setPagoNoAto(false); setMetodoPagamento('OUTROS'); setPrazoDias(30); setObservacoes(''); setTransportadoraId('');
       setShowHistory(true); // Automatically go to history after sale
     } catch (err) {
       console.error('Erro na Venda:', err);
@@ -862,6 +891,57 @@ const Expedition: React.FC<ExpeditionProps> = ({ stock, clients, batches, onConf
               </div>
 
               <div className="pt-4 border-t border-white/10">
+                {/* S2-05: Painel de lucro estimado em tempo real */}
+                {pricePerKg > 0 && custoEstimado > 0 && (
+                  <div className={`mb-4 p-3 rounded-xl border ${lucroEstimado >= 0 ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-rose-500/10 border-rose-500/30'}`}>
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-0.5">Lucro Estimado</p>
+                        <p className={`text-xl font-black tracking-tight ${lucroEstimado >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {lucroEstimado >= 0 ? '+' : ''}{formatCurrency(lucroEstimado)}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-0.5">Margem</p>
+                        <p className={`text-xl font-black ${margemEstimada >= 10 ? 'text-emerald-400' : margemEstimada >= 0 ? 'text-amber-400' : 'text-rose-400'}`}>
+                          {margemEstimada.toFixed(1)}%
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* S2-07: Seleção de transportadora */}
+                {suppliers.filter((s: any) => s.categoria === 'TRANSPORTADORA' || s.tipo === 'TRANSPORTADORA' || (s.nome_fantasia || '').toUpperCase().includes('TRANSP')).length > 0 && (
+                  <div className="mb-4">
+                    <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest px-1 mb-1 block">🚛 Transportadora (opcional)</label>
+                    <select
+                      className="w-full bg-white/10 border border-white/10 text-white text-[10px] font-black uppercase p-2 rounded-xl outline-none focus:bg-white/20"
+                      value={transportadoraId}
+                      onChange={e => setTransportadoraId(e.target.value)}
+                    >
+                      <option value="" className="text-slate-900">Sem transportadora</option>
+                      {suppliers
+                        .filter((s: any) => s.categoria === 'TRANSPORTADORA' || s.tipo === 'TRANSPORTADORA' || (s.nome_fantasia || '').toUpperCase().includes('TRANSP'))
+                        .map((s: any) => (
+                          <option key={s.id} value={s.id} className="text-slate-900">{s.nome_fantasia || s.nome}</option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* S2-06: Campo de observações */}
+                <div className="mb-4">
+                  <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest px-1 mb-1 block">Observações (opcional)</label>
+                  <textarea
+                    className="w-full bg-white/10 border border-white/10 text-white text-xs rounded-xl px-3 py-2 outline-none focus:bg-white/20 transition-all resize-none"
+                    rows={2}
+                    placeholder="Ex: Entregar às 6h, corte especial traseiro..."
+                    value={observacoes}
+                    onChange={e => setObservacoes(e.target.value.toUpperCase())}
+                  />
+                </div>
+
                 <div className="flex justify-between items-center mb-4">
                   <div>
                     <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Subtotal Acumulado</p>

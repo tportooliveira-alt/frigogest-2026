@@ -113,6 +113,7 @@ export interface Sale {
   valor_pago?: number; // Valor já recebido (pagamentos parciais)
   resultado_campanha?: string; // Para métricas de Marketing/CRM
   entrega_confirmada_em?: string; // ISO date de quando foi entregue
+  observacoes?: string; // S2-06: Observações da venda (corte especial, entrega, etc)
 }
 
 export interface ScheduledOrder {

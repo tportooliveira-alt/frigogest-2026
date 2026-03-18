@@ -1355,7 +1355,7 @@ const App: React.FC = () => {
         onBack={() => setCurrentView('menu')}
       />}
       {
-        currentView === 'expedition' && <Expedition clients={data.clients} stock={closedStock} batches={closedBatches} salesHistory={data.sales} onConfirmSale={async (saleData) => {
+        currentView === 'expedition' && <Expedition clients={data.clients} stock={closedStock} batches={closedBatches} suppliers={data.suppliers} salesHistory={data.sales} onConfirmSale={async (saleData) => {
           const { client, items, pricePerKg, extrasCost, pagoNoAto, metodoPagamento } = saleData;
 
           // AGRUPAR: Banda A + Banda B do mesmo animal = CARCAÇA INTEIRA
@@ -1412,7 +1412,8 @@ const App: React.FC = () => {
               status_pagamento: pagoNoAto ? 'PAGO' : 'PENDENTE',
               valor_pago: pagoNoAto ? valorTotal : 0,
               tipo_venda: isCarcacaInteira ? 'CARCACA_INTEIRA' : 'BANDA_AVULSA',
-              stock_ids_originais: groupItems.map((i: any) => i.id_completo)
+              stock_ids_originais: groupItems.map((i: any) => i.id_completo),
+              observacoes: saleData.observacoes || '' // S2-06
             } as any);
           });
 
