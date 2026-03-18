@@ -89,6 +89,9 @@ const Financial: React.FC<FinancialProps> = ({
   const [activeTab, setActiveTab] = useState<'overview' | 'cashflow' | 'receivables' | 'payables' | 'profit' | 'suppliers'>('overview');
   const [showTransactionForm, setShowTransactionForm] = useState(false);
   const [showPayableForm, setShowPayableForm] = useState(false);
+  const [showSaldoInicialForm, setShowSaldoInicialForm] = useState(false);
+  const [saldoInicialValor, setSaldoInicialValor] = useState('');
+  const [saldoInicialData, setSaldoInicialData] = useState(() => new Date().toISOString().split('T')[0]);
   const [payableFilterStatus, setPayableFilterStatus] = useState<'ALL' | 'PENDING' | 'PAID' | 'LATE'>('PENDING');
   const [receivablesFilter, setReceivablesFilter] = useState<'ALL' | 'OVERDUE' | 'CRITICAL'>('ALL');
   const [supplierFilter, setSupplierFilter] = useState<string>('ALL');
@@ -249,6 +252,8 @@ const Financial: React.FC<FinancialProps> = ({
       if (t.id?.startsWith('TR-ESTORNO-') || t.categoria === 'ESTORNO') return true;
       // Transações de DESCONTO = sempre válidas
       if (t.id?.startsWith('TR-DESC-') || t.categoria === 'DESCONTO') return true;
+      // Saldo inicial sempre válido
+      if (t.categoria === 'SALDO_INICIAL' || t.id?.startsWith('TR-SALDO-INICIAL')) return true;
       // Outros casos: se não tem hífen no referencia_id = válido
       if (!t.referencia_id.includes('-')) return true;
       // Se tem lotes válidos, filtrar transações de lotes inexistentes
@@ -556,6 +561,9 @@ const Financial: React.FC<FinancialProps> = ({
                 </button>
                 <button onClick={() => { setShowTransactionForm(true); setNewTransaction({ ...newTransaction, tipo: 'SAIDA' }); }} className="w-full btn-modern bg-white/5 border border-white/10 hover:bg-rose-600 text-white py-5 rounded-2xl gap-4 transition-all font-black text-xs uppercase tracking-widest">
                   <MinusIcon size={20} /> Lançar Saída
+                </button>
+                <button onClick={() => setShowSaldoInicialForm(true)} className="w-full btn-modern bg-white/5 border border-white/10 hover:bg-emerald-700 text-slate-400 hover:text-white py-4 rounded-2xl gap-3 transition-all font-black text-[10px] uppercase tracking-widest">
+                  <Target size={16} /> Definir Saldo Inicial
                 </button>
               </div>
             </div>
@@ -1411,7 +1419,7 @@ const Financial: React.FC<FinancialProps> = ({
       })()}
 
       {/* MODALS - UNIFIED DESIGN SYSTEM */}
-      {(saleToPay || payableToPay || showTransactionForm || showPayableForm) && (
+      {(saleToPay || payableToPay || showTransactionForm || showPayableForm || showSaldoInicialForm) && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-xl animate-reveal">
           <div className="bg-white rounded-[48px] shadow-3xl w-full max-w-lg overflow-hidden flex flex-col border border-white relative">
             <div className="bg-slate-900 p-10 flex justify-between items-center text-white relative">
@@ -1423,7 +1431,7 @@ const Financial: React.FC<FinancialProps> = ({
                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">Sincronizador de Dados Ativo</p>
               </div>
               <button
-                onClick={() => { setSaleToPay(null); setPayableToPay(null); setShowTransactionForm(false); setShowPayableForm(false); }}
+                onClick={() => { setSaleToPay(null); setPayableToPay(null); setShowTransactionForm(false); setShowPayableForm(false); setShowSaldoInicialForm(false); }}
                 className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-rose-600 hover:border-rose-500 transition-all group relative z-10"
               >
                 <X size={24} className="text-white group-hover:rotate-90 transition-transform" />
@@ -1592,6 +1600,52 @@ const Financial: React.FC<FinancialProps> = ({
                     </div>
                   </div>
                   <button onClick={() => { addPayable({ ...newPayable, id: `PAY-${Date.now()}`, status: 'PENDENTE' } as Payable); setShowPayableForm(false); }} className="w-full btn-modern bg-slate-900 text-white py-6 rounded-2xl hover:bg-orange-600 shadow-2xl transition-all font-black uppercase tracking-widest text-xs">Agendar para Ciclo</button>
+                </div>
+              )}
+
+              {showSaldoInicialForm && (
+                <div className="space-y-8 animate-reveal">
+                  <div className="p-6 bg-emerald-50 border border-emerald-200 rounded-3xl">
+                    <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest mb-2">Abertura de Caixa</p>
+                    <p className="text-xs font-bold text-emerald-600">Define o saldo que você tinha no caixa numa data específica. Funciona como ponto de partida — tudo que veio depois é somado a partir daí.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Data do Saldo Inicial</label>
+                    <input type="date" className="modern-input h-14" value={saldoInicialData} onChange={e => setSaldoInicialData(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Valor em Caixa (R$)</label>
+                    <input
+                      type="text" inputMode="decimal" placeholder="Ex: 15.000,00"
+                      className="modern-input h-20 text-4xl font-black text-center bg-emerald-50/30 border-emerald-100"
+                      value={saldoInicialValor}
+                      onChange={e => setSaldoInicialValor(e.target.value)}
+                    />
+                  </div>
+                  <button
+                    onClick={() => {
+                      const valor = parseFloat(saldoInicialValor.replace(/\./g,'').replace(',','.'));
+                      if (isNaN(valor) || valor < 0) return alert('⚠️ Informe um valor válido.');
+                      // Remove saldo inicial anterior se existir
+                      const existing = transactions.find(t => t.categoria === 'SALDO_INICIAL');
+                      if (existing) deleteTransaction(existing.id);
+                      addTransaction({
+                        id: `TR-SALDO-INICIAL-${saldoInicialData}`,
+                        data: saldoInicialData,
+                        descricao: `Saldo Inicial em Caixa (${saldoInicialData})`,
+                        tipo: 'ENTRADA',
+                        categoria: 'SALDO_INICIAL' as any,
+                        valor: valor,
+                        metodo_pagamento: 'OUTROS',
+                        referencia_id: 'SALDO_INICIAL'
+                      });
+                      setShowSaldoInicialForm(false);
+                      setSaldoInicialValor('');
+                    }}
+                    className="w-full btn-modern bg-emerald-600 text-white py-6 rounded-2xl hover:bg-slate-900 shadow-2xl transition-all font-black uppercase tracking-widest text-xs"
+                  >
+                    Confirmar Saldo Inicial
+                  </button>
                 </div>
               )}
 

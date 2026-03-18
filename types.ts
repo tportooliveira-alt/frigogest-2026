@@ -132,7 +132,7 @@ export interface Transaction {
   data: string;
   descricao: string;
   tipo: 'ENTRADA' | 'SAIDA';
-  categoria: 'VENDA' | 'COMPRA_GADO' | 'FRETE' | 'OPERACIONAL' | 'ADMINISTRATIVO' | 'OUTROS' | 'ESTRUTURA' | 'FUNCIONARIOS' | 'INSUMOS' | 'MANUTENCAO' | 'IMPOSTOS' | 'DESCONTO' | 'ESTORNO';
+  categoria: 'VENDA' | 'COMPRA_GADO' | 'FRETE' | 'OPERACIONAL' | 'ADMINISTRATIVO' | 'OUTROS' | 'ESTRUTURA' | 'FUNCIONARIOS' | 'INSUMOS' | 'MANUTENCAO' | 'IMPOSTOS' | 'DESCONTO' | 'ESTORNO' | 'SALDO_INICIAL';
   valor: number;
   referencia_id?: string;
   metodo_pagamento?: PaymentMethod;
