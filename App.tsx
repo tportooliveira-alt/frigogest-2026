@@ -61,6 +61,15 @@ const App: React.FC = () => {
   const [detectedActions, setDetectedActions] = useState<DetectedAction[]>([]);
   const [dismissedAlerts] = useState<Set<string>>(new Set());
 
+  // S1-03: Rodar cleanupOrphans uma única vez após login confirmado
+  useEffect(() => {
+    if (session && !OFFLINE_MODE && supabase) {
+      // Delay de 3s para dados carregarem antes de limpar órfãos
+      const timer = setTimeout(() => cleanOrphanPayables(), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [session]);
+
   useEffect(() => {
     if (OFFLINE_MODE || !supabase) {
       setSession({ user: { email: 'offline@local' } });
@@ -257,43 +266,8 @@ const App: React.FC = () => {
   useEffect(() => {
     fetchData();
 
-    // Limpa TODOS os dados órfãos automaticamente ao iniciar
-    const cleanupOrphans = async () => {
-      if (OFFLINE_MODE || !supabase) return;
-
-      // Limpeza de órfãos via Supabase (após 2s para dados carregarem)
-      setTimeout(async () => {
-        if (!supabase) return;
-        try {
-          const { data: batches } = await supabase.from('batches').select('id_lote');
-          if (!batches) return;
-          const existingLoteIds = new Set(batches.map((b: any) => b.id_lote));
-
-          // Payables órfãos de COMPRA_GADO
-          const { data: payables } = await supabase.from('payables')
-            .select('id,id_lote,descricao,categoria').eq('categoria', 'COMPRA_GADO');
-          for (const p of payables || []) {
-            const loteId = p.id_lote || p.descricao?.match(/Lote ([A-Z0-9-]+)/)?.[1];
-            if (loteId && !existingLoteIds.has(loteId)) {
-              await supabase.from('payables').delete().eq('id', p.id);
-              console.log(`🗑️ Payable órfão removido: ${p.descricao}`);
-            }
-          }
-
-          // Stock órfão
-          const { data: orphanStock } = await supabase.from('stock_items')
-            .select('id_completo,id_lote').not('id_lote', 'is', null);
-          for (const s of orphanStock || []) {
-            if (!existingLoteIds.has(s.id_lote)) {
-              await supabase.from('stock_items').delete().eq('id_completo', s.id_completo);
-            }
-          }
-
-          fetchData();
-        } catch (e) { console.error('Erro limpando órfãos:', e); }
-      }, 2000);
-    };
-    cleanupOrphans();
+    // S1-03: cleanupOrphans movida para ser chamada APENAS no login (ver useEffect de session abaixo)
+    // Não roda a cada fetchData para evitar queries desnecessárias ao Supabase
 
     if (OFFLINE_MODE || !supabase) return;
 
@@ -437,7 +411,7 @@ const App: React.FC = () => {
       if ((isPago || isParcial) && valorPago > 0 && supabase) {
         const estornoTransaction = {
           id: `TR-ESTORNO-PAY-${id}-${Date.now()}`,
-          data: new Date().toISOString().split('T')[0],
+          data: todayBR(),
           descricao: `ESTORNO: ${payable.descricao}`,
           tipo: 'ENTRADA',
           categoria: 'ESTORNO',
@@ -540,16 +514,8 @@ const App: React.FC = () => {
     if (!supabase) return { success: false, error: 'Supabase não configurado' };
 
     try {
-      // Salvar o lote — com fallback para bancos sem migration frete
-      let { error: batchError } = await supabase.from('batches').upsert(cleanBatch);
-      if (batchError?.code === 'PGRST204') {
-        // Coluna forma_pagamento_frete/prazo_dias_frete ainda não existe — salva sem elas
-        // registerBatchFinancial usa o objeto em memória, não o Supabase, então o financeiro funciona
-        const { forma_pagamento_frete: _fpf, prazo_dias_frete: _pdf, ...batchSemFrete } = cleanBatch as any;
-        const retry = await supabase.from('batches').upsert(batchSemFrete);
-        batchError = retry.error;
-        if (!batchError) console.warn('⚠️ Lote salvo sem campos de frete — rode a migration SQL no Supabase');
-      }
+      // S1-01: colunas forma_pagamento_frete e prazo_dias_frete existem após sprint1 migration
+      const { error: batchError } = await supabase.from('batches').upsert(cleanBatch);
       if (batchError) throw batchError;
 
       // FINANCEIRO: Toda lógica de transação é responsabilidade exclusiva de
@@ -755,7 +721,7 @@ const App: React.FC = () => {
           const txId = `TR-ESTORNO-PAY-${payable.id}-${Date.now()}`;
           await supabase.from('transactions').upsert(sanitize({
             id: txId,
-            data: new Date().toISOString().split('T')[0],
+            data: todayBR(),
             descricao: `ESTORNO LOTE: ${payable.descricao}`,
             tipo: 'ENTRADA',
             categoria: 'ESTORNO',
@@ -781,7 +747,7 @@ const App: React.FC = () => {
           const txVendaId = `TR-ESTORNO-VENDA-${sale.id_venda}-${Date.now()}`;
           await supabase.from('transactions').upsert(sanitize({
             id: txVendaId,
-            data: new Date().toISOString().split('T')[0],
+            data: todayBR(),
             descricao: `ESTORNO LOTE: Venda ${sale.nome_cliente || 'Cliente'} - ${sale.id_completo}`,
             tipo: 'SAIDA',
             categoria: 'ESTORNO',
@@ -810,7 +776,7 @@ const App: React.FC = () => {
         const estornoTxId = `TR-ESTORNO-${tx.id}-${Date.now()}`;
         await supabase.from('transactions').upsert(sanitize({
           id: estornoTxId,
-          data: new Date().toISOString().split('T')[0],
+          data: todayBR(),
           descricao: `ESTORNO LOTE: Devolução de ${tx.descricao}`,
           tipo: 'ENTRADA',
           categoria: 'ESTORNO',
@@ -1186,7 +1152,7 @@ const App: React.FC = () => {
     // Apenas transações manuais/avulsas podem ser estornadas diretamente
     const inversa = {
       id: `TR-ESTORNO-${id}-${Date.now()}`,
-      data: new Date().toISOString().split('T')[0],
+      data: todayBR(),
       descricao: `ESTORNO: ${tx.descricao}`,
       tipo: tx.tipo === 'ENTRADA' ? 'SAIDA' : 'ENTRADA',
       categoria: 'ESTORNO',
@@ -1340,12 +1306,21 @@ const App: React.FC = () => {
           addBatch={addBatch}
           updateBatch={async (id, updates) => {
             if (!supabase) return;
-            let { error } = await supabase.from('batches').update(sanitize(updates)).eq('id_lote', id);
-            if (error?.code === 'PGRST204') {
-              const { forma_pagamento_frete: _fpf, prazo_dias_frete: _pdf, ...updatesSemFrete } = updates as any;
-              const retry = await supabase.from('batches').update(sanitize(updatesSemFrete)).eq('id_lote', id);
-              error = retry.error;
+            // S1-04: Recalcular custo_real_kg se algum campo de custo foi editado
+            const u = updates as any;
+            if (u.valor_compra_total !== undefined || u.frete !== undefined || u.gastos_extras !== undefined || u.peso_total_romaneio !== undefined) {
+              const loteAtual = data.batches.find(b => b.id_lote === id);
+              if (loteAtual) {
+                const compra  = parseFloat(u.valor_compra_total ?? loteAtual.valor_compra_total) || 0;
+                const frete   = parseFloat(u.frete ?? loteAtual.frete) || 0;
+                const extras  = parseFloat(u.gastos_extras ?? loteAtual.gastos_extras) || 0;
+                const peso    = parseFloat(u.peso_total_romaneio ?? loteAtual.peso_total_romaneio) || 0;
+                const novoCusto = peso > 0 ? parseFloat(((compra + frete + extras) / peso).toFixed(4)) : 0;
+                (updates as any).custo_real_kg = novoCusto;
+              }
             }
+            let { error } = await supabase.from('batches').update(sanitize(updates)).eq('id_lote', id);
+            if (error && session?.user) console.error('Erro ao atualizar lote:', error);
             if (!error && session?.user) logAction(session.user, 'UPDATE', 'BATCH', `Lote atualizado: ${id}`);
             fetchData();
           }}

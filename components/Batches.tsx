@@ -392,7 +392,19 @@ const Batches: React.FC<BatchesProps> = ({
     const weight = pesoUnit === 'G' ? rawValue / 1000 : rawValue;
     const id_completo = `${selectedBatchId}-${String(seq).padStart(3, '0')}-${typeLabel}`;
 
-
+    // S1-05: Validar duplicidade de sequência + tipo
+    const savedItems = safeStock.filter(s => s.id_lote === selectedBatchId);
+    const allCurrentItems = [...savedItems, ...draftItems.filter(d => d.id_lote === selectedBatchId)];
+    const isDuplicate = allCurrentItems.some(i => i.id_completo === id_completo);
+    if (isDuplicate) {
+      const tipo = typeLabel.replace('_', ' ');
+      const confirmOverwrite = window.confirm(
+        `⚠️ ${tipo} da carcaça ${seq} já foi cadastrada!\n\nDeseja substituir o peso?`
+      );
+      if (!confirmOverwrite) return;
+      // Remover o item existente para sobrescrever
+      setDraftItems(prev => prev.filter(i => i.id_completo !== id_completo));
+    }
 
     const itemToAdd = {
       id_completo,
