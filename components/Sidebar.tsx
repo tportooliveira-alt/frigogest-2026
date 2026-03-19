@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Users, Package, Truck, Scale, Beef, DollarSign, LogOut, FileText, Zap, Calendar, Bot, Database, ShieldCheck, Sheet, Brain, MessageCircle, Megaphone, PlayCircle, ClipboardCheck, BarChart3, Target, Bell, TrendingUp, TrendingDown, Wallet, AlertTriangle } from 'lucide-react';
+import { Settings, LayoutDashboard, Users, Package, Truck, Scale, Beef, DollarSign, LogOut, FileText, Zap, Calendar, Bot, Database, ShieldCheck, Sheet, Brain, MessageCircle, Megaphone, PlayCircle, ClipboardCheck, BarChart3, Target, Bell, TrendingUp, TrendingDown, Wallet, AlertTriangle } from 'lucide-react';
 import { APP_VERSION_SHORT, APP_BUILD_DATE } from '../constants';
 
 interface HomeKpis {
@@ -47,6 +47,7 @@ const Sidebar: React.FC<SidebarProps> = ({ setView, onLogout, onSyncSheets, shee
     { id: 'sales_agent', label: 'Agente IA', description: 'Robô de Vendas', icon: Bot, color: 'text-purple-600', bg: 'bg-purple-100', glow: 'group-hover:shadow-lg' },
     { id: 'report', label: 'Relatório', description: 'Resumo Diário', icon: FileText, color: 'text-emerald-600', bg: 'bg-emerald-50', glow: 'group-hover:shadow-lg' },
     { id: 'scenario_simulator', label: 'Simulação IA', description: 'Modo Teste: Auge→Crise→Recuperação', icon: PlayCircle, color: 'text-violet-600', bg: 'bg-violet-50', glow: 'group-hover:shadow-violet-500/50' },
+    { id: 'agent_editor', label: 'Editor de Agentes', description: 'Personalize os Especialistas IA', icon: Settings, color: 'text-slate-600', bg: 'bg-slate-50', glow: 'group-hover:shadow-lg' },
     { id: 'audit', label: 'Auditoria', description: 'Quem Fez O Quê', icon: ShieldCheck, color: 'text-rose-600', bg: 'bg-rose-50', glow: 'group-hover:shadow-lg' },
   ];
 

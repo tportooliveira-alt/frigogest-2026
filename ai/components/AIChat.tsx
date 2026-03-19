@@ -10,6 +10,7 @@ import { runCascade, extractFinalAnswer } from '../services/llmCascade';
 import { buildRichSnapshot } from '../services/buildSnapshot';
 import { getAgentMemory } from '../services/agentMemoryService';
 import { AGENT_DISPLAY_NAMES, AGENT_SYSTEM_PROMPTS } from '../../agentPrompts';
+import { getEffectiveAgent } from './AgentEditor';
 import { Batch, StockItem, Sale, Client, Transaction, Payable } from '../../types';
 
 interface AIChatProps {
@@ -67,8 +68,11 @@ const AIChat: React.FC<AIChatProps> = ({ onBack, ...dataProps }) => {
     setLoading(true);
 
     try {
-      const snapshot = buildRichSnapshot({ ...dataProps, scheduledOrders: dataProps.scheduledOrders || [] });
-      const systemPrompt = AGENT_SYSTEM_PROMPTS[selectedAgent] || AGENT_SYSTEM_PROMPTS.ADMINISTRATIVO;
+      // Lite para chat rápido (economiza ~450 tokens por mensagem)
+      const snapshot = buildRichSnapshot({ ...dataProps, scheduledOrders: dataProps.scheduledOrders || [], mode: 'lite' });
+      // Usa customização do usuário se existir
+      const effAgent = getEffectiveAgent(selectedAgent);
+      const systemPrompt = effAgent.prompt || AGENT_SYSTEM_PROMPTS.ADMINISTRATIVO;
 
       // Histórico recente (últimas 4 trocas)
       const history = messages.slice(-8).map(m =>

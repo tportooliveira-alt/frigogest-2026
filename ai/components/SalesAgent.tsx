@@ -31,7 +31,7 @@ const SalesAgent: React.FC<SalesAgentProps> = ({ onBack, clients, sales, stock, 
     if (!question.trim()) return;
     setLoading(true);
     try {
-      const snapshot = buildRichSnapshot({ batches: [], stock, sales, clients, transactions: [], payables: [] });
+      const snapshot = buildRichSnapshot({ batches: [], stock, sales, clients, transactions: [], payables: [], mode: 'lite' });
 
       const prompt = `${AGENT_SYSTEM_PROMPTS.COMERCIAL}\n\n━━━ DADOS ━━━\n${snapshot}\n━━━━━━━━━━━\n\nPergunta de vendas: ${question}\nMarcos:`;
       const result = await runCascade(prompt, 'COMERCIAL');

@@ -8,6 +8,7 @@ import { ArrowLeft, Loader2, Send, ChevronRight } from 'lucide-react';
 import { runCascade, extractFinalAnswer } from '../services/llmCascade';
 import { buildRichSnapshot } from '../services/buildSnapshot';
 import { AGENT_DISPLAY_NAMES, AGENT_SYSTEM_PROMPTS } from '../../agentPrompts';
+import { getEffectiveAgent } from './AgentEditor';
 import { Batch, StockItem, Sale, Client, Transaction, Payable } from '../../types';
 
 interface AIAgentsProps {
@@ -45,7 +46,8 @@ const AIAgents: React.FC<AIAgentsProps> = ({ onBack, ...dataProps }) => {
 
     try {
       const snapshot = buildRichSnapshot({ ...dataProps, scheduledOrders: dataProps.scheduledOrders || [] });
-      const systemPrompt = AGENT_SYSTEM_PROMPTS[agentId] || AGENT_SYSTEM_PROMPTS.ADMINISTRATIVO;
+      const effAgent = getEffectiveAgent(agentId);
+      const systemPrompt = effAgent.prompt || AGENT_SYSTEM_PROMPTS.ADMINISTRATIVO;
       const prompt = `${systemPrompt}\n\n━━━ DADOS REAIS ━━━\n${snapshot}\n━━━━━━━━━━━━━━━━━\n\nPergunta: ${q}`;
       const result = await runCascade(prompt, agentId);
       setResponse({ agentId, text: extractFinalAnswer(result.text), provider: result.provider, loading: false });

@@ -28,6 +28,7 @@ import AIAgents from './ai/components/AIAgents';
 import DataIntegrityWatchdog from './components/DataIntegrityWatchdog';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import AIChat from './ai/components/AIChat';
+import AgentEditor from './ai/components/AgentEditor';
 import AIMeetingRoom from './ai/components/AIMeetingRoom';
 import MeetingChat from './components/MeetingChat';
 import MarketingHub from './components/MarketingHub';
@@ -49,7 +50,7 @@ const App: React.FC = () => {
   const OFFLINE_MODE = (import.meta as any).env?.VITE_OFFLINE_MODE === 'true';
 
   const [session, setSession] = useState<any>(OFFLINE_MODE ? { user: { email: 'offline@local' } } : null);
-  const [currentView, setCurrentView] = useState('menu');
+  const [currentView, setCurrentView] = useState('menu'); // inclui 'agent_editor'
   const [viewParams, setViewParams] = useState<any>(null);
   const [dbStatus, setDbStatus] = useState<'online' | 'offline' | 'checking' | 'error'>(OFFLINE_MODE ? 'offline' : 'checking');
   const [data, setData] = useState<AppState>({ ...MOCK_DATA, scheduledOrders: [], suppliers: [], payables: [] });
@@ -1576,6 +1577,7 @@ const App: React.FC = () => {
         </div>
       )}
       {currentView === 'meeting_chat' && <MeetingChat onBack={() => setCurrentView('menu')} />}
+      {currentView === 'agent_editor' && <AgentEditor onBack={() => setCurrentView('menu')} />}
       {currentView === 'system_reset' && <SystemReset onBack={() => setCurrentView('menu')} refreshData={fetchData} />}
       {currentView === 'scenario_simulator' && <ScenarioSimulator onBack={() => setCurrentView('menu')} onApplyScenario={(simData) => {
         setData(prev => ({

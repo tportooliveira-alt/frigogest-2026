@@ -8,6 +8,7 @@ import { ArrowLeft, Loader2, Users, Play } from 'lucide-react';
 import { runCascade, extractFinalAnswer } from '../services/llmCascade';
 import { buildRichSnapshot } from '../services/buildSnapshot';
 import { AGENT_DISPLAY_NAMES, AGENT_SYSTEM_PROMPTS } from '../../agentPrompts';
+import { getEffectiveAgent } from './AgentEditor';
 import { Batch, StockItem, Sale, Client, Transaction, Payable } from '../../types';
 
 interface AIMeetingRoomProps {
@@ -56,7 +57,8 @@ const AIMeetingRoom: React.FC<AIMeetingRoomProps> = ({ onBack, ...dataProps }) =
     await Promise.allSettled(
       selectedAgents.map(async (agId, idx) => {
         try {
-          const prompt = `${AGENT_SYSTEM_PROMPTS[agId]}\n\n━━━ DADOS ━━━\n${snapshot}\n━━━━━━━━━━━\n\nTEMA DA REUNIÃO: "${topic}"\nSeu parecer (máx 100 palavras):`;
+          const eff = getEffectiveAgent(agId);
+          const prompt = `${eff.prompt || AGENT_SYSTEM_PROMPTS[agId]}\n\n━━━ DADOS ━━━\n${snapshot}\n━━━━━━━━━━━\n\nTEMA DA REUNIÃO: "${topic}"\nSeu parecer (máx 100 palavras):`;
           const result = await runCascade(prompt, agId);
           setVotes(prev => prev.map((v, i) =>
             i === idx ? { ...v, text: extractFinalAnswer(result.text), provider: result.provider, done: true } : v
