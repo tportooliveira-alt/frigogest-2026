@@ -1,79 +1,54 @@
 # 📍 CHECKPOINT — FrigoGest 2026
-**Última sessão:** 18/03/2026
-**Último commit:** 905d84c
+**Última sessão:** 19/03/2026
+**Último commit:** fabf1f9
 **Branch:** main
-**Deploy:** gestfri.web.app (CI/CD automático via GitHub Actions)
+**Deploy:** gestfri.web.app
 
 ---
 
 ## ✅ SPRINTS CONCLUÍDOS
-
-### Sprint 1 — Fundação (100% ✅)
-- S1-01: Migration SQL — colunas forma_pagamento_frete e prazo_dias_frete no banco
-- S1-02: Bug timezone em estornos — 5x new Date().toISOString() → todayBR()
-- S1-03: cleanupOrphans movida para fora do fetchData (só roda no login)
-- S1-04: custo_real_kg recalcula automaticamente ao editar lote
-- S1-05: Validação de peça duplicada na pesagem do lote
-- S1-06: 11 índices PostgreSQL criados no Supabase
-
-### Sprint 2 — Entrada de Lote + Vendas (100% ✅)
-- S2-01/02/03: Campos frete, romaneio IA e peso real de saída já existiam
-- S2-05: Painel de lucro estimado em tempo real na expedição
-- S2-06: Campo de observações por venda
-- S2-07: Seleção de transportadora na expedição
-- S2-08: Alerta quando preço de venda está abaixo do custo real
-
-### Sprint 3 — Módulos IA (100% ✅)
-- S3-01: ai/services/llmCascade.ts — cascata Groq → Gemini → Claude Haiku
-- S3-02: ai/components/AIChat.tsx — chat com 17 agentes + contexto real
-- S3-03: ai/services/autoTriggerService.ts — 8 sentinelas AIOS determinísticos
-- S3-04: ai/services/agentMemoryService.ts — memória dos agentes no Supabase
-- S3-05: ai/components/AIAgents.tsx — painel de agentes com consulta individual
-- S3-06: ai/components/AIOSPanel.tsx — painel de alertas com dismiss e navegação
-- S3-07: agentPrompts/index.ts — prompts externalizados dos 17 agentes
-- S3-09: ai/components/AIMeetingRoom.tsx — 5 agentes em paralelo (Promise.allSettled)
-- Extra: ai/components/SalesAgent.tsx — agente Marcos (Comercial)
+- Sprint 1 — Fundação (100%) ✅
+- Sprint 2 — Entrada de Lote + Vendas (100%) ✅
+- Sprint 3 — Módulos IA (100%) ✅
+- Sprint 4 — Financeiro Avançado (100%) ✅
+  - S4-01: Aba Projeção 30/60/90 dias
+  - S4-02: DRE comparativo mês atual vs anterior
+  - S4-03: Aba Por Lote — centro de custo por lote
+  - S4-04: Split de recebimento (2 métodos na mesma baixa)
+  - S4-05: Payable de frete vincula transportadora
+  - S4-06: Notificação push de vencimento (browser)
+  - S4-07: Exportação DRE como PDF com logo
 
 ---
 
-## 🔜 PRÓXIMO: Sprint 4 — Financeiro Avançado
+## 🔜 PRÓXIMO: Sprint 5 — Operações
 
-### Tarefas em ordem:
 | ID | Tarefa | Arquivo | Horas |
 |----|--------|---------|-------|
-| S4-01 | Projeção de fluxo 30/60/90 dias (A Receber + A Pagar futuros) | Financial.tsx | 4h |
-| S4-02 | DRE comparativo mês atual vs mês anterior com variação % | Financial.tsx | 3h |
-| S4-03 | Centro de custo por lote: receita, CMV e lucro de cada lote | Financial.tsx | 4h |
-| S4-04 | Recebimento com múltiplos métodos (PIX + Dinheiro na mesma baixa) | Financial.tsx + App.tsx | 3h |
-| S4-05 | Payable de frete vinculado à transportadora (não fornecedor) | App.tsx + Financial.tsx | 2h |
-| S4-06 | Notificação push de vencimento (service worker) | App.tsx | 3h |
-| S4-07 | Exportação DRE como PDF profissional com logo | Financial.tsx | 2h |
+| S5-01 | Monitor de Temperatura manual (°C + umidade + alertas coloridos) | components/TemperatureMonitor.tsx (novo) + Sidebar.tsx | 3h |
+| S5-02 | Rendimento real automático ao fechar lote (peso_gancho / peso_vivo) | Batches.tsx + App.tsx | 2h |
+| S5-03 | FIFO visual: ordenar estoque por data_entrada, vermelho ≥7 dias | Stock.tsx | 2h |
+| S5-04 | GTA digital no cadastro do lote (número GTA, veículo, transportador) | Batches.tsx + types.ts | 3h |
+| S5-05 | Drip Loss calculado: campo de peso atual da peça no estoque | Stock.tsx + types.ts | 3h |
+| S5-06 | Paginação no fetchData (200 registros + botão carregar mais) | App.tsx | 3h |
+| S5-07 | PWA offline: service worker para entrada de lote sem internet | vite.config.ts | 4h |
 
-### Contexto para o Sprint 4:
-- Financial.tsx tem ~1.700 linhas — edições cirúrgicas com Python replace
-- O DRE já usa regime de competência correto (fix de 18/03)
-- profitTotals.cgs já calcula CMV correto via custo_real_kg
-- Para projeção: usar sales.data_vencimento (A Receber) e payables.data_vencimento (A Pagar)
-- Para DRE comparativo: filtrar transactions por mes atual e mes anterior separadamente
-- Centro de custo por lote: agrupar sales por id_lote (3 primeiros segmentos do id_completo)
+### Contexto para o Sprint 5:
+- Stock.tsx (727 linhas): aba de estoque com lista de peças. FIFO = ordenar por data_entrada ASC
+- Batches.tsx (1.837 linhas): formulário de lote. Campos GTA já existem em GTAManager separado — integrar
+- types.ts: adicionar campos drip_loss_atual e gta_numero no StockItem e Batch
+- Para S5-06: fetchData carrega tudo sem limite — adicionar .range(0, 199) e flag hasMore
+- Para PWA: instalar vite-plugin-pwa, configurar cache das telas de Batches e Expedition
 
 ---
 
-## 📋 Sprints Futuros
-
-### Sprint 5 — Operações
-Monitor de temperatura, rendimento real automático, FIFO visual,
-GTA integrado ao lote, Drip Loss por peça, paginação fetchData, PWA offline.
-
-### Sprint 6 — Analytics
+## 📋 Sprint 6 — Analytics (próximo após S5)
 Rentabilidade por raça, curva ABC fornecedores, relatório semanal auto,
 precificação dinâmica, CEPEA vs custo pago, reativação clientes, score fornecedor.
 
 ---
 
 ## 🔑 Referências rápidas
-- Supabase Project: fgzbkvgaxnwlufhndoqp
+- Supabase: fgzbkvgaxnwlufhndoqp
 - GitHub: github.com/tportooliveira-alt/frigogest-2026
 - App: https://gestfri.web.app
-- Chaves API: VITE_GROQ_API_KEY, VITE_AI_API_KEY (Gemini), VITE_ANTHROPIC_KEY (Haiku)
-- agent_memory table: criar no Supabase se quiser memória persistente dos agentes
