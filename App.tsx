@@ -1421,7 +1421,7 @@ const App: React.FC = () => {
             const metodo = metodoPagamento || 'OUTROS';
 
             newSales.push({
-              id_venda: `V-${Date.now()}-${groupIndex++}`,
+              id_venda: `V-${Date.now() + groupIndex}-${groupIndex++}`,
               id_cliente: client.id_ferro,
               nome_cliente: client.nome_social,
               id_completo: idCompleto,
@@ -1432,7 +1432,13 @@ const App: React.FC = () => {
               lucro_liquido_unitario: profit,
               custo_extras_total: groupExtraCost,
               prazo_dias: pagoNoAto ? 0 : (saleData.prazoDias || 30),
-              data_vencimento: (() => { const d = new Date(); d.setDate(d.getDate() + (pagoNoAto ? 0 : (saleData.prazoDias || 30))); return d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); })(),
+              data_vencimento: (() => {
+                // FIX: usar todayBR() como base para evitar bug de timezone
+                const [ano, mes, dia] = todayBR().split('-').map(Number);
+                const d = new Date(ano, mes - 1, dia);
+                d.setDate(d.getDate() + (pagoNoAto ? 0 : (saleData.prazoDias || 30)));
+                return d.toLocaleDateString('en-CA');
+              })(),
               forma_pagamento: pagoNoAto ? metodo : 'OUTROS',
               // PAGO NO ATO: já marca como PAGO e registra valor
               status_pagamento: pagoNoAto ? 'PAGO' : 'PENDENTE',

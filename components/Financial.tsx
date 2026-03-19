@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { jsPDF } from 'jspdf';
 import { Sale, Batch, StockItem, Client, Transaction, PaymentMethod, Payable } from '../types';
-import { formatCurrency, formatWeight, formatDateBR } from '../utils/helpers';
+import { formatCurrency, formatWeight, formatDateBR, todayBR } from '../utils/helpers';
 import {
   Edit2,
   Save,
@@ -91,7 +91,7 @@ const Financial: React.FC<FinancialProps> = ({
   const [showPayableForm, setShowPayableForm] = useState(false);
   const [showSaldoInicialForm, setShowSaldoInicialForm] = useState(false);
   const [saldoInicialValor, setSaldoInicialValor] = useState('');
-  const [saldoInicialData, setSaldoInicialData] = useState(() => new Date().toISOString().split('T')[0]);
+  const [saldoInicialData, setSaldoInicialData] = useState(todayBR);
   const [payableFilterStatus, setPayableFilterStatus] = useState<'ALL' | 'PENDING' | 'PAID' | 'LATE'>('PENDING');
   const [receivablesFilter, setReceivablesFilter] = useState<'ALL' | 'OVERDUE' | 'CRITICAL'>('ALL');
   const [supplierFilter, setSupplierFilter] = useState<string>('ALL');
@@ -99,13 +99,13 @@ const Financial: React.FC<FinancialProps> = ({
 
   const [newPayable, setNewPayable] = useState<Partial<Payable>>({
     descricao: '', valor: 0, valor_pago: 0, categoria: 'OPERACIONAL',
-    data_vencimento: new Date().toISOString().split('T')[0], status: 'PENDENTE'
+    data_vencimento: todayBR(), status: 'PENDENTE'
   });
 
   const [filterStartDate, setFilterStartDate] = useState(() => {
     const date = new Date(); date.setDate(1); return date.toISOString().split('T')[0];
   });
-  const [filterEndDate, setFilterEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [filterEndDate, setFilterEndDate] = useState(todayBR);
 
   // FILTROS AVANÇADOS - A PAGAR
   const [payableLoteFilter, setPayableLoteFilter] = useState('');
@@ -121,11 +121,11 @@ const Financial: React.FC<FinancialProps> = ({
 
   const [newTransaction, setNewTransaction] = useState<Partial<Transaction>>({
     descricao: '', valor: 0, tipo: 'SAIDA', categoria: 'OPERACIONAL',
-    data: new Date().toISOString().split('T')[0]
+    data: todayBR()
   });
 
   const [saleToPay, setSaleToPay] = useState<Sale | null>(null);
-  const [receiveDate, setReceiveDate] = useState(new Date().toISOString().split('T')[0]);
+  const [receiveDate, setReceiveDate] = useState(todayBR);
   const [receiveMethod, setReceiveMethod] = useState<PaymentMethod>('PIX');
   const [partialPaymentAmount, setPartialPaymentAmount] = useState<string>('');
   // S4-04: Segundo método de pagamento (split de recebimento)
@@ -237,7 +237,7 @@ const Financial: React.FC<FinancialProps> = ({
       referencia_id: payableToPay.id
     });
     const novoPago = (payableToPay.valor_pago || 0) + valor;
-    updatePayable({ ...payableToPay, valor_pago: novoPago, status: novoPago >= (payableToPay.valor - 0.01) ? 'PAGO' : 'PARCIAL', data_pagamento: new Date().toISOString().split('T')[0] });
+    updatePayable({ ...payableToPay, valor_pago: novoPago, status: novoPago >= (payableToPay.valor - 0.01) ? 'PAGO' : 'PARCIAL', data_pagamento: todayBR() });
     setPayableToPay(null); setPayableAmountStr('');
   };
 
@@ -1177,7 +1177,7 @@ const Financial: React.FC<FinancialProps> = ({
                     doc.setFillColor(15,23,42); doc.rect(15,y+5,pw-30,12,'F');
                     doc.setFont('courier','bold'); doc.setFontSize(8); doc.setTextColor(255,255,255);
                     doc.text('THIAGO 704  //  FRIGOGEST PRO X  //  DOCUMENTO OFICIAL',pw/2,y+13,{align:'center'});
-                    doc.save(`DRE_FRIGOGEST_${new Date().toISOString().split('T')[0]}.pdf`);
+                    doc.save(`DRE_FRIGOGEST_${todayBR()}.pdf`);
                   }}
                   className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-xl text-[9px] font-black uppercase tracking-wider hover:bg-blue-700 transition-all shadow-sm"
                 >
@@ -1607,7 +1607,7 @@ const Financial: React.FC<FinancialProps> = ({
                   doc.setFontSize(8);
                   doc.setTextColor(255, 255, 255);
                   doc.text('THIAGO 704  //  FRIGOGEST PRO X  //  DOCUMENTO OFICIAL', pw / 2, y + 8, { align: 'center' });
-                  doc.save(`FORNECEDORES_${new Date().toISOString().split('T')[0]}.pdf`);
+                  doc.save(`FORNECEDORES_${todayBR()}.pdf`);
                 }}
                 className="bg-blue-600 text-white rounded-xl px-4 py-2 shadow-sm flex items-center gap-2 text-[9px] font-black uppercase tracking-wider hover:bg-blue-700 transition-all"
               >

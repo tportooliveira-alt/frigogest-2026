@@ -465,9 +465,27 @@ const Batches: React.FC<BatchesProps> = ({
     }
 
     try {
-      // SE FOR UM DRAFT (lote novo), salva primeiro o lote no Firebase
+      // S5-02: Calcular rendimento real com base no peso pesado vs peso do romaneio
+      const pesoTotalPesado = itemsToSave.reduce((acc, item) => acc + item.peso_entrada, 0);
+      const batchRef = draftBatch || selectedBatch;
+      const pesoGancho = (batchRef as any)?.peso_gancho || 0;
+      const pesoRomaneio = batchRef?.peso_total_romaneio || 0;
+      const basePeso = pesoGancho > 0 ? pesoGancho : pesoRomaneio;
+      const rendimentoReal = basePeso > 0 ? parseFloat(((pesoTotalPesado / basePeso) * 100).toFixed(2)) : null;
+      // Recalcular custo_real_kg com peso real pesado (mais preciso que romaneio)
+      const valorBase = (batchRef?.valor_compra_total || 0) + (batchRef?.frete || 0) + (batchRef?.gastos_extras || 0);
+      const custoRealFinal = pesoTotalPesado > 0
+        ? parseFloat((valorBase / pesoTotalPesado).toFixed(4))
+        : (batchRef?.custo_real_kg || 0);
+
+      // SE FOR UM DRAFT (lote novo), salva primeiro o lote no banco
       if (draftBatch && draftBatch.id_lote === selectedBatchId) {
-        const batchToSave: Batch = { ...draftBatch, status: 'FECHADO' as const };
+        const batchToSave: Batch = {
+          ...draftBatch,
+          status: 'FECHADO' as const,
+          custo_real_kg: custoRealFinal,
+          ...(rendimentoReal !== null ? { rendimento_real: rendimentoReal } : {})
+        };
         const result = await addBatch(batchToSave);
         if (!result || !result.success) {
           alert('❌ Erro ao salvar o lote: ' + (result?.error || 'Erro desconhecido'));
@@ -476,9 +494,13 @@ const Batches: React.FC<BatchesProps> = ({
         // Registra financeiro
         await registerBatchFinancial(batchToSave);
       } else if (selectedBatch && updateBatch) {
-        // Lote já existia - só atualiza status
+        // Lote já existia — atualiza status + rendimento real + custo final
         await registerBatchFinancial(selectedBatch);
-        await updateBatch(selectedBatch.id_lote, { status: 'FECHADO' });
+        await updateBatch(selectedBatch.id_lote, {
+          status: 'FECHADO',
+          custo_real_kg: custoRealFinal,
+          ...(rendimentoReal !== null ? { rendimento_real: rendimentoReal } : {})
+        });
       }
 
       // Salva todos os itens no estoque

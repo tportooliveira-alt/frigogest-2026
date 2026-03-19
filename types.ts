@@ -69,6 +69,13 @@ export interface Batch {
   traceability_hash?: string; // Hash único Blockchain para exportação
   vision_audit_status?: 'PENDENTE' | 'APROVADO' | 'REVISAO'; // Status da auditoria por visão computacional
   esg_score?: number; // Score de compliance ambiental/social (0-100)
+  // ═══ S5-04: GTA DIGITAL ═══
+  gta_numero?: string;       // Número da Guia de Trânsito Animal
+  gta_serie?: string;        // Série da GTA
+  gta_data_emissao?: string; // Data de emissão da GTA
+  gta_validade?: string;     // Data de validade da GTA
+  transportadora_nome?: string; // Nome da transportadora
+  transportadora_placa?: string; // Placa do veículo
 }
 
 export enum StockType {
@@ -91,6 +98,7 @@ export interface StockItem {
   conformacao?: 'P' | 'U' | 'R' | 'O' | 'C' | 'O_L'; // Padrão de conformação muscular
   marmoreio?: number; // Score de marmoreio (0-10)
   anomalias_detectadas?: string[]; // Ex: ["hematoma_traseiro", "abscesso_vacina"]
+  drip_loss_atual?: number; // S5-05: Peso atual registrado após drip loss (kg)
 }
 
 export type PaymentMethod = 'DINHEIRO' | 'PIX' | 'CHEQUE' | 'BOLETO' | 'TRANSFERENCIA' | 'OUTROS';

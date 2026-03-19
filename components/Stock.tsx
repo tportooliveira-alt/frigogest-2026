@@ -77,10 +77,11 @@ const Stock: React.FC<StockProps> = ({ stock, batches, sales, clients, updateBat
       group.sequences.get(item.sequencia)!.push(item);
     });
 
+    // S5-03: FIFO — mais antigo primeiro (prioritize sell order)
     return Array.from(batchGroups.values()).sort((a, b) => {
       const dateA = a.batch ? new Date(a.batch.data_recebimento).getTime() : 0;
       const dateB = b.batch ? new Date(b.batch.data_recebimento).getTime() : 0;
-      return dateB - dateA;
+      return dateA - dateB; // ASC = mais antigo primeiro
     });
   }, [availableStock, batches, searchTerm]);
 
@@ -160,10 +161,11 @@ const Stock: React.FC<StockProps> = ({ stock, batches, sales, clients, updateBat
       }
       batchGroups.get(item.id_lote)!.items.push({ item, sale, client });
     });
+    // S5-03: FIFO — mais antigo primeiro (prioritize sell order)
     return Array.from(batchGroups.values()).sort((a, b) => {
       const dateA = a.batch ? new Date(a.batch.data_recebimento).getTime() : 0;
       const dateB = b.batch ? new Date(b.batch.data_recebimento).getTime() : 0;
-      return dateB - dateA;
+      return dateA - dateB; // ASC = mais antigo primeiro
     });
   }, [soldHistory, batches, searchTerm]);
 
@@ -297,9 +299,13 @@ const Stock: React.FC<StockProps> = ({ stock, batches, sales, clients, updateBat
 
             const daysInStock = batch ? calculateDaysInStock(batch.data_recebimento) : 0;
             const isOld = daysInStock > 8;
+            // S5-03: Cor de urgência FIFO
+            const fifoUrgency = daysInStock >= 8 ? 'critical' : daysInStock >= 5 ? 'warning' : daysInStock >= 3 ? 'attention' : 'ok';
+            const fifoBg = fifoUrgency === 'critical' ? 'border-l-4 border-rose-500 bg-rose-50/30' : fifoUrgency === 'warning' ? 'border-l-4 border-amber-400 bg-amber-50/20' : fifoUrgency === 'attention' ? 'border-l-4 border-yellow-300' : '';
+            const fifoBadge = fifoUrgency === 'critical' ? { label: `🔴 URGENTE ${daysInStock}d`, cls: 'bg-rose-100 text-rose-700 border border-rose-200' } : fifoUrgency === 'warning' ? { label: `🟡 ATENÇÃO ${daysInStock}d`, cls: 'bg-amber-100 text-amber-700 border border-amber-200' } : fifoUrgency === 'attention' ? { label: `🟡 ${daysInStock}d`, cls: 'bg-yellow-50 text-yellow-600 border border-yellow-200' } : null;
 
             return (
-              <div key={batchId} className="premium-card overflow-hidden">
+              <div key={batchId} className={`premium-card overflow-hidden ${fifoBg}`}>
                 {/* Batch Header */}
                 <div
                   onClick={() => toggleBatch(batchId)}
@@ -329,6 +335,13 @@ const Stock: React.FC<StockProps> = ({ stock, batches, sales, clients, updateBat
                                 </span>
                               );
                             })()}
+
+                            {/* S5-03: FIFO Badge de urgência */}
+                            {fifoBadge && (
+                              <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest ${fifoBadge.cls}`}>
+                                {fifoBadge.label}
+                              </span>
+                            )}
 
                             {/* SUPPLIER INSIGHT */}
                             {batch?.fornecedor && supplierInsights.has(batch.fornecedor) && (
