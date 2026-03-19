@@ -86,7 +86,7 @@ const Financial: React.FC<FinancialProps> = ({
   cleanAllFinancialData
 }) => {
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'cashflow' | 'receivables' | 'payables' | 'profit' | 'suppliers'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'cashflow' | 'receivables' | 'payables' | 'profit' | 'suppliers' | 'projecao' | 'lotes'>('overview');
   const [showTransactionForm, setShowTransactionForm] = useState(false);
   const [showPayableForm, setShowPayableForm] = useState(false);
   const [showSaldoInicialForm, setShowSaldoInicialForm] = useState(false);
@@ -128,6 +128,10 @@ const Financial: React.FC<FinancialProps> = ({
   const [receiveDate, setReceiveDate] = useState(new Date().toISOString().split('T')[0]);
   const [receiveMethod, setReceiveMethod] = useState<PaymentMethod>('PIX');
   const [partialPaymentAmount, setPartialPaymentAmount] = useState<string>('');
+  // S4-04: Segundo método de pagamento (split de recebimento)
+  const [receiveMethod2, setReceiveMethod2] = useState<PaymentMethod>('DINHEIRO');
+  const [partialAmount2, setPartialAmount2] = useState<string>('');
+  const [useSplitPayment, setUseSplitPayment] = useState(false);
   const [discountAmount, setDiscountAmount] = useState<string>('0');
   const [discountReason, setDiscountReason] = useState<string>('');
   const [payableToPay, setPayableToPay] = useState<Payable | null>(null);
@@ -163,26 +167,38 @@ const Financial: React.FC<FinancialProps> = ({
 
   const confirmPartialPayment = () => {
     if (!saleToPay || !partialPaymentAmount) return;
-    const valor = parseFloat(partialPaymentAmount.replace(',', '.'));
+    const valor1 = parseFloat(partialPaymentAmount.replace(',', '.'));
+    const valor2 = useSplitPayment ? (parseFloat(partialAmount2.replace(',', '.')) || 0) : 0;
+    const valor = valor1 + valor2;
     const desconto = parseFloat(discountAmount.replace(',', '.')) || 0;
     const { saldoDevedor } = getSaleBalance(saleToPay);
 
-    // Value + discount can't exceed balance
-    if (isNaN(valor) || valor <= 0 || (valor + desconto) > saldoDevedor + 0.01) return alert("⚠️ Valor inválido!");
+    if (isNaN(valor1) || valor1 <= 0 || (valor + desconto) > saldoDevedor + 0.01) return alert("⚠️ Valor inválido!");
 
-    // Apply payment PLUS discount to the account
     addPartialPayment(saleToPay.id_venda, valor + desconto, receiveMethod, receiveDate);
 
-    // ✅ CRIAR TRANSAÇÃO DE ENTRADA NO FLUXO DE CAIXA (o dinheiro que entrou de verdade)
-    if (valor > 0) {
+    // S4-04: Criar transação para cada método separadamente
+    if (valor1 > 0) {
       addTransaction({
         id: `TR-REC-${saleToPay.id_venda}-${Date.now()}`,
         data: receiveDate,
-        descricao: `Recebimento: ${saleToPay.nome_cliente || 'Cliente'} - ${saleToPay.id_completo}`,
+        descricao: `Recebimento (${receiveMethod}): ${saleToPay.nome_cliente || 'Cliente'} - ${saleToPay.id_completo}`,
         tipo: 'ENTRADA',
         categoria: 'VENDA',
-        valor: valor,
+        valor: valor1,
         metodo_pagamento: receiveMethod,
+        referencia_id: saleToPay.id_venda
+      });
+    }
+    if (useSplitPayment && valor2 > 0) {
+      addTransaction({
+        id: `TR-REC-${saleToPay.id_venda}-SPLIT-${Date.now()}`,
+        data: receiveDate,
+        descricao: `Recebimento (${receiveMethod2}): ${saleToPay.nome_cliente || 'Cliente'} - ${saleToPay.id_completo}`,
+        tipo: 'ENTRADA',
+        categoria: 'VENDA',
+        valor: valor2,
+        metodo_pagamento: receiveMethod2,
         referencia_id: saleToPay.id_venda
       });
     }
@@ -203,6 +219,8 @@ const Financial: React.FC<FinancialProps> = ({
 
     setSaleToPay(null);
     setPartialPaymentAmount('');
+    setPartialAmount2('');
+    setUseSplitPayment(false);
     setDiscountAmount('0');
     setDiscountReason('');
   };
@@ -377,6 +395,67 @@ const Financial: React.FC<FinancialProps> = ({
     return { efficacy, turnover };
   }, [sales, profitTotals, inventoryValue]);
 
+  // ── S4-01: Projeção de Fluxo de Caixa ────────────────────────────────
+  const projecaoFluxo = useMemo(() => {
+    const hoje = new Date();
+    const periodos = [30, 60, 90];
+    return periodos.map(dias => {
+      const limite = new Date(hoje.getTime() + dias * 86400000).toISOString().split('T')[0];
+      const entradas = pendingSales
+        .filter(s => s.data_vencimento <= limite)
+        .reduce((a, s) => a + getSaleBalance(s).saldoDevedor, 0);
+      const saidas = payables
+        .filter(p => p.status !== 'PAGO' && p.status !== 'ESTORNADO' && p.status !== 'CANCELADO' && p.data_vencimento <= limite)
+        .reduce((a, p) => a + (p.valor - (p.valor_pago || 0)), 0);
+      return { dias, entradas, saidas, liquido: entradas - saidas };
+    });
+  }, [pendingSales, payables]);
+
+  // ── S4-02: DRE Comparativo mês atual vs mês anterior ─────────────────
+  const dreComparativo = useMemo(() => {
+    const hoje = new Date();
+    const mesAtual = hoje.toISOString().substring(0, 7);
+    const mesAnterior = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1).toISOString().substring(0, 7);
+
+    const calcMes = (mes: string) => {
+      const vendasMes = sales.filter(s => s.status_pagamento !== 'ESTORNADO' && s.data_venda.startsWith(mes));
+      const revenue = vendasMes.reduce((a, s) => a + (s.peso_real_saida * s.preco_venda_kg), 0);
+      const closedBatchMap = new Map(closedBatches.map(b => [b.id_lote, b]));
+      const cgs = vendasMes.reduce((a, s) => {
+        const loteId = s.id_completo.split('-').slice(0, 3).join('-');
+        const custo = closedBatchMap.get(loteId)?.custo_real_kg || 0;
+        return a + (s.peso_real_saida * custo) + (s.custo_extras_total || 0);
+      }, 0);
+      const ops = validTransactions.filter(t => t.tipo === 'SAIDA' && t.data.startsWith(mes) && !['COMPRA_GADO','FRETE','ESTORNO','VENDA','DESCONTO','SALDO_INICIAL'].includes(t.categoria || '')).reduce((a, t) => a + t.valor, 0);
+      const lucro = revenue - cgs - ops;
+      const margem = revenue > 0 ? (lucro / revenue) * 100 : 0;
+      return { revenue, cgs, ops, lucro, margem, label: mes };
+    };
+    return { atual: calcMes(mesAtual), anterior: calcMes(mesAnterior) };
+  }, [sales, closedBatches, validTransactions]);
+
+  // ── S4-03: Centro de Custo por Lote ──────────────────────────────────
+  const custosPorLote = useMemo(() => {
+    const map = new Map<string, { loteId: string; fornecedor: string; receita: number; cgs: number; lucro: number; qtdVendas: number; kgVendido: number }>();
+    const closedBatchMap = new Map(closedBatches.map(b => [b.id_lote, b]));
+
+    sales.filter(s => s.status_pagamento !== 'ESTORNADO').forEach(s => {
+      const loteId = s.id_completo.split('-').slice(0, 3).join('-');
+      const batch = closedBatchMap.get(loteId);
+      if (!batch) return;
+      if (!map.has(loteId)) map.set(loteId, { loteId, fornecedor: batch.fornecedor, receita: 0, cgs: 0, lucro: 0, qtdVendas: 0, kgVendido: 0 });
+      const entry = map.get(loteId)!;
+      const revenue = s.peso_real_saida * s.preco_venda_kg;
+      const cgs = (s.peso_real_saida * (batch.custo_real_kg || 0)) + (s.custo_extras_total || 0);
+      entry.receita += revenue;
+      entry.cgs += cgs;
+      entry.lucro += revenue - cgs;
+      entry.qtdVendas += 1;
+      entry.kgVendido += s.peso_real_saida;
+    });
+    return Array.from(map.values()).sort((a, b) => b.receita - a.receita);
+  }, [sales, closedBatches]);
+
   return (
     <div className="p-4 md:p-10 min-h-screen bg-[#f8fafc] technical-grid animate-reveal pb-20 font-sans">
 
@@ -403,13 +482,13 @@ const Financial: React.FC<FinancialProps> = ({
 
         <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
           <div className="flex p-1 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto no-scrollbar">
-            {(['overview', 'cashflow', 'receivables', 'payables', 'suppliers', 'profit'] as const).map((tab) => (
+            {(['overview', 'cashflow', 'receivables', 'payables', 'suppliers', 'profit', 'projecao', 'lotes'] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
                 className={`relative px-4 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === tab ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'}`}
               >
-                {tab === 'overview' ? 'Visão Geral' : tab === 'cashflow' ? 'Fluxo Caixa' : tab === 'receivables' ? 'A Receber' : tab === 'payables' ? 'A Pagar' : tab === 'suppliers' ? 'Fornecedores' : 'DRE'}
+                {tab === 'overview' ? 'Visão Geral' : tab === 'cashflow' ? 'Fluxo Caixa' : tab === 'receivables' ? 'A Receber' : tab === 'payables' ? 'A Pagar' : tab === 'suppliers' ? 'Fornecedores' : tab === 'profit' ? 'DRE' : tab === 'projecao' ? 'Projeção' : 'Por Lote'}
                 {tab === 'payables' && latePayablesCount > 0 && (
                   <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 bg-rose-500 rounded-full text-[8px] font-black text-white flex items-center justify-center animate-pulse shadow-sm">
                     {latePayablesCount}
@@ -1058,9 +1137,53 @@ const Financial: React.FC<FinancialProps> = ({
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* Coluna esquerda: DRE estruturado */}
             <div className="premium-card p-8 bg-white">
-              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-                <FileText size={14} className="text-blue-600" /> DRE — Demonstrativo de Resultado
-              </h4>
+              <div className="flex items-center justify-between mb-6">
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <FileText size={14} className="text-blue-600" /> DRE — Demonstrativo de Resultado
+                </h4>
+                {/* S4-07: Exportar DRE como PDF */}
+                <button
+                  onClick={() => {
+                    const doc = new jsPDF();
+                    const pw = doc.internal.pageSize.width;
+                    doc.setFillColor(15,23,42); doc.rect(15,10,pw-30,28,'F');
+                    doc.setFont('courier','bold'); doc.setFontSize(24); doc.setTextColor(255,255,255);
+                    doc.text('THIAGO',22,28); doc.setFontSize(28); doc.setTextColor(59,130,246); doc.text('704',62,32);
+                    doc.setFillColor(59,130,246); doc.rect(15,38,pw-30,2,'F');
+                    doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(15,23,42);
+                    doc.text('DRE — DEMONSTRATIVO DE RESULTADO',pw/2,50,{align:'center'});
+                    doc.setFontSize(9); doc.setTextColor(100,116,139);
+                    doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`,pw/2,58,{align:'center'});
+                    doc.line(15,63,pw-15,63);
+                    let y=74;
+                    const rows = [
+                      ['Receita Bruta de Vendas', profitTotals.revenue],
+                      ['(-) CMV (Custo Mercadoria Vendida)', -profitTotals.cgs],
+                      ['= Lucro Bruto', profitTotals.revenue - profitTotals.cgs],
+                      ['(-) Despesas Operacionais', -profitTotals.ops],
+                      ['= EBITDA', profitTotals.revenue - profitTotals.cgs - profitTotals.ops],
+                    ];
+                    rows.forEach(([label, val], i) => {
+                      const isTotal = String(label).startsWith('=');
+                      if (isTotal) { doc.setFillColor(240,244,250); doc.rect(15,y-5,pw-30,10,'F'); }
+                      doc.setFont('helvetica', isTotal ? 'bold' : 'normal');
+                      doc.setFontSize(10); doc.setTextColor(15,23,42);
+                      doc.text(String(label),20,y);
+                      const num = Number(val);
+                      doc.setTextColor(num >= 0 ? 16 : 239, num >= 0 ? 185 : 68, num >= 0 ? 129 : 68);
+                      doc.text(`R$ ${Math.abs(num).toLocaleString('pt-BR',{minimumFractionDigits:2})}`,pw-18,y,{align:'right'});
+                      y += 12;
+                    });
+                    doc.setFillColor(15,23,42); doc.rect(15,y+5,pw-30,12,'F');
+                    doc.setFont('courier','bold'); doc.setFontSize(8); doc.setTextColor(255,255,255);
+                    doc.text('THIAGO 704  //  FRIGOGEST PRO X  //  DOCUMENTO OFICIAL',pw/2,y+13,{align:'center'});
+                    doc.save(`DRE_FRIGOGEST_${new Date().toISOString().split('T')[0]}.pdf`);
+                  }}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-xl text-[9px] font-black uppercase tracking-wider hover:bg-blue-700 transition-all shadow-sm"
+                >
+                  <Printer size={12} /> PDF
+                </button>
+              </div>
               <div className="space-y-1">
                 {(() => {
                   // FIX #1 + #2: DRE agora usa REGIME DE COMPETÊNCIA consistente.
@@ -1134,6 +1257,152 @@ const Financial: React.FC<FinancialProps> = ({
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── S4-01: ABA PROJEÇÃO ── */}
+      {activeTab === 'projecao' && (
+        <div className="max-w-7xl mx-auto space-y-8 animate-reveal">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {projecaoFluxo.map(p => (
+              <div key={p.dias} className={`premium-card p-8 ${p.liquido >= 0 ? 'bg-white' : 'bg-rose-50 border-rose-100'}`}>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Próximos {p.dias} dias</p>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500">Entradas previstas</span>
+                    <span className="text-sm font-black text-emerald-600">+{formatCurrency(p.entradas)}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500">Saídas previstas</span>
+                    <span className="text-sm font-black text-rose-600">-{formatCurrency(p.saidas)}</span>
+                  </div>
+                  <div className="border-t border-slate-100 pt-3 flex justify-between items-center">
+                    <span className="text-xs font-black text-slate-700 uppercase">Líquido</span>
+                    <span className={`text-xl font-black ${p.liquido >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
+                      {p.liquido >= 0 ? '+' : ''}{formatCurrency(p.liquido)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="premium-card p-8 bg-white">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Detalhamento — Contas a Receber Futuras</p>
+            <table className="technical-table">
+              <thead><tr><th>Vencimento</th><th>Cliente</th><th className="text-right">Saldo</th></tr></thead>
+              <tbody>
+                {pendingSales.slice(0, 15).map(s => (
+                  <tr key={s.id_venda} className="hover:bg-slate-50">
+                    <td className="text-xs font-bold text-slate-400">{formatDateBR(s.data_vencimento)}</td>
+                    <td className="text-xs font-black text-slate-800 uppercase italic">"{s.nome_cliente}"</td>
+                    <td className="text-right text-sm font-black text-emerald-600">{formatCurrency(getSaleBalance(s).saldoDevedor)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── S4-02 + S4-03: ABA POR LOTE ── */}
+      {activeTab === 'lotes' && (
+        <div className="max-w-7xl mx-auto space-y-10 animate-reveal">
+
+          {/* DRE Comparativo */}
+          <div className="premium-card p-8 bg-white">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+              <Activity size={14} className="text-blue-600" /> DRE Comparativo — Mês Atual vs Mês Anterior
+            </p>
+            <div className="overflow-x-auto">
+              <table className="technical-table">
+                <thead>
+                  <tr>
+                    <th>Indicador</th>
+                    <th className="text-right">Mês Anterior<br/><span className="text-[9px] font-normal text-slate-400">{dreComparativo.anterior.label}</span></th>
+                    <th className="text-right">Mês Atual<br/><span className="text-[9px] font-normal text-slate-400">{dreComparativo.atual.label}</span></th>
+                    <th className="text-right">Variação</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    { label: 'Receita Bruta', ant: dreComparativo.anterior.revenue, atu: dreComparativo.atual.revenue },
+                    { label: 'CMV', ant: dreComparativo.anterior.cgs, atu: dreComparativo.atual.cgs },
+                    { label: 'Despesas Operacionais', ant: dreComparativo.anterior.ops, atu: dreComparativo.atual.ops },
+                    { label: 'Lucro Líquido', ant: dreComparativo.anterior.lucro, atu: dreComparativo.atual.lucro, bold: true },
+                  ].map((row, i) => {
+                    const variacao = row.ant > 0 ? ((row.atu - row.ant) / row.ant) * 100 : 0;
+                    const isPositive = row.label === 'CMV' || row.label === 'Despesas Operacionais' ? variacao <= 0 : variacao >= 0;
+                    return (
+                      <tr key={i} className={row.bold ? 'bg-slate-50 font-black' : ''}>
+                        <td className={`text-xs ${row.bold ? 'font-black text-slate-900' : 'font-bold text-slate-600'}`}>{row.label}</td>
+                        <td className="text-right text-sm font-bold text-slate-500">{formatCurrency(row.ant)}</td>
+                        <td className="text-right text-sm font-black text-slate-900">{formatCurrency(row.atu)}</td>
+                        <td className={`text-right text-xs font-black ${row.ant === 0 ? 'text-slate-400' : isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {row.ant > 0 ? `${variacao >= 0 ? '+' : ''}${variacao.toFixed(1)}%` : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  <tr className="border-t-2 border-slate-300">
+                    <td className="text-xs font-black text-slate-700 uppercase">Margem %</td>
+                    <td className="text-right text-sm font-bold text-slate-500">{dreComparativo.anterior.margem.toFixed(1)}%</td>
+                    <td className="text-right text-sm font-black text-slate-900">{dreComparativo.atual.margem.toFixed(1)}%</td>
+                    <td className={`text-right text-xs font-black ${dreComparativo.atual.margem >= dreComparativo.anterior.margem ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {(dreComparativo.atual.margem - dreComparativo.anterior.margem).toFixed(1)}pp
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Centro de Custo por Lote */}
+          <div className="premium-card overflow-hidden bg-white">
+            <div className="p-8 bg-slate-50/50 border-b border-slate-100">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Centro de Custo — Resultado por Lote</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="technical-table">
+                <thead>
+                  <tr>
+                    <th>Lote</th>
+                    <th>Fornecedor</th>
+                    <th className="text-right">Receita</th>
+                    <th className="text-right">CMV</th>
+                    <th className="text-right">Lucro</th>
+                    <th className="text-right">Margem</th>
+                    <th className="text-right">Kg Vendido</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {custosPorLote.length === 0 && (
+                    <tr><td colSpan={7} className="py-16 text-center text-xs text-slate-300 font-black uppercase tracking-widest">Nenhuma venda registrada</td></tr>
+                  )}
+                  {custosPorLote.map(l => {
+                    const margem = l.receita > 0 ? (l.lucro / l.receita) * 100 : 0;
+                    return (
+                      <tr key={l.loteId} className="hover:bg-blue-50/30 transition-colors">
+                        <td><span className="text-[10px] font-mono font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">{l.loteId}</span></td>
+                        <td className="text-xs font-bold text-slate-700 uppercase italic">"{l.fornecedor}"</td>
+                        <td className="text-right text-sm font-black text-slate-900">{formatCurrency(l.receita)}</td>
+                        <td className="text-right text-sm font-bold text-rose-600">{formatCurrency(l.cgs)}</td>
+                        <td className={`text-right text-sm font-black ${l.lucro >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(l.lucro)}</td>
+                        <td className={`text-right text-xs font-black ${margem >= 15 ? 'text-emerald-600' : margem >= 0 ? 'text-amber-600' : 'text-rose-600'}`}>{margem.toFixed(1)}%</td>
+                        <td className="text-right text-xs font-bold text-slate-500">{formatWeight(l.kgVendido)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {custosPorLote.length > 0 && (
+              <div className="p-5 bg-slate-50 border-t border-slate-100 flex flex-wrap gap-6 items-center">
+                <div><span className="text-[9px] font-black text-slate-400 uppercase">Total Receita</span><p className="text-sm font-black text-slate-900">{formatCurrency(custosPorLote.reduce((a,l) => a+l.receita,0))}</p></div>
+                <div><span className="text-[9px] font-black text-slate-400 uppercase">Total CMV</span><p className="text-sm font-black text-rose-600">{formatCurrency(custosPorLote.reduce((a,l) => a+l.cgs,0))}</p></div>
+                <div><span className="text-[9px] font-black text-slate-400 uppercase">Total Lucro</span><p className="text-sm font-black text-emerald-600">{formatCurrency(custosPorLote.reduce((a,l) => a+l.lucro,0))}</p></div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1493,7 +1762,44 @@ const Financial: React.FC<FinancialProps> = ({
                   {/* FORMA DE RECEBIMENTO + DATA */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Forma de Recebimento</label>
+                      {/* S4-04: Toggle Split Payment */}
+                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                      <div>
+                        <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Dividir em 2 métodos?</p>
+                        <p className="text-[9px] text-slate-400">Ex: parte PIX + parte Dinheiro</p>
+                      </div>
+                      <button
+                        onClick={() => setUseSplitPayment(!useSplitPayment)}
+                        className={`w-12 h-6 rounded-full transition-all ${useSplitPayment ? 'bg-blue-600' : 'bg-slate-200'}`}
+                      >
+                        <div className={`w-5 h-5 bg-white rounded-full shadow transition-all mx-0.5 ${useSplitPayment ? 'translate-x-6' : 'translate-x-0'}`} />
+                      </button>
+                    </div>
+                    {useSplitPayment && (
+                      <div className="space-y-3 p-4 bg-blue-50/50 border border-blue-100 rounded-2xl">
+                        <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">2º Valor e Método</p>
+                        <input
+                          type="text" inputMode="decimal" placeholder="Valor 2 (R$)"
+                          className="modern-input h-14 text-xl font-black text-center bg-white border-blue-200"
+                          value={partialAmount2}
+                          onChange={e => setPartialAmount2(e.target.value)}
+                        />
+                        <select
+                          className="modern-input h-12 bg-white appearance-none font-black text-xs uppercase cursor-pointer w-full"
+                          value={receiveMethod2}
+                          onChange={e => setReceiveMethod2(e.target.value as PaymentMethod)}
+                        >
+                          <option value="PIX">💠 PIX</option>
+                          <option value="DINHEIRO">💵 DINHEIRO</option>
+                          <option value="CHEQUE">📄 CHEQUE</option>
+                          <option value="TRANSFERENCIA">🏦 TRANSFERÊNCIA</option>
+                          <option value="BOLETO">📋 BOLETO</option>
+                          <option value="CARTAO">💳 CARTÃO</option>
+                          <option value="OUTROS">📎 OUTROS</option>
+                        </select>
+                      </div>
+                    )}
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Forma de Recebimento</label>
                       <div className="relative">
                         <select
                           className="modern-input h-14 bg-slate-50/30 appearance-none font-black text-xs uppercase cursor-pointer w-full"

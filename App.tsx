@@ -172,6 +172,29 @@ const App: React.FC = () => {
 
       setDbStatus('online');
 
+      // ── S4-06: Notificações push de vencimento ──────────────────
+      try {
+        if ('Notification' in window && Notification.permission === 'granted') {
+          const hoje = new Date().toISOString().split('T')[0];
+          const vencemHoje = payablesData.filter((p: any) =>
+            p.status !== 'PAGO' && p.status !== 'ESTORNADO' && p.status !== 'CANCELADO' &&
+            p.data_vencimento === hoje
+          );
+          if (vencemHoje.length > 0) {
+            const total = vencemHoje.reduce((a: number, p: any) => a + (p.valor - (p.valor_pago || 0)), 0);
+            new Notification('FrigoGest — Vencimento Hoje', {
+              body: `${vencemHoje.length} conta(s) vence(m) hoje — Total: R$ ${total.toFixed(2)}`,
+              icon: '/icon.svg'
+            });
+          }
+        } else if ('Notification' in window && Notification.permission === 'default') {
+          // Pedir permissão silenciosamente na primeira carga
+          Notification.requestPermission();
+        }
+      } catch (notifErr) {
+        // Notificações não suportadas — silencioso
+      }
+
       // ── AIOS AUTO-TRIGGERS (Agentes Sentinela) ──
       // Rodam silenciosamente após cada carregamento de dados
       try {
@@ -1043,11 +1066,14 @@ const App: React.FC = () => {
         const { data: existingPayFrete } = await supabase!.from('payables').select('id').eq('id', payableFreteId).limit(1);
 
         if (!existingPayFrete || existingPayFrete.length === 0) {
+          // S4-05: Usar transportadora vinculada ao lote se existir
+          const transportadoraNome = (batch as any).transportadora_nome || (batch as any).transportadora_id || batch.fornecedor;
           await handleAddPayable({
             id: payableFreteId,
             id_lote: batch.id_lote,
-            descricao: `Pagamento Frete Lote ${batch.id_lote} - ${batch.fornecedor}`,
-            beneficiario: batch.fornecedor,  // (Futuro: Vincular com tabela de Transportadores)
+            descricao: `Frete Lote ${batch.id_lote} - ${transportadoraNome}`,
+            beneficiario: transportadoraNome,
+            fornecedor_id: (batch as any).transportadora_id || undefined,
             valor: frete,
             valor_pago: 0,
             data_vencimento: vencimentoFrete,
