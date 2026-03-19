@@ -270,31 +270,7 @@ export const runOrchestration = async (
             // MOCK INJECT: VENTO EM POPA para teste de análise global
             let finalSnapshot = typeof dataSnapshot === 'function' ? (dataSnapshot as any)(agent) : dataSnapshot;
 
-            if (topic.toLowerCase().includes('teste') || topic.toLowerCase().includes('tesstar') || topic.toLowerCase().includes('analistas')) {
-                finalSnapshot = `
-[MODO SIMULAÇÃO DE ESTRESSE: FRIGORÍFICO VENTO EM POPA E ALTA ESCALA]
-📈 DADOS FINANCEIROS
-- Saldo em Caixa Atual: R$ 2.450.000,00
-- Receita Realizada Hoje: R$ 480.000,00
-- Lucro Líquido Médio por Lote: R$ 85.000,00
-- Inadimplência: 0%
-
-📦 ESTOQUE E PRODUÇÃO
-- Rendimento Carcaça Médio do dia: 55.4% (Nelore Castrado Padrão Exportação)
-- Giro de Câmaras: 1.5 dias (Super Rápido)
-- Zero perdas com Drip Loss.
-
-🌍 MERCADO EXTERNO / CONTA DE OURO V7
-- Dólar Atual: R$ 5,82
-- Milho B3: R$ 69,50
-- Abate IBGE projetado: 28 Milhões/ano (Baixo)
-- Bezerro (Reposição base MS): R$ 3.200
-- Consumo Interno Per Capita: 35 kg
-- Relatório Global: Frango disparando nos supermercados (R$ 8,20/kg) e Exportação SECEX escoando absurdo de 3.5M. Selic 13.75%.
-
-Com base nestes dados absolutos de excelência financeira e cenário macro agressivo, valide se a Equação de Ouro V7 justifica o cenário macro e analise a operação com confiança Nível Faria Lima.
-`;
-            }
+            // Fix 6: Mock de dados de teste removido — sempre usa dados reais
 
             const initialPrompt = buildPrompt(agent, finalSnapshot, staticContext, topic, globalMentorTip);
 

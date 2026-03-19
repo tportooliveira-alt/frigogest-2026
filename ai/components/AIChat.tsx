@@ -7,8 +7,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ArrowLeft, Send, Bot, User, Loader2, ChevronDown } from 'lucide-react';
 import { runCascade, extractFinalAnswer } from '../services/llmCascade';
+import { buildRichSnapshot } from '../services/buildSnapshot';
+import { getAgentMemory } from '../services/agentMemoryService';
 import { AGENT_DISPLAY_NAMES, AGENT_SYSTEM_PROMPTS } from '../../agentPrompts';
-import { formatCurrency } from '../../utils/helpers';
 import { Batch, StockItem, Sale, Client, Transaction, Payable } from '../../types';
 
 interface AIChatProps {
@@ -32,34 +33,7 @@ interface Message {
   timestamp: Date;
 }
 
-const buildSnapshot = (props: Omit<AIChatProps, 'onBack'>): string => {
-  const today = new Date().toISOString().split('T')[0];
-  const saldo = props.transactions.reduce(
-    (a, t) => a + (t.tipo === 'ENTRADA' ? t.valor : -t.valor), 0
-  );
-  const aReceber = props.sales
-    .filter(s => s.status_pagamento === 'PENDENTE')
-    .reduce((a, s) => a + (s.peso_real_saida * s.preco_venda_kg) - ((s as any).valor_pago || 0), 0);
-  const aPagar = props.payables
-    .filter(p => p.status !== 'PAGO' && p.status !== 'ESTORNADO' && p.status !== 'CANCELADO')
-    .reduce((a, p) => a + (p.valor - (p.valor_pago || 0)), 0);
-  const dispStock = props.stock.filter(s => s.status === 'DISPONIVEL');
-  const totalKgEstoque = dispStock.reduce((a, s) => a + s.peso_entrada, 0);
-  const vendasMes = props.sales.filter(s =>
-    s.status_pagamento !== 'ESTORNADO' &&
-    s.data_venda >= today.substring(0, 7) + '-01'
-  );
-  const faturamentoMes = vendasMes.reduce((a, s) => a + (s.peso_real_saida * s.preco_venda_kg), 0);
 
-  return `DATA: ${today}
-SALDO CAIXA: R$ ${saldo.toFixed(2)}
-A RECEBER: R$ ${aReceber.toFixed(2)} (${props.sales.filter(s => s.status_pagamento === 'PENDENTE').length} vendas)
-A PAGAR: R$ ${aPagar.toFixed(2)} (${props.payables.filter(p => p.status === 'PENDENTE').length} contas)
-ESTOQUE: ${dispStock.length} peças | ${totalKgEstoque.toFixed(1)} kg disponíveis
-FATURAMENTO MÊS: R$ ${faturamentoMes.toFixed(2)} (${vendasMes.length} vendas)
-CLIENTES ATIVOS: ${props.clients.length}
-LOTES FECHADOS: ${props.batches.filter(b => b.status === 'FECHADO').length}`;
-};
 
 const AGENT_LIST = Object.keys(AGENT_DISPLAY_NAMES);
 
@@ -93,7 +67,7 @@ const AIChat: React.FC<AIChatProps> = ({ onBack, ...dataProps }) => {
     setLoading(true);
 
     try {
-      const snapshot = buildSnapshot(dataProps);
+      const snapshot = buildRichSnapshot({ ...dataProps, scheduledOrders: dataProps.scheduledOrders || [] });
       const systemPrompt = AGENT_SYSTEM_PROMPTS[selectedAgent] || AGENT_SYSTEM_PROMPTS.ADMINISTRATIVO;
 
       // Histórico recente (últimas 4 trocas)
@@ -101,8 +75,15 @@ const AIChat: React.FC<AIChatProps> = ({ onBack, ...dataProps }) => {
         `${m.role === 'user' ? 'Usuário' : agentInfo.nome}: ${m.text}`
       ).join('\n');
 
+      // Fix 5: Injetar memória persistente do agente no contexto
+      const memorias = await getAgentMemory(selectedAgent, 3);
+      const memoriaCtx = memorias.length > 0
+        ? `MEMÓRIA DO AGENTE (interações anteriores):\n${memorias.map(m => `  • ${m.topic}: ${m.insight}`).join('\n')}\n`
+        : '';
+
       const fullPrompt = `${systemPrompt}
 
+${memoriaCtx}
 ━━━ DADOS REAIS DO SISTEMA ━━━
 ${snapshot}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Loader2, Send, ChevronRight } from 'lucide-react';
 import { runCascade, extractFinalAnswer } from '../services/llmCascade';
+import { buildRichSnapshot } from '../services/buildSnapshot';
 import { AGENT_DISPLAY_NAMES, AGENT_SYSTEM_PROMPTS } from '../../agentPrompts';
 import { Batch, StockItem, Sale, Client, Transaction, Payable } from '../../types';
 
@@ -28,20 +29,7 @@ interface AgentResponse {
   loading: boolean;
 }
 
-const buildSnapshot = (props: Omit<AIAgentsProps, 'onBack'>): string => {
-  const today = new Date().toISOString().split('T')[0];
-  const saldo = props.transactions.reduce((a, t) => a + (t.tipo === 'ENTRADA' ? t.valor : -t.valor), 0);
-  const aReceber = props.sales.filter(s => s.status_pagamento === 'PENDENTE')
-    .reduce((a, s) => a + (s.peso_real_saida * s.preco_venda_kg) - ((s as any).valor_pago || 0), 0);
-  const aPagar = props.payables.filter(p => p.status !== 'PAGO' && p.status !== 'ESTORNADO' && p.status !== 'CANCELADO')
-    .reduce((a, p) => a + (p.valor - (p.valor_pago || 0)), 0);
-  const dispStock = props.stock.filter(s => s.status === 'DISPONIVEL');
-  return `DATA: ${today}
-SALDO: R$ ${saldo.toFixed(2)} | A RECEBER: R$ ${aReceber.toFixed(2)} | A PAGAR: R$ ${aPagar.toFixed(2)}
-ESTOQUE: ${dispStock.length} peças | ${dispStock.reduce((a, s) => a + s.peso_entrada, 0).toFixed(1)}kg
-LOTES: ${props.batches.filter(b => b.status === 'FECHADO').length} fechados | CLIENTES: ${props.clients.length}
-VENDAS MÊS: ${props.sales.filter(s => s.status_pagamento !== 'ESTORNADO' && s.data_venda >= today.substring(0,7)+'-01').length}`;
-};
+
 
 const AGENT_LIST = Object.keys(AGENT_DISPLAY_NAMES);
 
@@ -49,13 +37,14 @@ const AIAgents: React.FC<AIAgentsProps> = ({ onBack, ...dataProps }) => {
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [question, setQuestion] = useState('');
   const [response, setResponse] = useState<AgentResponse | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const consultAgent = async (agentId: string, q: string) => {
     if (!q.trim()) return;
     setResponse({ agentId, text: '', provider: '', loading: true });
 
     try {
-      const snapshot = buildSnapshot(dataProps);
+      const snapshot = buildRichSnapshot({ ...dataProps, scheduledOrders: dataProps.scheduledOrders || [] });
       const systemPrompt = AGENT_SYSTEM_PROMPTS[agentId] || AGENT_SYSTEM_PROMPTS.ADMINISTRATIVO;
       const prompt = `${systemPrompt}\n\n━━━ DADOS REAIS ━━━\n${snapshot}\n━━━━━━━━━━━━━━━━━\n\nPergunta: ${q}`;
       const result = await runCascade(prompt, agentId);
@@ -102,6 +91,11 @@ const AIAgents: React.FC<AIAgentsProps> = ({ onBack, ...dataProps }) => {
                 {response.provider && (
                   <p className="text-[9px] font-black text-slate-600 uppercase mt-3">{response.provider}</p>
                 )}
+                {/* Fix 10: Botão copiar */}
+                <button onClick={() => { navigator.clipboard.writeText(response.text); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+                  className="mt-3 text-[9px] font-black uppercase px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 transition-all text-slate-400 hover:text-white">
+                  {copied ? '✅ Copiado!' : '📋 Copiar resposta'}
+                </button>
               </>
             )}
           </div>

@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Bot, Loader2, Send } from 'lucide-react';
 import { runCascade, extractFinalAnswer } from '../services/llmCascade';
+import { buildRichSnapshot } from '../services/buildSnapshot';
 import { AGENT_SYSTEM_PROMPTS } from '../../agentPrompts';
 import { StockItem, Client, Sale, Batch } from '../../types';
 import { formatCurrency, formatWeight } from '../../utils/helpers';
@@ -30,9 +31,7 @@ const SalesAgent: React.FC<SalesAgentProps> = ({ onBack, clients, sales, stock, 
     if (!question.trim()) return;
     setLoading(true);
     try {
-      const snapshot = `ESTOQUE DISPONÍVEL: ${dispStock.length} peças | ${totalKg.toFixed(1)}kg
-CLIENTES: ${clients.length}
-VENDAS RECENTES: ${sales.slice(0, 5).map(s => `${s.nome_cliente} ${s.peso_real_saida}kg @R$${s.preco_venda_kg}/kg`).join(' | ')}`;
+      const snapshot = buildRichSnapshot({ batches: [], stock, sales, clients, transactions: [], payables: [] });
 
       const prompt = `${AGENT_SYSTEM_PROMPTS.COMERCIAL}\n\n━━━ DADOS ━━━\n${snapshot}\n━━━━━━━━━━━\n\nPergunta de vendas: ${question}\nMarcos:`;
       const result = await runCascade(prompt, 'COMERCIAL');

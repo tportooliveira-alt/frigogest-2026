@@ -32,7 +32,14 @@ interface TriggerInput {
 }
 
 // ── Helper ──────────────────────────────────────────────────────
-const today = () => new Date().toISOString().split('T')[0];
+// Fix 1: Usar hora local Brasil em vez de UTC para evitar bug de fuso
+const today = (): string => {
+  const d = new Date();
+  const ano = d.getFullYear();
+  const mes = String(d.getMonth() + 1).padStart(2,'0');
+  const dia = String(d.getDate()).padStart(2,'0');
+  return `${ano}-${mes}-${dia}`;
+};
 const daysBetween = (a: string, b: string) =>
   Math.floor((new Date(b).getTime() - new Date(a).getTime()) / 86400000);
 

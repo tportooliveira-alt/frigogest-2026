@@ -35,10 +35,14 @@ async function tryGroq(prompt: string): Promise<CascadeResult> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
       body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        max_tokens: 600,
-        temperature: 0.4,
-        messages: [{ role: 'user', content: prompt }]
+        model: 'llama-3.3-70b-versatile',
+        max_tokens: 700,
+        temperature: 0.3,
+        // Fix 4: system separado do user para maior aderência às instruções
+        messages: [
+          { role: 'system', content: 'Você é um especialista do FrigoGest, frigorífico em Vitória da Conquista, Bahia. Responda sempre em português brasileiro. Seja direto e use dados reais fornecidos.' },
+          { role: 'user', content: prompt }
+        ]
       })
     }),
     8000
@@ -48,7 +52,7 @@ async function tryGroq(prompt: string): Promise<CascadeResult> {
   const data = await res.json();
   const text = data.choices?.[0]?.message?.content?.trim();
   if (!text) throw new Error('Groq resposta vazia');
-  return { text, provider: 'groq-llama3' };
+  return { text, provider: 'groq-llama70b' };
 }
 
 // ── 2. Gemini Flash (Google — grátis tier, bom contexto) ────────
@@ -63,8 +67,10 @@ async function tryGemini(prompt: string): Promise<CascadeResult> {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 600, temperature: 0.4 }
+          // Fix 4: systemInstruction separado para maior aderência
+          systemInstruction: { parts: [{ text: 'Você é um especialista do FrigoGest, frigorífico em Vitória da Conquista, Bahia. Responda em português brasileiro. Use apenas dados reais fornecidos no contexto.' }] },
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 700, temperature: 0.3 }
         })
       }
     ),
@@ -94,7 +100,8 @@ async function tryHaiku(prompt: string): Promise<CascadeResult> {
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 600,
+        max_tokens: 700,
+        system: 'Você é um especialista do FrigoGest, frigorífico em Vitória da Conquista, Bahia. Responda em português brasileiro. Use apenas dados reais fornecidos no contexto.',
         messages: [{ role: 'user', content: prompt }]
       })
     }),

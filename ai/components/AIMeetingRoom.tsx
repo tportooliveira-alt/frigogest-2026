@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Loader2, Users, Play } from 'lucide-react';
 import { runCascade, extractFinalAnswer } from '../services/llmCascade';
+import { buildRichSnapshot } from '../services/buildSnapshot';
 import { AGENT_DISPLAY_NAMES, AGENT_SYSTEM_PROMPTS } from '../../agentPrompts';
 import { Batch, StockItem, Sale, Client, Transaction, Payable } from '../../types';
 
@@ -28,35 +29,32 @@ interface AgentVote {
   done: boolean;
 }
 
-const MEETING_AGENTS = ['ADMINISTRATIVO', 'FLUXO_CAIXA', 'COMERCIAL', 'COMPRAS', 'ESTOQUE'];
+// Fix 9: Agentes configuráveis pelo usuário
+const ALL_MEETING_AGENTS = ['ADMINISTRATIVO', 'FLUXO_CAIXA', 'COMERCIAL', 'COMPRAS', 'ESTOQUE', 'PRODUCAO', 'AUDITOR', 'MERCADO', 'COBRANCA', 'QUALIDADE'];
+const DEFAULT_AGENTS = ['ADMINISTRATIVO', 'FLUXO_CAIXA', 'COMERCIAL', 'COMPRAS', 'ESTOQUE'];
 
-const buildSnapshot = (props: Omit<AIMeetingRoomProps, 'onBack'>): string => {
-  const today = new Date().toISOString().split('T')[0];
-  const saldo = props.transactions.reduce((a, t) => a + (t.tipo === 'ENTRADA' ? t.valor : -t.valor), 0);
-  const aReceber = props.sales.filter(s => s.status_pagamento === 'PENDENTE')
-    .reduce((a, s) => a + (s.peso_real_saida * s.preco_venda_kg) - ((s as any).valor_pago || 0), 0);
-  return `DATA: ${today} | SALDO: R$ ${saldo.toFixed(2)} | A RECEBER: R$ ${aReceber.toFixed(2)}
-ESTOQUE: ${props.stock.filter(s => s.status === 'DISPONIVEL').length} peças
-LOTES: ${props.batches.filter(b => b.status === 'FECHADO').length} | CLIENTES: ${props.clients.length}`;
-};
+
 
 const AIMeetingRoom: React.FC<AIMeetingRoomProps> = ({ onBack, ...dataProps }) => {
   const [topic, setTopic] = useState('');
   const [running, setRunning] = useState(false);
   const [votes, setVotes] = useState<AgentVote[]>([]);
+  const [selectedAgents, setSelectedAgents] = useState<string[]>(DEFAULT_AGENTS);
+  const [showAgentPicker, setShowAgentPicker] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const runMeeting = async () => {
     if (!topic.trim()) return;
     setRunning(true);
-    const snapshot = buildSnapshot(dataProps);
+    const snapshot = buildRichSnapshot({ ...dataProps, scheduledOrders: dataProps.scheduledOrders || [] });
 
     // Inicializar todas as respostas como loading
-    const initial = MEETING_AGENTS.map(id => ({ agentId: id, text: '', provider: '', done: false }));
+    const initial = selectedAgents.map(id => ({ agentId: id, text: '', provider: '', done: false }));
     setVotes(initial);
 
     // Rodar em paralelo
     await Promise.allSettled(
-      MEETING_AGENTS.map(async (agId, idx) => {
+      selectedAgents.map(async (agId, idx) => {
         try {
           const prompt = `${AGENT_SYSTEM_PROMPTS[agId]}\n\n━━━ DADOS ━━━\n${snapshot}\n━━━━━━━━━━━\n\nTEMA DA REUNIÃO: "${topic}"\nSeu parecer (máx 100 palavras):`;
           const result = await runCascade(prompt, agId);
@@ -80,13 +78,39 @@ const AIMeetingRoom: React.FC<AIMeetingRoomProps> = ({ onBack, ...dataProps }) =
           <ArrowLeft size={16} /> Voltar
         </button>
 
-        <div className="flex items-center gap-4 mb-8">
-          <div className="w-12 h-12 bg-rose-600/20 border border-rose-600/30 rounded-2xl flex items-center justify-center">
-            <Users size={22} className="text-rose-400" />
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-rose-600/20 border border-rose-600/30 rounded-2xl flex items-center justify-center">
+              <Users size={22} className="text-rose-400" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-black">Sala de Guerra</h1>
+              <p className="text-xs text-slate-400">Reunião com {selectedAgents.length} especialistas selecionados</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-black">Sala de Guerra</h1>
-            <p className="text-xs text-slate-400">Reunião simultânea com {MEETING_AGENTS.length} diretores</p>
+          {/* Fix 9: Picker de agentes */}
+          <div className="relative">
+            <button onClick={() => setShowAgentPicker(!showAgentPicker)}
+              className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase transition-all">
+              Agentes ({selectedAgents.length})
+            </button>
+            {showAgentPicker && (
+              <div className="absolute right-0 top-full mt-2 w-56 bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl z-50 p-3 space-y-1">
+                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">Selecionar especialistas</p>
+                {ALL_MEETING_AGENTS.map(agId => {
+                  const ag = AGENT_DISPLAY_NAMES[agId];
+                  const sel = selectedAgents.includes(agId);
+                  return (
+                    <button key={agId} onClick={() => setSelectedAgents(prev =>
+                      sel ? prev.filter(a => a !== agId) : [...prev, agId]
+                    )} className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${sel ? 'bg-rose-600/30 text-white' : 'text-slate-400 hover:bg-white/10'}`}>
+                      <span>{ag.emoji}</span>
+                      <span className="font-bold">{ag.nome}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
@@ -129,7 +153,14 @@ const AIMeetingRoom: React.FC<AIMeetingRoomProps> = ({ onBack, ...dataProps }) =
                   {vote.done ? (
                     <>
                       <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">{vote.text}</p>
-                      {vote.provider && <p className="text-[9px] text-slate-600 uppercase mt-2">{vote.provider}</p>}
+                      <div className="flex items-center justify-between mt-2">
+                        {vote.provider && <p className="text-[9px] text-slate-600 uppercase">{vote.provider}</p>}
+                        {/* Fix 10: Botão copiar */}
+                        <button onClick={() => { navigator.clipboard.writeText(vote.text); setCopiedId(vote.agentId); setTimeout(() => setCopiedId(null), 2000); }}
+                          className="text-[9px] font-black uppercase px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 transition-all text-slate-400 hover:text-white">
+                          {copiedId === vote.agentId ? '✅ Copiado' : '📋 Copiar'}
+                        </button>
+                      </div>
                     </>
                   ) : (
                     <div className="h-16 flex items-center">
