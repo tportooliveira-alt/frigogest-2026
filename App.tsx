@@ -571,11 +571,11 @@ const App: React.FC = () => {
     }
 
     const valorPago = (sale as any).valor_pago || 0;
-    const confirmMsg = `Confirmar estorno da venda?\n\nCliente: ${sale.nome_cliente}\nValor pago: R$ ${valorPago.toFixed(2)}\n\nIsso devolverá os itens ao estoque e reverterá o financeiro.`;
-    if (!window.confirm(confirmMsg)) return;
+    // Confirm removido — chamadores (SalesHistory, Financial) já pedem confirmação
 
     try {
-      console.log(`🔄 Iniciando estorno da venda: ${saleId} (Cliente: ${sale.nome_cliente})`);
+      console.log(`🔄 Estornando venda: ${saleId} | Cliente: ${sale.nome_cliente} | valorPago: R$${valorPago.toFixed(2)} | status: ${sale.status_pagamento}`);
+
 
       // 1. Marcar venda como ESTORNADO e zerar valor_pago
       await supabase.from('sales').update({ status_pagamento: 'ESTORNADO', valor_pago: 0 }).eq('id_venda', saleId);
@@ -615,11 +615,19 @@ const App: React.FC = () => {
         }
       }
 
-      // 3. Reverter financeiro: estornar TODAS as entradas de recebimento desta venda
-      const entradasVenda = data.transactions.filter(t =>
-        t.referencia_id === saleId && t.tipo === 'ENTRADA' && t.categoria === 'VENDA'
-      );
+      // 3. Reverter financeiro — buscar DIRETO no Supabase (evita state desatualizado)
+      const { data: txDoDB } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('referencia_id', saleId);
 
+      const todasTxVenda = txDoDB || [];
+
+      // 3a. Reverter recebimentos (ENTRADA categoria VENDA) → criar SAIDA de estorno
+      const entradasVenda = todasTxVenda.filter((t: any) =>
+        t.tipo === 'ENTRADA' && t.categoria === 'VENDA'
+      );
+      let totalRevertido = 0;
       for (const tx of entradasVenda) {
         const estornoId = `TR-ESTORNO-VENDA-${saleId}-${tx.id}`;
         await supabase.from('transactions').upsert(sanitize({
@@ -629,12 +637,14 @@ const App: React.FC = () => {
           tipo: 'SAIDA',
           categoria: 'ESTORNO',
           valor: tx.valor,
-          metodo_pagamento: (sale as any).metodo_pagamento || sale.forma_pagamento || 'OUTROS',
+          metodo_pagamento: tx.metodo_pagamento || 'OUTROS',
           referencia_id: saleId
         }));
+        totalRevertido += tx.valor;
+        console.log(`💸 Revertendo R$${tx.valor} do caixa (${tx.id})`);
       }
 
-      // Fallback: se não havia transações de recebimento mas houve pagamento (valor_pago > 0)
+      // 3b. Fallback: venda marcada como PAGO mas sem TR — usa valor_pago
       if (entradasVenda.length === 0 && valorPago > 0) {
         const estornoIdDireto = `TR-ESTORNO-VENDA-${saleId}-DIRETO`;
         await supabase.from('transactions').upsert(sanitize({
@@ -644,14 +654,16 @@ const App: React.FC = () => {
           tipo: 'SAIDA',
           categoria: 'ESTORNO',
           valor: valorPago,
-          metodo_pagamento: (sale as any).metodo_pagamento || sale.forma_pagamento || 'OUTROS',
+          metodo_pagamento: sale.forma_pagamento || 'OUTROS',
           referencia_id: saleId
         }));
+        totalRevertido = valorPago;
+        console.log(`💸 Fallback: revertendo R$${valorPago} do caixa`);
       }
 
-      // 4. Reverter descontos
-      const descontosTx = data.transactions.filter(t =>
-        t.referencia_id === saleId && t.categoria === 'DESCONTO' && t.tipo === 'SAIDA'
+      // 3c. Reverter descontos (SAIDA categoria DESCONTO) → criar ENTRADA de estorno
+      const descontosTx = todasTxVenda.filter((t: any) =>
+        t.categoria === 'DESCONTO' && t.tipo === 'SAIDA'
       );
       for (const descTx of descontosTx) {
         const descEstornoId = `TR-ESTORNO-DESC-${saleId}-${descTx.id}`;
@@ -667,6 +679,8 @@ const App: React.FC = () => {
         }));
       }
 
+      console.log(`💰 Financeiro: totalRevertido=R$${totalRevertido} | entradasVenda=${entradasVenda.length} | valorPago=${valorPago}`);
+
       // 5. Atualizar estado local imediatamente (UI responde antes do fetchData)
       setData(prev => ({
         ...prev,
@@ -681,11 +695,19 @@ const App: React.FC = () => {
       const fallbackUsed = restoredIds.size > 0 && targetIds.every(id => !restoredIds.has(id));
       logAction(session?.user, 'ESTORNO', 'SALE', `Venda estornada: ${saleId} (${sale.nome_cliente}) - Pago: R$${valorPago.toFixed(2)}`, { saleId, valorPago, restoredIds: [...restoredIds] });
 
-      if (restoredIds.size === 0) {
-        alert(`⚠️ Estorno financeiro concluído, mas nenhum item foi encontrado no estoque para restaurar.\n\nIsso pode ocorrer se os itens já foram manualmente removidos.\nVerifique o estoque manualmente para o id: ${sale.id_completo}`);
+      // Montar mensagem de resultado
+      const linhas = [];
+      if (restoredIds.size > 0) {
+        linhas.push(`✅ ${restoredIds.size} peça(s) devolvida(s) ao estoque`);
       } else {
-        alert(`✅ Estorno concluído!\n• ${restoredIds.size} item(s) devolvido(s) ao estoque${fallbackUsed ? ' (via busca automática)' : ''}\n• Financeiro revertido: R$ ${valorPago.toFixed(2)}`);
+        linhas.push(`⚠️ Nenhuma peça encontrada para devolver ao estoque`);
       }
+      if (totalRevertido > 0) {
+        linhas.push(`✅ R$ ${totalRevertido.toFixed(2)} revertido do caixa`);
+      } else if (valorPago === 0) {
+        linhas.push(`✅ Venda removida de A Receber (não havia pagamento)`);
+      }
+      alert(`🔄 Estorno concluído!\n\n${linhas.join('\n')}`);
       fetchData();
     } catch (error) {
       console.error('❌ Erro ao estornar venda:', error);
