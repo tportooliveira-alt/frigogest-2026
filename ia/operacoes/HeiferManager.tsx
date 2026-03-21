@@ -12,7 +12,7 @@ import {
     ChevronRight,
     Users
 } from 'lucide-react';
-import { ScheduledOrder } from '../types';
+import { ScheduledOrder } from '../../types';
 
 interface HeiferManagerProps {
     onBack?: () => void;

@@ -7,7 +7,7 @@
 
 import { fetchAllMarketData } from './marketDataService';
 import { calcularPrecificacao } from './pricingEngineService';
-import { supabase } from '../supabaseClient';
+import { supabase } from '../../supabaseClient';
 
 export type AlertSeverity = 'CRITICO' | 'ALTO' | 'MEDIO' | 'INFO';
 export type AlertCategory = 'PRECO' | 'MARGEM' | 'DOLAR' | 'TENDENCIA' | 'ESTOQUE' | 'SELIC' | 'OPORTUNIDADE';

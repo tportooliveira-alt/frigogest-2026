@@ -4,7 +4,7 @@ import {
     MessageCircle, Hash, Volume2, VolumeX, Plus, X, Check, CheckCheck,
     Loader2, Wifi, WifiOff, Video, VideoOff, Monitor, Share2
 } from 'lucide-react';
-import { supabase } from '../supabaseClient';
+import { supabase } from '../../supabaseClient';
 
 // ═══ TYPES ═══
 interface ChatMessage {

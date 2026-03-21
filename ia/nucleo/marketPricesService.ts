@@ -11,7 +11,7 @@
  * ═══════════════════════════════════════════════════════════════
  */
 
-import { supabase } from '../supabaseClient';
+import { supabase } from '../../supabaseClient';
 
 export interface MarketPrices {
     // Arroba

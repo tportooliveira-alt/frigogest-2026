@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Target, TrendingUp, TrendingDown, Minus, DollarSign, AlertTriangle, CheckCircle, XCircle, RefreshCw, Loader2, Scale, Beef } from 'lucide-react';
-import { calcularPrecificacao, ResultadoPrecificacao } from '../services/pricingEngineService';
+import { calcularPrecificacao, ResultadoPrecificacao } from '../nucleo/pricingEngineService';
 
 interface PricingEngineProps {
     onBack: () => void;

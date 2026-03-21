@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Bot, AlertTriangle, CheckCircle, XCircle, ArrowRight, ShieldCheck, Zap, Activity } from 'lucide-react';
-import { OrchestrationResult, OrchestrationStep } from '../services/orchestratorService';
+import { OrchestrationResult, OrchestrationStep } from '../nucleo/orchestratorService';
 
 interface OrchestratorViewProps {
     result: OrchestrationResult | null;

@@ -5,9 +5,9 @@
 
 import React, { useState } from 'react';
 import { ArrowLeft, Loader2, Send, ChevronRight } from 'lucide-react';
-import { runCascade, extractFinalAnswer } from '../services/llmCascade';
-import { buildRichSnapshot } from '../services/buildSnapshot';
-import { AGENT_DISPLAY_NAMES, AGENT_SYSTEM_PROMPTS } from '../../agentPrompts';
+import { runCascade, extractFinalAnswer } from '../nucleo/llmCascade';
+import { buildRichSnapshot } from '../nucleo/buildSnapshot';
+import { AGENT_DISPLAY_NAMES, AGENT_SYSTEM_PROMPTS } from '../prompts';
 import { getEffectiveAgent } from './AgentEditor';
 import { Batch, StockItem, Sale, Client, Transaction, Payable } from '../../types';
 

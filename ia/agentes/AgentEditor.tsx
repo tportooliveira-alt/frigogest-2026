@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Save, RotateCcw, Edit3, ChevronRight, CheckCircle, Zap } from 'lucide-react';
-import { AGENT_DISPLAY_NAMES, AGENT_SYSTEM_PROMPTS } from '../../agentPrompts';
+import { AGENT_DISPLAY_NAMES, AGENT_SYSTEM_PROMPTS } from '../prompts';
 
 interface AgentEditorProps {
   onBack: () => void;

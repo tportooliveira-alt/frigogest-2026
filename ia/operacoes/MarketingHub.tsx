@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { AppState, Client, StockItem, Batch } from '../types';
+import { AppState, Client, StockItem, Batch } from '../../types';
 import { Bot, Megaphone, Target, MessageCircle, Gift, TrendingUp, AlertTriangle, Search, Filter, Phone, Star, Settings, CheckCircle2, Instagram, Link, PlayCircle, BookOpen, Video, QrCode, Sparkles, Wand2, ArrowRight, ArrowLeft, Zap, Plus, Contact, FileText, Grid, Image, Download, Loader2, Paintbrush, RefreshCw, ShieldAlert, UserCheck } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 

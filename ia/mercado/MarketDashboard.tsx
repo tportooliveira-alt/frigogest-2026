@@ -4,8 +4,8 @@ import {
     Zap, Beef, Wheat, DollarSign, Percent, RefreshCw, Loader2, Wifi,
     Edit3, Check, X, AlertTriangle, Clock
 } from 'lucide-react';
-import { fetchMarketPrices, saveMarketPrices, MarketPrices } from '../services/marketPricesService';
-import { calcularPrecificacaoOuroV7, getIndiceSazonal } from '../services/marketDataService';
+import { fetchMarketPrices, saveMarketPrices, MarketPrices } from '../nucleo/marketPricesService';
+import { calcularPrecificacaoOuroV7, getIndiceSazonal } from '../nucleo/marketDataService';
 
 interface MarketDashboardProps {
     onBack: () => void;

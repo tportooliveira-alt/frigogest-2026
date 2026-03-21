@@ -2,7 +2,7 @@
 // Precificação dinâmica por idade da carne, markup por corte, proteção de margem
 // Inspirado em: Revenue Management (hotelaria/aviação), Markdown Optimization (varejo)
 
-import { StockItem, Sale, Batch } from '../types';
+import { StockItem, Sale, Batch } from '../../types';
 
 // ═══ TABELA DE DESCONTO POR IDADE (Carne resfriada MAX 8 dias) ═══
 export const DESCONTO_POR_IDADE: Record<number, { desconto: number; label: string; emoji: string; urgencia: string }> = {

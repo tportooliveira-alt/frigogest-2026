@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Bell, BellOff, CheckCircle, AlertTriangle, XCircle, Info, Trash2, RefreshCw, Loader2, Settings, Volume2, VolumeX } from 'lucide-react';
-import { checkMarketAlerts, getAllAlerts, markAlertAsRead, clearAllAlerts, getUnreadCount, requestPushPermission, getAlertConfig, saveAlertConfig, MarketAlert, AlertSeverity, AlertConfig } from '../services/alertService';
+import { checkMarketAlerts, getAllAlerts, markAlertAsRead, clearAllAlerts, getUnreadCount, requestPushPermission, getAlertConfig, saveAlertConfig, MarketAlert, AlertSeverity, AlertConfig } from '../nucleo/alertService';
 
 interface AlertCenterProps {
     onBack: () => void;

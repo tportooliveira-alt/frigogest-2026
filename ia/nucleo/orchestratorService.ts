@@ -5,8 +5,8 @@
 // Máximo 3 agentes por consulta. Sequencial com contexto acumulado.
 // ═══════════════════════════════════════════════════════════════
 
-import { AgentType } from '../types';
-import { saveAgentMemory, extractInsightsFromResponse } from '../ai/services/agentMemoryService';
+import { AgentType } from '../../types';
+import { saveAgentMemory, extractInsightsFromResponse } from './agentMemoryService';
 
 export interface OrchestrationStep {
     id: string;

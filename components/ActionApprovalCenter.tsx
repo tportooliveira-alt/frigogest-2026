@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CheckCircle2, XCircle, ChevronDown, ChevronUp, Bell, ExternalLink, Copy, Zap } from 'lucide-react';
-import { DetectedAction, generateWhatsAppLink } from '../services/actionParserService';
+import { DetectedAction, generateWhatsAppLink } from '../ia/nucleo/actionParserService';
 
 interface ActionApprovalCenterProps {
     actions: DetectedAction[];

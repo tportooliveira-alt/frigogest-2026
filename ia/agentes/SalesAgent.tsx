@@ -5,9 +5,9 @@
 
 import React, { useState } from 'react';
 import { ArrowLeft, Bot, Loader2, Send } from 'lucide-react';
-import { runCascade, extractFinalAnswer } from '../services/llmCascade';
-import { buildRichSnapshot } from '../services/buildSnapshot';
-import { AGENT_SYSTEM_PROMPTS } from '../../agentPrompts';
+import { runCascade, extractFinalAnswer } from '../nucleo/llmCascade';
+import { buildRichSnapshot } from '../nucleo/buildSnapshot';
+import { AGENT_SYSTEM_PROMPTS } from '../prompts';
 import { StockItem, Client, Sale, Batch } from '../../types';
 import { formatCurrency, formatWeight } from '../../utils/helpers';
 

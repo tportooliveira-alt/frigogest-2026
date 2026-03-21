@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { X, AlertCircle, AlertTriangle, Info, ShieldAlert, ChevronRight } from 'lucide-react';
-import { AutoTriggerResult, TriggerSeverity } from '../services/autoTriggerService';
+import { AutoTriggerResult, TriggerSeverity } from '../nucleo/autoTriggerService';
 
 interface AIOSPanelProps {
   alerts: AutoTriggerResult[];
