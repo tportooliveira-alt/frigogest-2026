@@ -92,9 +92,9 @@ const ScheduledOrders: React.FC<ScheduledOrdersProps> = ({
         const client = clients.find(c => c.id_ferro === order.id_cliente);
         if (!client || !client.whatsapp) return;
         const date = new Date(order.data_entrega + 'T12:00:00').toLocaleDateString('pt-BR');
-        const qtd = order.quantidade_kg ? `%0A*⚖️ QUANTIDADE:* ${order.quantidade_kg.toLocaleString('pt-BR')} kg` : '';
-        const val = order.valor_venda ? `%0A*💰 VALOR ESTIMADO:* R$ ${order.valor_venda.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '';
-        const text = `*✅ PEDIDO CONFIRMADO*%0A%0AOlá, *${order.nome_cliente}*! Seu pedido foi registrado com sucesso.%0A%0A*📅 Data:* ${date}%0A*📦 Pedido:*%0A${order.itens.replace(/\n/g, '%0A')}${qtd}${val}%0A%0AEntraremos em contato para confirmar a entrega. Qualquer dúvida, é só chamar! 😊%0A%0A_FrigoGest — Vitória da Conquista/BA_`;
+        const qtd = order.quantidade_kg ? `%0AQuantidade: ${order.quantidade_kg.toLocaleString('pt-BR')} kg` : '';
+        const val = order.valor_venda ? `%0AValor: R$ ${order.valor_venda.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '';
+        const text = `✅ PEDIDO CONFIRMADO%0AOlá, ${order.nome_cliente}! Seu pedido foi registrado com sucesso.%0A%0A📅 Data: ${date}%0A%0A📦 Pedido: ${order.itens.replace(/\n/g, ', ')}${qtd}${val}%0A%0AQualquer dúvida, é só chamar! 😊`;
         window.open(`https://wa.me/55${client.whatsapp.replace(/\D/g, '')}?text=${text}`, '_blank');
     };
 
