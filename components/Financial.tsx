@@ -956,9 +956,24 @@ const Financial: React.FC<FinancialProps> = ({
                           <span className="text-lg font-black text-slate-900 tracking-tight">{formatCurrency(saldoDevedor)}</span>
                         </td>
                         <td className="text-center">
-                          <button onClick={() => setSaleToPay(sale)} className="btn-modern bg-slate-900 text-white py-2.5 px-6 rounded-xl text-[9px] uppercase font-black tracking-widest hover:bg-emerald-600 gap-2 shadow-lg group-hover:scale-105 transition-all">
-                            <Wallet size={14} /> Efetuar Baixa
-                          </button>
+                          <div className="flex items-center justify-center gap-2">
+                            <button onClick={() => setSaleToPay(sale)} className="btn-modern bg-slate-900 text-white py-2.5 px-4 rounded-xl text-[9px] uppercase font-black tracking-widest hover:bg-emerald-600 gap-2 shadow-lg group-hover:scale-105 transition-all">
+                              <Wallet size={14} /> Baixa
+                            </button>
+                            {estornoSale && (
+                              <button
+                                onClick={() => {
+                                  const { valorTotal, valorPago } = getSaleBalance(sale);
+                                  const msg = `🔄 Estornar venda?\n\nCliente: ${sale.nome_cliente}\nItem: ${sale.id_completo}\nValor total: ${formatCurrency(valorTotal)}\nJá recebido: ${formatCurrency(valorPago)}\n\n✅ Gado volta ao estoque\n${valorPago > 0 ? '✅ Valor recebido volta ao caixa' : '✅ Removido de A Receber'}`;
+                                  if (window.confirm(msg)) estornoSale(sale.id_venda);
+                                }}
+                                className="w-9 h-9 bg-amber-50 text-amber-600 hover:bg-amber-500 hover:text-white rounded-xl flex items-center justify-center transition-all"
+                                title="Estornar venda"
+                              >
+                                <RotateCcw size={14} />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );

@@ -454,6 +454,12 @@ const Stock: React.FC<StockProps> = ({ stock, batches, sales, clients, updateBat
                                     {getTypeName(item.tipo).toUpperCase()}
                                   </span>
                                   <span className="text-slate-900 bg-slate-50 px-2 py-0.5 rounded-lg">{formatWeight(item.peso_entrada)}</span>
+                                  {/* S5-05: Drip Loss */}
+                                  {(item as any).drip_loss_atual && (item as any).drip_loss_atual < item.peso_entrada && (
+                                    <span className="text-[8px] font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-lg">
+                                      ↓ {formatWeight((item as any).drip_loss_atual)} ({(((item.peso_entrada - (item as any).drip_loss_atual) / item.peso_entrada) * 100).toFixed(1)}% perda)
+                                    </span>
+                                  )}
                                 </div>
                                 {(item.gordura || item.marmoreio) && (
                                   <div className="flex gap-1">

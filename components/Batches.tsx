@@ -1082,6 +1082,51 @@ Se algum item tiver discrepância que você não conseguiu resolver, marque vali
                     </div>
                   </div>
 
+                  {/* S5-04: GTA DIGITAL */}
+                  <div className="space-y-3 bg-green-50 border border-green-100 p-4 rounded-3xl">
+                    <label className="text-[10px] font-bold text-green-700 uppercase tracking-widest flex items-center gap-2">📋 GTA — Guia de Trânsito Animal</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Nº da GTA</label>
+                        <input type="text" className="modern-input h-11 text-xs" placeholder="Ex: 000123456"
+                          value={(newBatch as any).gta_numero || ''}
+                          onChange={e => setNewBatch({ ...newBatch, gta_numero: e.target.value } as any)} />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Série</label>
+                        <input type="text" className="modern-input h-11 text-xs" placeholder="Ex: A"
+                          value={(newBatch as any).gta_serie || ''}
+                          onChange={e => setNewBatch({ ...newBatch, gta_serie: e.target.value } as any)} />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Emissão</label>
+                        <input type="date" className="modern-input h-11 text-xs"
+                          value={(newBatch as any).gta_data_emissao || ''}
+                          onChange={e => setNewBatch({ ...newBatch, gta_data_emissao: e.target.value } as any)} />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Validade</label>
+                        <input type="date" className="modern-input h-11 text-xs"
+                          value={(newBatch as any).gta_validade || ''}
+                          onChange={e => setNewBatch({ ...newBatch, gta_validade: e.target.value } as any)} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">🚛 Transportadora</label>
+                        <input type="text" className="modern-input h-11 text-xs" placeholder="Nome da transportadora"
+                          value={(newBatch as any).transportadora_nome || ''}
+                          onChange={e => setNewBatch({ ...newBatch, transportadora_nome: e.target.value } as any)} />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">🚗 Placa do Veículo</label>
+                        <input type="text" className="modern-input h-11 text-xs uppercase" placeholder="Ex: ABC-1234"
+                          value={(newBatch as any).transportadora_placa || ''}
+                          onChange={e => setNewBatch({ ...newBatch, transportadora_placa: e.target.value.toUpperCase() } as any)} />
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="bg-slate-900 rounded-3xl p-6 flex justify-between items-center text-white">
                     <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Custo Real/Kg:</span>
                     <span className="text-2xl font-black text-orange-400">{formatCurrency(simulatedCost)}</span>

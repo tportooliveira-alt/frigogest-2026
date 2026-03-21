@@ -29,6 +29,7 @@ import DataIntegrityWatchdog from './components/DataIntegrityWatchdog';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import AIChat from './ai/components/AIChat';
 import AgentEditor from './ai/components/AgentEditor';
+import TemperatureMonitor from './components/TemperatureMonitor';
 import AIMeetingRoom from './ai/components/AIMeetingRoom';
 import MeetingChat from './components/MeetingChat';
 import MarketingHub from './components/MarketingHub';
@@ -108,13 +109,17 @@ const App: React.FC = () => {
       const results = await Promise.allSettled([
         supabase.from('clients').select('*'),
         supabase.from('batches').select('*'),
-        supabase.from('stock_items').select('*'),
-        supabase.from('sales').select('*').order('data_venda', { ascending: false }),
-        supabase.from('transactions').select('*'),
+        // S5-06: Paginação — só últimos 300 itens de estoque (DISPONIVEL primeiro)
+        supabase.from('stock_items').select('*').order('status', { ascending: true }).order('data_entrada', { ascending: false }).limit(300),
+        // S5-06: Últimas 200 vendas
+        supabase.from('sales').select('*').order('data_venda', { ascending: false }).limit(200),
+        // S5-06: Últimas 300 transações
+        supabase.from('transactions').select('*').order('data', { ascending: false }).limit(300),
         supabase.from('scheduled_orders').select('*'),
         supabase.from('daily_reports').select('*').order('date', { ascending: false }).limit(50),
         supabase.from('suppliers').select('*'),
-        supabase.from('payables').select('*'),
+        // S5-06: Só payables não pagos + últimos 90 dias dos pagos
+        supabase.from('payables').select('*').order('data_vencimento', { ascending: false }).limit(200),
       ]);
 
       const TABLE_NAMES = ['clients', 'batches', 'stock_items', 'sales', 'transactions', 'scheduled_orders', 'daily_reports', 'suppliers', 'payables'];
@@ -1584,6 +1589,7 @@ const App: React.FC = () => {
       )}
       {currentView === 'meeting_chat' && <MeetingChat onBack={() => setCurrentView('menu')} />}
       {currentView === 'agent_editor' && <AgentEditor onBack={() => setCurrentView('menu')} />}
+      {currentView === 'temperature' && <TemperatureMonitor onBack={() => setCurrentView('menu')} />}
       {currentView === 'system_reset' && <SystemReset onBack={() => setCurrentView('menu')} refreshData={fetchData} />}
       {currentView === 'scenario_simulator' && <ScenarioSimulator onBack={() => setCurrentView('menu')} onApplyScenario={(simData) => {
         setData(prev => ({
