@@ -134,6 +134,8 @@ export interface ScheduledOrder {
   status: 'ABERTO' | 'CONFIRMADO' | 'CANCELADO';
   data_criacao: string;
   alerta_madrugada: boolean; // Se deve alertar sobre gado saindo de madrugada
+  quantidade_kg?: number;   // Quantidade solicitada em kg
+  valor_venda?: number;     // Valor estimado da venda (R$)
 }
 
 export interface Transaction {

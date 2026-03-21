@@ -45,8 +45,9 @@ const ScheduledOrders: React.FC<ScheduledOrdersProps> = ({
         id_cliente: '',
         nome_cliente: '',
         data_entrega: new Date().toISOString().split('T')[0],
-        hora_entrega: '08:00',
         itens: '',
+        quantidade_kg: undefined,
+        valor_venda: undefined,
         alerta_madrugada: true,
         status: 'ABERTO'
     });
@@ -68,15 +69,16 @@ const ScheduledOrders: React.FC<ScheduledOrdersProps> = ({
             id_cliente: newOrder.id_cliente,
             nome_cliente: selectedClient?.nome_social || 'Desconhecido',
             data_entrega: newOrder.data_entrega,
-            hora_entrega: newOrder.hora_entrega,
             itens: newOrder.itens,
+            quantidade_kg: newOrder.quantidade_kg || undefined,
+            valor_venda: newOrder.valor_venda || undefined,
             status: 'ABERTO',
             data_criacao: new Date().toISOString(),
             alerta_madrugada: !!newOrder.alerta_madrugada
         };
         await addScheduledOrder(orderToSave);
         setShowAddForm(false);
-        setNewOrder({ id_cliente: '', data_entrega: new Date().toISOString().split('T')[0], hora_entrega: '08:00', itens: '', alerta_madrugada: true, status: 'ABERTO' });
+        setNewOrder({ id_cliente: '', data_entrega: new Date().toISOString().split('T')[0], itens: '', quantidade_kg: undefined, valor_venda: undefined, alerta_madrugada: true, status: 'ABERTO' });
     };
 
     const isUpcoming = (dateStr: string) => {
@@ -90,7 +92,9 @@ const ScheduledOrders: React.FC<ScheduledOrdersProps> = ({
         const client = clients.find(c => c.id_ferro === order.id_cliente);
         if (!client || !client.whatsapp) return;
         const date = new Date(order.data_entrega + 'T12:00:00').toLocaleDateString('pt-BR');
-        const text = `*CONFIRMACAO DE PEDIDO - FRIGOGEST*%0A%0AALERTA_LOGISTICA PARA *${order.nome_cliente.toUpperCase()}*%0ADATA: *${date}*%0A%0A*📦 ITENS:*%0A${order.itens.replace(/\n/g, '%0A')}%0A%0A*🕒 PREVISAO:* ${order.hora_entrega || '--:--'}%0A%0AFG_CORE_TERMINAL_2026`;
+        const qtd = order.quantidade_kg ? `%0A*⚖️ QUANTIDADE:* ${order.quantidade_kg.toLocaleString('pt-BR')} kg` : '';
+        const val = order.valor_venda ? `%0A*💰 VALOR ESTIMADO:* R$ ${order.valor_venda.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '';
+        const text = `*✅ PEDIDO CONFIRMADO*%0A%0AOlá, *${order.nome_cliente}*! Seu pedido foi registrado com sucesso.%0A%0A*📅 Data:* ${date}%0A*📦 Pedido:*%0A${order.itens.replace(/\n/g, '%0A')}${qtd}${val}%0A%0AEntraremos em contato para confirmar a entrega. Qualquer dúvida, é só chamar! 😊%0A%0A_FrigoGest — Vitória da Conquista/BA_`;
         window.open(`https://wa.me/55${client.whatsapp.replace(/\D/g, '')}?text=${text}`, '_blank');
     };
 
@@ -229,14 +233,18 @@ const ScheduledOrders: React.FC<ScheduledOrdersProps> = ({
                                     </select>
                                 ) : <div className="text-2xl font-black text-slate-900 uppercase tracking-tight">{selectedOrder?.nome_cliente}</div>}
                             </div>
+                            <div className="space-y-3">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block px-1">Data Prevista</label>
+                                <input required type="date" className="modern-input" value={showAddForm ? newOrder.data_entrega : selectedOrder?.data_entrega} onChange={e => showAddForm ? setNewOrder({ ...newOrder, data_entrega: e.target.value }) : setSelectedOrder({ ...selectedOrder!, data_entrega: e.target.value })} />
+                            </div>
                             <div className="grid grid-cols-2 gap-6">
                                 <div className="space-y-3">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block px-1">Data Prevista</label>
-                                    <input required type="date" className="modern-input" value={showAddForm ? newOrder.data_entrega : selectedOrder?.data_entrega} onChange={e => showAddForm ? setNewOrder({ ...newOrder, data_entrega: e.target.value }) : setSelectedOrder({ ...selectedOrder!, data_entrega: e.target.value })} />
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block px-1">Quantidade (kg)</label>
+                                    <input type="number" min="0" step="0.1" placeholder="Ex: 150" className="modern-input" value={showAddForm ? (newOrder.quantidade_kg || '') : (selectedOrder?.quantidade_kg || '')} onChange={e => { const v = e.target.value ? parseFloat(e.target.value) : undefined; showAddForm ? setNewOrder({ ...newOrder, quantidade_kg: v }) : setSelectedOrder({ ...selectedOrder!, quantidade_kg: v }); }} />
                                 </div>
                                 <div className="space-y-3">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block px-1">Janela de Horário</label>
-                                    <input type="time" className="modern-input" value={showAddForm ? newOrder.hora_entrega : selectedOrder?.hora_entrega} onChange={e => showAddForm ? setNewOrder({ ...newOrder, hora_entrega: e.target.value }) : setSelectedOrder({ ...selectedOrder!, hora_entrega: e.target.value })} />
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block px-1">Valor da Venda (R$)</label>
+                                    <input type="number" min="0" step="0.01" placeholder="Ex: 4500,00" className="modern-input" value={showAddForm ? (newOrder.valor_venda || '') : (selectedOrder?.valor_venda || '')} onChange={e => { const v = e.target.value ? parseFloat(e.target.value) : undefined; showAddForm ? setNewOrder({ ...newOrder, valor_venda: v }) : setSelectedOrder({ ...selectedOrder!, valor_venda: v }); }} />
                                 </div>
                             </div>
                             <div className="space-y-3">
