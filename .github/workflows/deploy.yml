@@ -28,6 +28,7 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
+          VITE_AI_API_KEY: ${{ secrets.VITE_AI_API_KEY }}
 
       - name: Deploy to Firebase Hosting
         run: npx firebase-tools deploy --only hosting --token "$FIREBASE_TOKEN" --project gestfri --non-interactive
