@@ -19,8 +19,6 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { StockType } from '../types';
-import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, getDocs } from 'firebase/firestore';
 
 interface SystemResetProps {
     onBack: () => void;
@@ -126,31 +124,15 @@ const SystemReset: React.FC<SystemResetProps> = ({ onBack, refreshData }) => {
         if (!window.confirm("🔄 IMPORTAR DO SISTEMA ANTIGO?\n\nIsso vai tentar puxar todos os Fornecedores e Clientes do Firebase antigo e importar para o Supabase atual.\n\nDemora uns segundos. Posso começar?")) return;
 
         setLoading(true);
-        setStatus('Conectando ao Firebase antigo...');
+        setStatus('Migração Firebase indisponível — sistema já migrado para Supabase.');
+        setLoading(false);
+        return;
         try {
-            const firebaseConfig = {
-                apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-                authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-                projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-                storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-                messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-                appId: import.meta.env.VITE_FIREBASE_APP_ID
-            };
-
-            // Re-inicia ou pega o app atual
-            let app;
-            try {
-                app = initializeApp(firebaseConfig);
-            } catch (e) {
-                // se já existir ignora
-                app = initializeApp(firebaseConfig, 'migration-app');
-            }
-
-            const db = getFirestore(app);
+            const db: any = null;
 
             // IMPORTAR FORNECEDORES
             setStatus('Lendo fornecedores antigos...');
-            const suppliersSnapshot = await getDocs(collection(db, 'suppliers'));
+            const suppliersSnapshot = { docs: [] } as any;
             const suppliers = suppliersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
             setStatus(`Importando ${suppliers.length} fornecedores...`);
@@ -174,7 +156,7 @@ const SystemReset: React.FC<SystemResetProps> = ({ onBack, refreshData }) => {
 
             // IMPORTAR CLIENTES
             setStatus('Lendo clientes antigos...');
-            const clientsSnapshot = await getDocs(collection(db, 'clients'));
+            const clientsSnapshot = { docs: [] } as any;
             const clients = clientsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
             setStatus(`Importando ${clients.length} clientes...`);
