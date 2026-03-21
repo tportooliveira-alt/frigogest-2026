@@ -559,129 +559,108 @@ const App: React.FC = () => {
   const estornoSale = async (saleId: string) => {
     if (!supabase) return;
 
-    // 1. Encontrar a venda
     const sale = data.sales.find(s => s.id_venda === saleId);
-    if (!sale) {
-      alert('Venda não encontrada.');
-      return;
-    }
-    if (sale.status_pagamento === 'ESTORNADO') {
-      alert('Esta venda já foi estornada.');
-      return;
-    }
+    if (!sale) { alert('Venda não encontrada.'); return; }
+    if (sale.status_pagamento === 'ESTORNADO') { alert('Esta venda já foi estornada.'); return; }
 
-    const valorPago = (sale as any).valor_pago || 0;
-    // Confirm removido — chamadores (SalesHistory, Financial) já pedem confirmação
+    const valorPago = Number((sale as any).valor_pago) || 0;
+    const isVista   = sale.status_pagamento === 'PAGO' && valorPago > 0;
+    const isParcial = sale.status_pagamento === 'PENDENTE' && valorPago > 0;
+    const isPrazoNaoPago = sale.status_pagamento === 'PENDENTE' && valorPago === 0;
 
     try {
-      console.log(`🔄 Estornando venda: ${saleId} | Cliente: ${sale.nome_cliente} | valorPago: R$${valorPago.toFixed(2)} | status: ${sale.status_pagamento}`);
+      // ── PASSO 1: Marcar venda como ESTORNADO ──────────────────────
+      await supabase.from('sales')
+        .update({ status_pagamento: 'ESTORNADO', valor_pago: 0 })
+        .eq('id_venda', saleId);
 
-
-      // 1. Marcar venda como ESTORNADO e zerar valor_pago
-      await supabase.from('sales').update({ status_pagamento: 'ESTORNADO', valor_pago: 0 }).eq('id_venda', saleId);
-
-      // 2. Devolver item(ns) ao estoque → DISPONÍVEL
-      // ESTRATÉGIA: Derivar os IDs reais Baseado no ID Completo da Venda
+      // ── PASSO 2: Devolver peças ao estoque ───────────────────────
       const restoredIds = new Set<string>();
-
-      // Quando vendido inteiro, id_completo finaliza com -INTEIRO (ex: LOTE-1234-1-INTEIRO)
-      // Quando BANDA_A, finaliza direto com -BANDA_A ou -BANDA_B
       const isInteira = sale.id_completo.endsWith('-INTEIRO');
-
-      const targetIds = [];
-      if (isInteira) {
-        const base = sale.id_completo.replace(/-INTEIRO$/, '');
-        targetIds.push(`${base}-BANDA_A`, `${base}-BANDA_B`);
-      } else {
-        targetIds.push(sale.id_completo);
-      }
-
-      console.log(`📦 Devolvendo peças ao estoque:`, targetIds);
+      const targetIds: string[] = isInteira
+        ? [sale.id_completo.replace(/-INTEIRO$/, '') + '-BANDA_A',
+           sale.id_completo.replace(/-INTEIRO$/, '') + '-BANDA_B']
+        : [sale.id_completo];
 
       for (const stockId of targetIds) {
-        const { data: found, error } = await supabase!.from('stock_items')
+        const { data: found } = await supabase.from('stock_items')
           .select('id_completo, status').eq('id_completo', stockId).limit(1);
-
-        if (!error && found && found.length > 0) {
-          if (found[0].status === 'VENDIDO') {
-            await supabase!.from('stock_items').update({ status: 'DISPONIVEL' }).eq('id_completo', stockId);
-            restoredIds.add(stockId);
-            console.log(`✅ Item ${stockId} -> DISPONIVEL`);
-          } else {
-            console.log(`⚠️ Item ${stockId} já não estava VENDIDO (Status atual: ${found[0].status})`);
-          }
-        } else {
-          console.error(`❌ Item não encontrado no Supabase para restaurar: ${stockId}`, error);
+        if (found && found.length > 0 && found[0].status === 'VENDIDO') {
+          await supabase.from('stock_items')
+            .update({ status: 'DISPONIVEL' }).eq('id_completo', stockId);
+          restoredIds.add(stockId);
         }
       }
 
-      // 3. Reverter financeiro — buscar DIRETO no Supabase (evita state desatualizado)
-      const { data: txDoDB } = await supabase
-        .from('transactions')
-        .select('*')
-        .eq('referencia_id', saleId);
-
-      const todasTxVenda = txDoDB || [];
-
-      // 3a. Reverter recebimentos (ENTRADA categoria VENDA) → criar SAIDA de estorno
-      const entradasVenda = todasTxVenda.filter((t: any) =>
-        t.tipo === 'ENTRADA' && t.categoria === 'VENDA'
-      );
+      // ── PASSO 3: Reverter financeiro ─────────────────────────────
       let totalRevertido = 0;
-      for (const tx of entradasVenda) {
-        const estornoId = `TR-ESTORNO-VENDA-${saleId}-${tx.id}`;
-        await supabase.from('transactions').upsert(sanitize({
-          id: estornoId,
-          data: todayBR(),
-          descricao: `ESTORNO VENDA: ${sale.nome_cliente || 'Cliente'} - ${sale.id_completo}`,
-          tipo: 'SAIDA',
-          categoria: 'ESTORNO',
-          valor: tx.valor,
-          metodo_pagamento: tx.metodo_pagamento || 'OUTROS',
-          referencia_id: saleId
-        }));
-        totalRevertido += tx.valor;
-        console.log(`💸 Revertendo R$${tx.valor} do caixa (${tx.id})`);
+
+      if (isPrazoNaoPago) {
+        // Venda a PRAZO não paga: só sai de A Receber (sem mexer no caixa)
+        // Nenhuma transação de caixa foi criada → nada a reverter
+        console.log(`ℹ️ Venda a prazo não paga — removida de A Receber, sem impacto no caixa`);
+
+      } else {
+        // Venda à VISTA ou PRAZO paga (total ou parcial):
+        // Buscar TODAS as transações de entrada dessa venda no Supabase
+        const { data: txDoDB } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('referencia_id', saleId);
+
+        const entradasVenda = (txDoDB || []).filter((t: any) =>
+          t.tipo === 'ENTRADA' && t.categoria === 'VENDA'
+        );
+
+        if (entradasVenda.length > 0) {
+          // Reverter cada entrada individualmente
+          for (const tx of entradasVenda) {
+            await supabase.from('transactions').upsert(sanitize({
+              id: `TR-ESTORNO-VENDA-${saleId}-${tx.id}`,
+              data: todayBR(),
+              descricao: `ESTORNO VENDA: ${sale.nome_cliente || 'Cliente'} — ${sale.id_completo}`,
+              tipo: 'SAIDA',
+              categoria: 'ESTORNO',
+              valor: tx.valor,
+              metodo_pagamento: tx.metodo_pagamento || 'OUTROS',
+              referencia_id: saleId
+            }));
+            totalRevertido += Number(tx.valor);
+          }
+        } else if (valorPago > 0) {
+          // Fallback: havia pagamento mas sem TR registrado (dados legados)
+          await supabase.from('transactions').upsert(sanitize({
+            id: `TR-ESTORNO-VENDA-${saleId}-DIRETO`,
+            data: todayBR(),
+            descricao: `ESTORNO VENDA: ${sale.nome_cliente || 'Cliente'} — ${sale.id_completo}`,
+            tipo: 'SAIDA',
+            categoria: 'ESTORNO',
+            valor: valorPago,
+            metodo_pagamento: sale.forma_pagamento || 'OUTROS',
+            referencia_id: saleId
+          }));
+          totalRevertido = valorPago;
+        }
+
+        // Reverter descontos concedidos (SAIDA DESCONTO → ENTRADA estorno)
+        const descontos = (txDoDB || []).filter((t: any) =>
+          t.tipo === 'SAIDA' && t.categoria === 'DESCONTO'
+        );
+        for (const d of descontos) {
+          await supabase.from('transactions').upsert(sanitize({
+            id: `TR-ESTORNO-DESC-${saleId}-${d.id}`,
+            data: todayBR(),
+            descricao: `ESTORNO DESCONTO: ${d.descricao}`,
+            tipo: 'ENTRADA',
+            categoria: 'ESTORNO',
+            valor: d.valor,
+            metodo_pagamento: 'OUTROS',
+            referencia_id: saleId
+          }));
+        }
       }
 
-      // 3b. Fallback: venda marcada como PAGO mas sem TR — usa valor_pago
-      if (entradasVenda.length === 0 && valorPago > 0) {
-        const estornoIdDireto = `TR-ESTORNO-VENDA-${saleId}-DIRETO`;
-        await supabase.from('transactions').upsert(sanitize({
-          id: estornoIdDireto,
-          data: todayBR(),
-          descricao: `ESTORNO VENDA: ${sale.nome_cliente || 'Cliente'} - ${sale.id_completo}`,
-          tipo: 'SAIDA',
-          categoria: 'ESTORNO',
-          valor: valorPago,
-          metodo_pagamento: sale.forma_pagamento || 'OUTROS',
-          referencia_id: saleId
-        }));
-        totalRevertido = valorPago;
-        console.log(`💸 Fallback: revertendo R$${valorPago} do caixa`);
-      }
-
-      // 3c. Reverter descontos (SAIDA categoria DESCONTO) → criar ENTRADA de estorno
-      const descontosTx = todasTxVenda.filter((t: any) =>
-        t.categoria === 'DESCONTO' && t.tipo === 'SAIDA'
-      );
-      for (const descTx of descontosTx) {
-        const descEstornoId = `TR-ESTORNO-DESC-${saleId}-${descTx.id}`;
-        await supabase.from('transactions').upsert(sanitize({
-          id: descEstornoId,
-          data: todayBR(),
-          descricao: `ESTORNO DESCONTO: ${descTx.descricao}`,
-          tipo: 'ENTRADA',
-          categoria: 'ESTORNO',
-          valor: descTx.valor,
-          metodo_pagamento: 'OUTROS',
-          referencia_id: saleId
-        }));
-      }
-
-      console.log(`💰 Financeiro: totalRevertido=R$${totalRevertido} | entradasVenda=${entradasVenda.length} | valorPago=${valorPago}`);
-
-      // 5. Atualizar estado local imediatamente (UI responde antes do fetchData)
+      // ── PASSO 4: Atualizar estado local ──────────────────────────
       setData(prev => ({
         ...prev,
         sales: prev.sales.map(s =>
@@ -692,23 +671,28 @@ const App: React.FC = () => {
         )
       }));
 
-      const fallbackUsed = restoredIds.size > 0 && targetIds.every(id => !restoredIds.has(id));
-      logAction(session?.user, 'ESTORNO', 'SALE', `Venda estornada: ${saleId} (${sale.nome_cliente}) - Pago: R$${valorPago.toFixed(2)}`, { saleId, valorPago, restoredIds: [...restoredIds] });
+      logAction(session?.user, 'ESTORNO', 'SALE',
+        `Venda estornada: ${saleId} (${sale.nome_cliente}) - Pago: R$${valorPago.toFixed(2)}`,
+        { saleId, valorPago, restoredIds: [...restoredIds] }
+      );
 
-      // Montar mensagem de resultado
-      const linhas = [];
-      if (restoredIds.size > 0) {
+      // ── PASSO 5: Resultado ────────────────────────────────────────
+      const linhas: string[] = [];
+      if (restoredIds.size > 0)
         linhas.push(`✅ ${restoredIds.size} peça(s) devolvida(s) ao estoque`);
-      } else {
-        linhas.push(`⚠️ Nenhuma peça encontrada para devolver ao estoque`);
-      }
-      if (totalRevertido > 0) {
-        linhas.push(`✅ R$ ${totalRevertido.toFixed(2)} revertido do caixa`);
-      } else if (valorPago === 0) {
-        linhas.push(`✅ Venda removida de A Receber (não havia pagamento)`);
-      }
+      else
+        linhas.push(`⚠️ Peças não encontradas no estoque — verifique manualmente`);
+
+      if (isPrazoNaoPago)
+        linhas.push(`✅ Removida de A Receber (não havia pagamento)`)
+      else if (totalRevertido > 0)
+        linhas.push(`✅ R$ ${totalRevertido.toFixed(2)} revertido do Fluxo de Caixa`)
+      else if (valorPago > 0)
+        linhas.push(`⚠️ Não encontrou transação para reverter — verifique o caixa`)
+
       alert(`🔄 Estorno concluído!\n\n${linhas.join('\n')}`);
       fetchData();
+
     } catch (error) {
       console.error('❌ Erro ao estornar venda:', error);
       alert('Erro ao estornar a venda. Verifique o console para detalhes.');
