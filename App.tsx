@@ -211,7 +211,7 @@ const App: React.FC = () => {
           payables,
           scheduledOrders
         });
-        setAiosAlerts(triggers);
+        // setAiosAlerts(triggers); // DESABILITADO - alertas IA Auditora removidos
 
         // // AUTO-ORCHESTRATION: Se houver BLOQUEIO, inicia o conselho de agentes automaticamente
         // const bloqueio = triggers.find(t => t.severity === 'BLOQUEIO');
@@ -905,7 +905,7 @@ const App: React.FC = () => {
           if (match) loteId = match[1];
         }
         if (!loteId && payable.id) {
-          const match = payable.id.match(/PAY-LOTE-([A-Z0-9-]+)/);
+          const match = payable.id.match(/PAY-LOTE-(?:GADO|FRETE)-([A-Z0-9]+-\d{4}-\d+)/);
           if (match) loteId = match[1];
         }
 
@@ -1070,7 +1070,7 @@ const App: React.FC = () => {
       } else {
         const vencimentoFrete = (() => {
           const d = new Date(dataRecebimento);
-          d.setDate(d.getDate() + ((batch as any).prazo_dias_frete || 15));
+          d.setDate(d.getDate() + ((batch as any).prazo_dias_frete || 30));
           return d.toISOString().split('T')[0];
         })();
 
@@ -1211,7 +1211,7 @@ const App: React.FC = () => {
       const valorTotal = sale.peso_real_saida * sale.preco_venda_kg;
       const valorPagoAtual = (sale as any).valor_pago || 0;
       const novoValorPago = valorPagoAtual + valorPagamento;
-      const status = novoValorPago >= valorTotal ? 'PAGO' : 'PENDENTE';
+      const status = novoValorPago >= valorTotal ? 'PAGO' : (novoValorPago > 0 ? 'PARCIAL' : 'PENDENTE');
 
       await supabase.from('sales').update({
         valor_pago: novoValorPago,
@@ -1628,13 +1628,13 @@ const App: React.FC = () => {
       </div>
 
       {/* 🔴 IA Auditora de Integridade Global (Watchdog) */}
-      <DataIntegrityWatchdog
+      {/* <DataIntegrityWatchdog
         stock={data.stock}
         sales={data.sales}
         transactions={data.transactions}
         payables={data.payables}
         batches={data.batches}
-      />
+      /> */}
 
     </div >
   );
